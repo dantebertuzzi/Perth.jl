@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perth · kanban</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script>
+    // aplica o tema antes do primeiro paint para evitar flash
+    document.documentElement.dataset.theme =
+      localStorage.getItem("perth-kanban-theme") || "dark";
+  </script>
+</head>
+<body>
+
+  <header class="menubar" id="menubar">
+    <a class="brand" id="brand-link" href="https://github.com/dantebertuzzi/Perth.jl" target="_blank" rel="noopener" title="Perth.jl on GitHub"><img src="/logo.png" alt="" class="brand-logo"> Perth</a>
+
+    <nav class="menus">
+      <div class="menu" data-menu="board">
+        <button class="menu-title">Board</button>
+        <div class="menu-drop">
+          <button data-action="new-card">New card <kbd>N</kbd></button>
+          <button data-action="new-col">New column…</button>
+          <hr>
+          <button data-action="undo">Undo <kbd>Ctrl+Z</kbd></button>
+          <button data-action="redo">Redo <kbd>Ctrl+Shift+Z</kbd></button>
+          <hr>
+          <button data-action="archived">Archived cards…</button>
+          <button data-action="activity">Activity…</button>
+          <button data-action="share">Share / QR…</button>
+          <button data-action="aliases" id="aliases-item" hidden>Rename machines…</button>
+          <hr>
+          <button data-action="delete-card" class="danger">Delete selected card <kbd>Del</kbd></button>
+        </div>
+      </div>
+      <div class="menu" data-menu="view">
+        <button class="menu-title">View</button>
+        <div class="menu-drop">
+          <button data-action="toggle-theme">Dark mode <kbd>D</kbd></button>
+          <button data-action="resync">Resync with server</button>
+        </div>
+      </div>
+    </nav>
+
+    <div class="mb-search">
+      <input id="search" placeholder="filter cards…  ( / )" autocomplete="off" spellcheck="false">
+    </div>
+
+    <div class="mb-right">
+      <div class="peers" id="peers" title="connected machines"></div>
+      <span class="mb-sep"></span>
+      <span class="conn" id="conn"><span class="conn-dot"></span><span id="conn-label">connecting…</span></span>
+      <span class="mb-sep"></span>
+      <div class="menu settings-menu" data-menu="settings">
+        <button class="menu-title icon-btn" title="your name on the board">
+          <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+        </button>
+        <div class="menu-drop settings-drop">
+          <label for="name-input">your name (shown on your cursor)</label>
+          <input id="name-input" maxlength="24" placeholder="e.g. dante" autocomplete="off">
+          <div class="settings-hint">empty = shows the machine IP only</div>
+          <label class="settings-check">
+            <input type="checkbox" id="sound-toggle" checked> notification sound
+          </label>
+        </div>
+      </div>
+      <button class="switch" id="theme-switch" data-action="toggle-theme" title="Toggle dark mode (D)" aria-label="Toggle dark mode">
+        <span class="knob">
+          <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <svg class="moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        </span>
+      </button>
+      <span class="mb-sep"></span>
+      <a class="icon-btn" id="gh-link" href="https://github.com/dantebertuzzi/Perth.jl" target="_blank" rel="noopener" title="Source on GitHub">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <main class="board" id="board"></main>
+
+  <footer class="statusbar">
+    <span id="st-board"></span>
+    <span class="spacer"></span>
+    <span id="st-me"></span>
+    <span id="st-rev"></span>
+  </footer>
+
+  <div id="cursors"></div>
+  <div id="modal-root" hidden></div>
+  <div id="toasts"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

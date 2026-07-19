@@ -1,0 +1,9 @@
+# Julia
+Manifest.toml
+/docs/build/
+/docs/Manifest.toml
+
+# Temp
+*.jl.*.cov
+*.jl.mem
+.vscode/
