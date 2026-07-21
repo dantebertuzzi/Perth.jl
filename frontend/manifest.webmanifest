@@ -1,0 +1,10 @@
+{
+  "name": "Perth",
+  "short_name": "Perth",
+  "description": "Gantt-chart project management with a Julia backend",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e1f26",
+  "theme_color": "#9558b2",
+  "icons": [{ "src": "/logo.png", "sizes": "any", "type": "image/png" }]
+}

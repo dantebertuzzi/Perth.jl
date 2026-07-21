@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perth</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#9558b2">
+  <link rel="stylesheet" href="/shared/ui.css">
+  <link rel="stylesheet" href="/style.css">
+  <script>
+    // Aplica o tema antes do primeiro paint para evitar flash. Origens
+    // (portas) têm localStorage separados, então o botão de troca
+    // gantt<->kanban traz as preferências na URL (pref-theme etc.).
+    try {
+      const pt = new URLSearchParams(location.search).get("pref-theme");
+      if (pt === "dark" || pt === "light")
+        localStorage.setItem("perth-theme", pt);
+    } catch (e) { /* segue com o que estiver salvo */ }
+    document.documentElement.dataset.theme =
+      localStorage.getItem("perth-theme") ||
+      localStorage.getItem("perth-kanban-theme") || "light";
+  </script>
+</head>
+<body>
+
+  <!-- Menu bar -->
+  <header class="menubar" id="menubar">
+    <a class="brand" id="brand-link" href="https://github.com/dantebertuzzi/Perth.jl" target="_blank" rel="noopener" title="Perth.jl on GitHub"><img src="/logo.png" alt="" class="brand-logo"> Perth</a>
+    <select id="project-select" class="board-chip" title="Active project"></select>
+
+    <nav class="menus">
+      <div class="menu" data-menu="file">
+        <button class="menu-title">File</button>
+        <div class="menu-drop">
+          <button data-action="welcome">Home screen</button>
+          <hr>
+          <button data-action="new-project">New project…</button>
+          <button data-action="rename-project">Rename project…</button>
+          <hr>
+          <button data-action="import">Import project (.jl)…</button>
+          <button data-action="export">Export project (.jl)</button>
+          <button data-action="export-csv">Export tasks (CSV)</button>
+          <button data-action="export-chart">Export chart (PNG)</button>
+          <hr>
+          <button data-action="activity">Activity…</button>
+          <hr>
+          <button data-action="delete-project" class="danger">Delete project…</button>
+        </div>
+      </div>
+
+      <div class="menu" data-menu="edit">
+        <button class="menu-title">Edit</button>
+        <div class="menu-drop">
+          <button data-action="new-task">New task <kbd>N</kbd></button>
+          <button data-action="edit-task">Edit selected task <kbd>Enter</kbd></button>
+          <button data-action="duplicate-task">Duplicate selected task <kbd>Ctrl+D</kbd></button>
+          <button data-action="delete-task" class="danger">Delete selected task <kbd>Del</kbd></button>
+          <hr>
+          <button data-action="undo">Undo <kbd>Ctrl+Z</kbd></button>
+          <button data-action="redo">Redo <kbd>Ctrl+Shift+Z</kbd></button>
+          <hr>
+          <button data-action="auto-schedule">Auto-schedule (push successors) <kbd>S</kbd></button>
+          <hr>
+          <button data-action="set-baseline">Set baseline (snapshot plan)</button>
+          <button data-action="clear-baseline">Clear baseline</button>
+        </div>
+      </div>
+
+      <div class="menu" data-menu="view">
+        <button class="menu-title">View</button>
+        <div class="menu-drop">
+          <button data-action="zoom-day">Zoom: day <kbd>1</kbd></button>
+          <button data-action="zoom-week">Zoom: week <kbd>2</kbd></button>
+          <button data-action="zoom-month">Zoom: month <kbd>3</kbd></button>
+          <hr>
+          <button data-action="toggle-critical">Critical path <kbd>C</kbd></button>
+          <button data-action="scurve">S-curve…</button>
+          <button data-action="goto-today">Go to today <kbd>T</kbd></button>
+          <hr>
+          <button data-action="toggle-theme">Dark mode <kbd>D</kbd></button>
+        </div>
+      </div>
+
+      <div class="menu" data-menu="help">
+        <button class="menu-title">Help</button>
+        <div class="menu-drop">
+          <button data-action="shortcuts">Keyboard shortcuts</button>
+          <button data-action="about">About Perth</button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Caixa de caminho estilo Pluto: onde o projeto é espelhado no disco -->
+    <form class="filebox" id="filebox" autocomplete="off">
+      <span class="fb-label" title="Mirror the project to a .perth.jl file on every save">save&nbsp;to</span>
+      <div class="fb-wrap">
+        <input type="text" id="save-path" spellcheck="false"
+               placeholder="~/path/to/project.perth.jl"
+               list="path-completions" aria-label="Save project to a file on disk">
+        <datalist id="path-completions"></datalist>
+        <button type="button" id="fb-browse" class="icon-btn" title="Browse folders" aria-label="Browse folders" aria-expanded="false">
+          <svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        </button>
+        <!-- Navegador de pastas servido pelo backend (o navegador web não
+             expõe caminhos reais do diálogo nativo; mesmo desenho do Pluto) -->
+        <div class="fb-panel" id="fb-panel" hidden>
+          <div class="fb-places" id="fb-places"></div>
+          <div class="fb-cwd">
+            <button type="button" id="fb-up" class="icon-btn" title="Parent folder" aria-label="Parent folder">
+              <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <span class="fb-cwd-path" id="fb-cwd-path" title=""></span>
+          </div>
+          <div class="fb-dirs" id="fb-dirs"></div>
+          <div class="fb-actions">
+            <span class="fb-hint" id="fb-hint"></span>
+            <button type="button" id="fb-choose" class="primary">Save in this folder</button>
+          </div>
+        </div>
+      </div>
+      <button type="submit" id="save-path-btn" class="primary" hidden>Save</button>
+    </form>
+
+    <div class="mb-right">
+      <div class="peers" id="peers" title="connected machines"></div>
+      <span class="mb-sep"></span>
+      <span class="conn" id="conn"><span class="conn-dot"></span><span id="conn-label">connecting…</span></span>
+      <span class="mb-sep"></span>
+      <div class="menu settings-menu">
+        <button class="menu-title icon-btn" title="Interface settings" aria-label="Interface settings">
+          <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><circle cx="16" cy="6" r="2.2" fill="currentColor"/><circle cx="8" cy="12" r="2.2" fill="currentColor"/><circle cx="16" cy="18" r="2.2" fill="currentColor"/></svg>
+        </button>
+        <div class="menu-drop settings-panel" id="settings-panel">
+          <div class="sp-row">
+            <span class="sp-label">Density</span>
+            <div class="seg" id="set-density">
+              <button data-density="cozy" class="active">Cozy</button>
+              <button data-density="compact">Compact</button>
+            </div>
+          </div>
+          <div class="sp-row col">
+            <label for="set-tablew" class="sp-label">Task panel width</label>
+            <input type="range" id="set-tablew" min="260" max="560" step="10" value="410">
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Weekend shading</span>
+            <button class="toggle" id="set-weekends" aria-pressed="true" aria-label="Weekend shading"></button>
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Bar labels</span>
+            <button class="toggle" id="set-labels" aria-pressed="true" aria-label="Bar labels"></button>
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Baseline bars</span>
+            <button class="toggle" id="set-baseline" aria-pressed="true" aria-label="Baseline bars"></button>
+          </div>
+          <div class="sp-row">
+            <span class="sp-label">Language</span>
+            <select id="lang-select"></select>
+          </div>
+        </div>
+      </div>
+      <span class="mb-sep"></span>
+      <button class="switch" id="theme-switch" title="Toggle dark mode (D)" aria-label="Toggle dark mode">
+        <span class="knob">
+          <svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <svg class="moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        </span>
+      </button>
+      <button class="icon-btn" id="app-switch" title="Open Kanban" aria-label="Open Kanban">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.2"/><rect x="10" y="4" width="5" height="10" rx="1.2"/><rect x="17" y="4" width="5" height="13" rx="1.2"/></svg>
+      </button>
+      <span class="mb-sep"></span>
+      <a class="icon-btn" id="gh-link" href="https://github.com/dantebertuzzi/Perth.jl" target="_blank" rel="noopener" title="Source on GitHub">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <button id="btn-new-task" class="primary">+ Task</button>
+    <select id="highlight-select" title="Highlight tasks by assignee, status or type"></select>
+    <span class="spacer"></span>
+    <div class="zoom-group" role="group" aria-label="Zoom">
+      <button data-zoom="day">Day</button>
+      <button data-zoom="week" class="active">Week</button>
+      <button data-zoom="month">Month</button>
+    </div>
+    <button id="btn-today" title="Center on today">Today</button>
+  </div>
+
+  <!-- Main area: task table + timeline -->
+  <main class="gantt" id="gantt">
+    <aside class="task-table">
+      <div class="tt-head">
+        <span class="c-name">task</span>
+        <span class="c-date">start</span>
+        <span class="c-num">dur</span>
+        <span class="c-num">%</span>
+      </div>
+      <div class="tt-body" id="task-rows"></div>
+    </aside>
+
+    <section class="timeline" id="timeline">
+      <div class="tl-head" id="tl-head">
+        <div class="tl-months" id="tl-months"></div>
+        <div class="tl-days" id="tl-days"></div>
+      </div>
+      <div class="tl-body" id="tl-body">
+        <svg id="chart" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </section>
+  </main>
+
+  <!-- Status bar -->
+  <footer class="statusbar">
+    <span id="status-left">—</span>
+    <div class="progress-wrap" id="progress-wrap" title="Project completion">
+      <div class="progress-fill" id="progress-fill"></div>
+      <span class="progress-pct" id="progress-pct">0%</span>
+    </div>
+    <span class="spacer"></span>
+    <span id="status-save"></span>
+  </footer>
+
+  <!-- Home screen: welcome dashboard -->
+  <div class="welcome-backdrop" id="welcome" hidden>
+    <div class="welcome" role="dialog" aria-labelledby="w-title">
+      <img src="/logo.png" alt="Perth" class="w-logo">
+      <h1 class="w-title" id="w-title">PERTH</h1>
+      <p class="w-tagline">project schedules, from the REPL to the browser</p>
+
+      <div class="w-actions">
+        <button data-action="new-project"><span class="w-ico">+</span> New project <kbd>n</kbd></button>
+        <button data-action="import"><span class="w-ico">↑</span> Import saved project <kbd>i</kbd></button>
+        <button data-action="close-welcome" id="w-continue"><span class="w-ico">→</span> Continue where I left off <kbd>esc</kbd></button>
+      </div>
+
+      <div class="w-recent" id="w-recent-wrap" hidden>
+        <p class="w-recent-title">recent</p>
+        <div id="w-recent"></div>
+      </div>
+
+      <p class="w-foot"><span class="j">julia&gt;</span> Perth.run()</p>
+    </div>
+  </div>
+
+  <!-- Task edit modal -->
+  <div class="modal-backdrop" id="modal" hidden>
+    <div class="modal" role="dialog" aria-labelledby="modal-title">
+      <h2 id="modal-title">Task</h2>
+      <div class="form-grid">
+        <label>Name
+          <input type="text" id="f-name" autocomplete="off">
+        </label>
+        <label>Assignee
+          <input type="text" id="f-assignee" autocomplete="off">
+        </label>
+        <label>Parent (WBS)
+          <select id="f-parent"></select>
+        </label>
+        <label>Start
+          <input type="date" id="f-start">
+        </label>
+        <label>Duration (days)
+          <input type="number" id="f-duration" min="1" step="1">
+        </label>
+        <label>Progress (%)
+          <input type="number" id="f-progress" min="0" max="100" step="5">
+        </label>
+        <label>Cost
+          <input type="number" id="f-cost" min="0" step="1">
+        </label>
+        <label>Color
+          <select id="f-color">
+            <option value="">Automatic</option>
+            <option value="#9558b2">Julia purple</option>
+            <option value="#389826">Julia green</option>
+            <option value="#cb3c33">Julia red</option>
+            <option value="#4063d8">Julia blue</option>
+            <option value="#b58900">Amber</option>
+          </select>
+        </label>
+        <label class="wide checkbox">
+          <input type="checkbox" id="f-milestone"> Milestone
+        </label>
+        <p class="wide summary-hint" id="f-summary-hint" hidden>
+          Summary task: start, duration and progress roll up from its subtasks.
+        </p>
+        <label class="wide">Depends on
+          <div id="f-deps" class="deps-list"></div>
+        </label>
+        <label class="wide">Notes
+          <textarea id="f-notes" rows="3"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button id="modal-delete" class="danger">Delete</button>
+        <span class="spacer"></span>
+        <button id="modal-cancel">Cancel</button>
+        <button id="modal-save" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="import-file" accept=".jl,.json" hidden>
+
+  <div id="cursors"></div>
+
+  <script src="/shared/i18n.js"></script>
+  <script src="/shared/presence.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

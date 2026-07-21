@@ -1,0 +1,25 @@
+name: Frontend
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: syntax + DOM tests (jsdom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: |
+          node --check frontend/app.js
+          node --check frontend/kanban/app.js
+          node --check frontend/shared/presence.js
+          node --check frontend/shared/i18n.js
+          node --check frontend/shared/sw.js
+      - run: npm install --no-save jsdom
+        working-directory: test/frontend
+      - run: node run.js
+        working-directory: test/frontend

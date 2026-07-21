@@ -1,0 +1,270 @@
+/* Perth · chrome compartilhado (menubar, ícones, presença, cursores).
+ * Fonte ÚNICA de verdade visual para Perth gantt e Perth kanban:
+ * cada página define suas variáveis (--panel, --line, ...) e este arquivo
+ * garante que menubar, tipografia da barra, ícones e cursores remotos
+ * sejam estritamente idênticos nas duas ferramentas.
+ * O visual canônico é o da menubar do kanban: monospace, 36px, ícones 16px.
+ */
+
+/* ---------- barra de menus ---------- */
+
+.menubar {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  height: 36px;
+  flex: none;
+  /* tipografia da menubar: monospace como voz, igual ao kanban */
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.brand-logo { height: 16px; width: auto; }
+a.brand { color: inherit; text-decoration: none; }
+a.brand:hover { color: var(--purple); }
+.dots { display: inline-flex; gap: 3px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; }
+.dot.r { background: var(--red); }
+.dot.g { background: var(--green); }
+.dot.p { background: var(--purple); }
+
+.menus { display: flex; align-items: stretch; }
+.menu { position: relative; display: flex; }
+.menu-title {
+  border-radius: 0;
+  color: var(--muted);
+  padding: 0 12px;
+}
+.menu-title:hover { color: var(--ink); }
+.menu.open .menu-title { background: var(--line-soft); color: var(--ink); }
+.menu-drop {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 250px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  padding: 4px;
+  box-shadow: 0 14px 34px rgba(61, 58, 69, 0.14);
+  z-index: 50;
+}
+:root[data-theme="dark"] .menu-drop { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); }
+.menu.open .menu-drop { display: block; }
+.menu-drop button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+}
+.menu-drop hr { border: none; border-top: 1px solid var(--line-soft); margin: 4px 6px; }
+
+/* ---------- lado direito da menubar ---------- */
+
+.mb-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding: 0 12px;
+}
+.mb-sep { width: 1px; height: 16px; background: var(--line); }
+
+/* Dropdowns do lado direito ancoram à direita — senão vazam da janela */
+.mb-right .menu-drop { left: auto; right: 0; }
+
+/* Chip do contexto ativo, logo após a marca: o board no kanban, o
+ * projeto no gantt — mesmo conceito, mesmo lugar, mesmo visual. */
+.board-chip {
+  align-self: center;
+  margin-left: -6px;
+  margin-right: 4px;
+  padding: 1px 9px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--purple);
+  background: var(--sel);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.board-chip:hover { border-color: var(--purple); background: transparent; }
+select.board-chip {         /* o chip do gantt é um <select> */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  font: inherit;
+  font-size: 11px;
+  max-width: 230px;
+  text-overflow: ellipsis;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.icon-btn:hover { color: var(--ink); background: var(--line-soft); }
+.icon-btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* Switch de tema com knob deslizante (posição dirigida por data-theme) */
+.switch {
+  position: relative;
+  width: 40px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  padding: 0;
+  flex: none;
+}
+.switch:hover { background: var(--line); filter: brightness(0.97); }
+.switch .knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.18s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+:root[data-theme="dark"] .switch .knob { transform: translateX(20px); }
+.knob svg { width: 11px; height: 11px; fill: var(--muted); }
+.knob .moon { display: none; }
+:root[data-theme="dark"] .knob .sun { display: none; }
+:root[data-theme="dark"] .knob .moon { display: block; }
+
+/* ---------- presença na menubar: um chip por máquina conectada ---------- */
+
+.peers { display: flex; align-items: center; }
+.peer-chip {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  border: 2px solid var(--panel);
+  margin-left: -6px;
+  cursor: default;
+}
+.peer-chip:first-child { margin-left: 0; }
+.peer-chip.me { box-shadow: 0 0 0 1.5px var(--ink); }
+
+.conn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+.conn.live .conn-dot { background: var(--green); }
+
+/* ---------- camada de cursores remotos ---------- */
+
+#cursors {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 150;
+  overflow: hidden;
+}
+.cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transition: transform 90ms linear;
+  will-change: transform;
+}
+.cursor svg { display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35)); }
+.cursor-label {
+  margin: 2px 0 0 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--peer, var(--blue));
+  border-radius: 4px;
+  padding: 1.5px 7px;
+  white-space: nowrap;
+  width: max-content;
+}
+.cursor-ip { font-weight: 400; opacity: 0.8; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor { transition: none; }
+}
+
+/* ---------- seletor de idioma (nos painéis de configurações) ---------- */
+
+#lang-select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+#lang-select:focus-visible { outline: 2px solid var(--purple); outline-offset: 1px; }
+.settings-lang { margin-top: 12px; }
+.settings-lang label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.settings-lang select { width: 100%; }
+
+/* ---------- log de atividades / curva S / métricas ---------- */
+
+.activity-list { max-height: 50vh; overflow-y: auto; font-family: var(--mono); font-size: 12px; }
+.activity-row { display: flex; gap: 10px; padding: 4px 2px; border-bottom: 1px solid var(--line-soft); }
+.act-at { color: var(--muted); flex: none; }
+.act-by { color: var(--purple); flex: none; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+.act-text { flex: 1; min-width: 0; }
+
+.scurve { width: 100%; height: auto; display: block; }
+.sc-planned { fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 5 4; }
+.sc-actual { fill: none; stroke: var(--purple); stroke-width: 2; }
+.sc-today { stroke: var(--line); stroke-width: 1; }
+.sc-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px;
+             font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+.sc-key::before { content: "—"; margin-right: 5px; font-weight: 700; }
+.sc-key.planned::before { color: var(--muted); }
+.sc-key.actual::before { color: var(--purple); }
+
+.metric-row { display: flex; justify-content: space-between; gap: 16px;
+              padding: 6px 2px; font-family: var(--mono); font-size: 12.5px;
+              border-bottom: 1px solid var(--line-soft); }
+.metric-row b { color: var(--purple); }
+
+.dep-lag { width: 52px; margin-left: auto; font-family: var(--mono); font-size: 11px; padding: 1px 4px; }
+.deps-list label { display: flex; align-items: center; gap: 6px; }
