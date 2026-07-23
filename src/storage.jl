@@ -109,9 +109,20 @@ function _init_state!(data_dir::AbstractString)
     _load_activity!(st)
     for f in readdir(data_dir; join = true)
         endswith(f, ".json") || continue
-        basename(f) == "settings.json" && continue
+        bn = basename(f)
+        bn == "settings.json" && continue
+        # Boards do kanban (kanban.json / kanban-<board>.json) moram no mesmo
+        # diretório e NÃO são projetos: sem este guard, JSON3 + Mutable()
+        # os aceitaria silenciosamente como Project vazio (name = "",
+        # id aleatório novo a cada boot) — projetos fantasmas no dropdown.
+        startswith(bn, "kanban") && continue
         try
-            p = JSON3.read(read(f, String), Project)
+            raw = read(f, String)
+            # Projeto legítimo tem "id" e "tasks"; qualquer outro JSON que
+            # venha a morar no diretório de dados é ignorado de forma segura.
+            j = JSON3.read(raw)
+            (haskey(j, :id) && haskey(j, :tasks)) || continue
+            p = JSON3.read(raw, Project)
             st.projects[p.id] = p
         catch err
             @warn "Perth: ignoring unreadable project file" file = f error = err
