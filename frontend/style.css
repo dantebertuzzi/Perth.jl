@@ -566,7 +566,7 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   box-shadow: 0 24px 60px rgba(61, 58, 69, .18);
 }
 .modal h2 { margin: 0 0 16px; font-size: 15px; font-family: var(--mono); letter-spacing: .04em; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; min-width: 0; }
 .form-grid label {
   display: flex;
   flex-direction: column;
@@ -574,6 +574,24 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   font-size: 12px;
   color: var(--muted);
 }
+/* itens de grid tem min-width:auto: sem isto, um <select> com opcoes
+   longas (WBS) estica a coluna e o modal inteiro estoura pela borda. */
+.form-grid > label { min-width: 0; }
+/* Nunca deixar um campo ficar mais largo que a propria coluna.
+   Escopo estrito: ">" so pega os campos do proprio grid (nao os que estao
+   dentro da .deps-list) e :not(checkbox) preserva os quadradinhos. */
+.form-grid > label > input:not([type="checkbox"]),
+.form-grid > label > select,
+.form-grid > label > textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+/* o handle de resize so na vertical: arrastar na horizontal gravava um
+   style="width:653px" inline que vazava para fora do modal. */
+.form-grid > label > textarea { resize: vertical; }
+/* texto longo de opcao nao alarga o select fechado */
+.form-grid > label > select { text-overflow: ellipsis; }
 .form-grid label.wide { grid-column: 1 / -1; }
 .form-grid label.checkbox {
   flex-direction: row;
@@ -587,7 +605,8 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   flex-direction: column;
   gap: 4px;
   max-height: 130px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 6px 8px;
@@ -599,7 +618,15 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   gap: 8px;
   color: var(--ink);
   font-size: 13px;
+  min-width: 0;
+  /* nome de tarefa sem espacos (uma palavra so, muito longa) nao tem onde
+     quebrar: "anywhere" reduz o min-content e deixa o texto encolher em vez
+     de empurrar o campo de lag para fora da lista. */
+  overflow-wrap: anywhere;
 }
+.deps-list label > input[type="checkbox"] { flex: 0 0 auto; }
+/* o campo de lag fica ancorado a direita e nao e empurrado pelo texto */
+.deps-list .dep-lag { flex: 0 0 56px; width: 56px; margin-left: auto; }
 .deps-list .none { color: var(--muted); font-size: 12px; }
 .modal-actions { display: flex; gap: 8px; margin-top: 18px; }
 
