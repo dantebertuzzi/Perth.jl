@@ -7,3 +7,6 @@ Manifest.toml
 *.jl.*.cov
 *.jl.mem
 .vscode/
+
+# Scratch local
+/dev_splash.jl

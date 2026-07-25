@@ -42,44 +42,61 @@ If `port` is busy, the next free port is used (up to 20 attempts).
     knows the port can edit the projects. Never expose the port to the
     internet.
 """
+
 function run(; port::Integer = 8123, open_browser::Bool = true,
              data_dir::Union{Nothing,AbstractString} = nothing,
              share::Bool = false,
              host::Union{Nothing,AbstractString} = nothing,
-             key::AbstractString = "")
+             key::AbstractString = "",
+             banner::Bool = true)
     if SERVER[] !== nothing
         @info "Perth already running — use Perth.stop() first."
         return _url()
     end
-    GANTT_KEY[] = String(key)
-    data_dir === nothing || _init_state!(data_dir)
-    _state()  # garante estado carregado antes de aceitar requisições
 
-    router = _build_router()
+    banner && splash(; version = string(pkgversion(@__MODULE__)))
+
+    GANTT_KEY[] = String(key)
     bindhost = something(host, share ? "0.0.0.0" : "127.0.0.1")
     addr = parse(Sockets.IPAddr, String(bindhost))
-    server, chosen = _serve_with_fallback(router, addr, port)
+
+    nproj = _step(stdout, "Loading projects") do
+        data_dir === nothing || _init_state!(data_dir)
+        _state()                      # garante estado carregado
+        length(projects())
+    end
+
+    server, chosen = _step(stdout, "Starting HTTP server") do
+        _quiet() do                   # engole os @info do HTTP.jl
+            _serve_with_fallback(_build_router(), addr, port)
+        end
+    end
     SERVER[] = server
     PORT[] = chosen
     GANTT_SHARED[] = addr == Sockets.IPv4(0)
 
-    # Mudança de dados (REPL, API, outra máquina) -> aviso "rev" imediato
-    # aos clientes conectados; assíncrono para nunca segurar o lock do estado
-    _ON_REV[] = rev -> @async _hub_broadcast(GANTT_HUB,
-        JSON3.write(Dict("type" => "rev", "rev" => rev)))
+    _step(stdout, "Wiring live updates") do
+        # Mudança de dados (REPL, API, outra máquina) -> aviso "rev" imediato
+        # aos clientes conectados; assíncrono para nunca segurar o lock do estado
+        _ON_REV[] = rev -> @async _hub_broadcast(GANTT_HUB,
+            JSON3.write(Dict("type" => "rev", "rev" => rev)))
 
-    # Heartbeat: mantém intermediários acordados e permite ao cliente
-    # detectar conexão morta (mesmo período do kanban)
-    GANTT_TIMER[] = Timer(30.0; interval = 30.0) do _
-        try
-            _hub_broadcast(GANTT_HUB, "{\"type\":\"hb\"}")
-        catch
+        # Heartbeat: mantém intermediários acordados e permite ao cliente
+        # detectar conexão morta (mesmo período do kanban)
+        GANTT_TIMER[] = Timer(30.0; interval = 30.0) do _
+            try
+                _hub_broadcast(GANTT_HUB, "{\"type\":\"hb\"}")
+            catch
+            end
         end
     end
 
-    url = _url()
-    printstyled("\n  Perth "; color = :magenta, bold = true)
-    println("running at $url")
+    # ── painel final: links de LAN, avisos e QR viram argumentos do `ready` ──
+    url   = _url()
+    net   = String[]
+    notes = String[]
+    qr    = nothing
+
     if GANTT_SHARED[]
         lan = try
             filter(a -> a isa Sockets.IPv4, Sockets.getipaddrs())
@@ -87,25 +104,29 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
             Sockets.IPv4[]
         end
         for a in lan
-            println("  on your network:  http://$(a):$(chosen)$(_gantt_key_suffix())  ← share this link")
+            push!(net, "http://$(a):$(chosen)$(_gantt_key_suffix())")
         end
-        if !isempty(lan)
-            m = _qr_matrix("http://$(first(lan)):$(chosen)" * _gantt_key_suffix())
+        if !isempty(net)
+            m = _qr_matrix(first(net))   # mesmo texto do link impresso
             if m === nothing
-                println("  (tip: run `using QRCoders` before Perth.run() to print a QR code here)")
+                push!(notes, "tip: `using QRCoders` before Perth.run() prints a QR code here")
             else
-                println()
-                _print_qr(stdout, m)
+                qr = io -> (println(io); _print_qr(io, m))
             end
         end
-        if isempty(GANTT_KEY[])
-            println("  Anyone on the network can edit the projects — pass key = \"...\" to require an access key.")
-        else
-            println("  Access requires the key (already embedded in the links above).")
-        end
-        println("  Do not expose this port to the internet.")
+        push!(notes, isempty(GANTT_KEY[]) ?
+            "Anyone on the network can edit the projects — pass key = \"…\" to require an access key." :
+            "Access requires the key (already embedded in the links above).")
+        push!(notes, "Do not expose this port to the internet.")
     end
-    println("  Projects at $(_state().data_dir) — Perth.stop() to shut down.\n")
+
+    _ready(; url = url,
+            projects = nproj,
+            dir = _state().data_dir,
+            network = net,
+            notes = notes,
+            tail = qr)
+
     open_browser && _open_browser(url * _gantt_key_suffix())
     return url
 end

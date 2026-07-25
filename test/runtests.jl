@@ -1,5 +1,6 @@
 using Test
 using Dates
+using Logging          # ← acrescente (para NullLogger / with_logger)
 using Perth
 import JSON3
 
@@ -674,5 +675,7 @@ Perth._init_state!(tmp)
         @test Perth._dur_between(Perth.CalendarDays(),
                                  Date(2026, 8, 3), Date(2026, 8, 12)) == 10
     end
+
+    include("splash.jl")
 
 end
