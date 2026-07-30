@@ -1,6 +1,6 @@
 name = "Perth"
 uuid = "b3f8c2a1-4e6d-4f9a-8c7b-2d5e9f1a3c4b"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Dante Bertuzzi <dantesbertuzzi@gmail.com>"]
 
 [deps]
