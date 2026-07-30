@@ -649,6 +649,13 @@ kbd {
   text-align: left;
 }
 .chat-msg.mine .chat-text { background: var(--sel); }
+.chat-typing {
+  flex: none;
+  padding: 3px 12px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+}
 .chat-form {
   display: flex;
   align-items: flex-end;

@@ -951,6 +951,11 @@ function _kanban_ws(ws::HTTP.WebSockets.WebSocket, ip::String, keyok::Bool = tru
                 ok || HTTP.WebSockets.send(ws, _kanban_init_payload(st, me))
             elseif t == "chat"
                 _kanban_chat_commit!(String(get(msg, "text", "")); actor = me.ip)
+            elseif t == "typing"
+                # sinal efêmero, não persiste: cada cliente expira sozinho
+                # quem estava digitando se ninguém reenviar em alguns segundos
+                _kanban_broadcast(JSON3.write(Dict("type" => "typing",
+                                                   "from" => me.id)); except = me.id)
             elseif t == "presence"
                 _kanban_broadcast(JSON3.write(Dict(
                     "type" => "presence", "from" => me.id,

@@ -171,6 +171,7 @@ function handleMessage(msg) {
     }
     case "leave": {
       state.peers.delete(msg.id);
+      clearTyping(msg.id);
       renderPeers();
       renderCursors();
       render();          // remove marcações de hold/edição do peer
@@ -198,9 +199,14 @@ function handleMessage(msg) {
       if (hadHold !== hasHold || hasHold) renderHolds();
       break;
     }
+    case "typing": {
+      if (state.chatOpen) markTyping(msg.from);
+      break;
+    }
     case "chat": {
       state.chat.push(msg.entry);
       state.chat.length > 500 && state.chat.shift();
+      clearTypingByIp(msg.entry.ip);
       const mine = state.me && msg.entry.ip === state.me.ip;
       if (state.chatOpen) {
         appendChatMsg(msg.entry);
@@ -1682,7 +1688,46 @@ const chatPanel = $("#chat-panel");
 const chatLogEl = $("#chat-log");
 const chatBadgeEl = $("#chat-badge");
 const chatInput = $("#chat-input");
+const chatTypingEl = $("#chat-typing");
 let chatUnseen = 0;
+
+// "alguém está digitando": sinal efêmero (não entra no histórico). Cada
+// peer some da lista sozinho se não reenviar em TYPING_TTL — sem
+// "parei de digitar" explícito, mais simples e tolerante a desconexão.
+const TYPING_TTL = 4000;
+const typingPeers = new Map();   // peer id -> timeout handle
+let lastTypingSent = 0;
+
+function renderTyping() {
+  const names = [...typingPeers.keys()]
+    .map((id) => state.peers.get(id))
+    .filter(Boolean)
+    .map(peerLabel);
+  chatTypingEl.hidden = !names.length;
+  chatTypingEl.textContent = names.length === 0 ? "" :
+    names.length === 1 ? `${names[0]} is typing…` :
+    `${names.length} people are typing…`;
+}
+
+function markTyping(peerId) {
+  if (typingPeers.has(peerId)) clearTimeout(typingPeers.get(peerId));
+  typingPeers.set(peerId, setTimeout(() => {
+    typingPeers.delete(peerId);
+    renderTyping();
+  }, TYPING_TTL));
+  renderTyping();
+}
+
+function clearTyping(peerId) {
+  if (!typingPeers.has(peerId)) return;
+  clearTimeout(typingPeers.get(peerId));
+  typingPeers.delete(peerId);
+  renderTyping();
+}
+
+function clearTypingByIp(ip) {
+  for (const [id, p] of state.peers) if (p.ip === ip) clearTyping(id);
+}
 
 function updateChatBadge() {
   chatBadgeEl.hidden = chatUnseen === 0;
@@ -1742,6 +1787,8 @@ function closeChat() {
   state.chatOpen = false;
   document.body.classList.remove("chat-open");
   chatPanel.hidden = true;
+  for (const id of typingPeers.keys()) clearTimeout(typingPeers.get(id));
+  typingPeers.clear();
 }
 
 function submitChat() {
@@ -1750,6 +1797,7 @@ function submitChat() {
   send({ type: "chat", text: v });
   chatInput.value = "";
   chatInput.style.height = "";
+  lastTypingSent = 0;   // próxima letra já reavisa, sem esperar o throttle
 }
 
 $("#chat-toggle").addEventListener("click", () =>
@@ -1762,6 +1810,11 @@ $("#chat-form").addEventListener("submit", (e) => {
 chatInput.addEventListener("input", () => {
   chatInput.style.height = "auto";
   chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+  const now = Date.now();
+  if (chatInput.value.trim() && now - lastTypingSent > 2000) {
+    lastTypingSent = now;
+    send({ type: "typing" });
+  }
 });
 chatInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
