@@ -32,6 +32,8 @@ mutable struct KanbanState
     lock::ReentrantLock
     log::Vector{Any}                  # últimos eventos (cap em memória)
     logfile::String                   # kanban[-<board>]-log.jsonl, append-only
+    chat::Vector{Any}                 # últimas mensagens do chat (cap em memória)
+    chatfile::String                  # kanban[-<board>]-chat.jsonl, append-only
     name::String                      # board ativo ("board" é o default)
     data_dir::String
 end
@@ -46,6 +48,8 @@ const _HB_TICKS = Ref{Int}(0)
 const _KANBAN_PEER_COLORS = Dict{String,Int}()   # IP -> cor estável na sessão
 const _KANBAN_LOG_CAP = 500                   # eventos em memória
 const _KANBAN_LOG_KEEP = 2000                 # linhas mantidas no .jsonl ao subir
+const _KANBAN_CHAT_CAP = 300                  # mensagens em memória
+const _KANBAN_CHAT_KEEP = 2000                # linhas mantidas no .jsonl ao subir
 
 _default_kanban_board() = Dict{String,Any}(
     "columns" => Any[
@@ -67,13 +71,37 @@ function _slugify(name::AbstractString)
 end
 
 _board_paths(dir::AbstractString, name::AbstractString) = name == "board" ?
-    (joinpath(dir, "kanban.json"), joinpath(dir, "kanban-log.jsonl")) :
-    (joinpath(dir, "kanban-$(name).json"), joinpath(dir, "kanban-$(name)-log.jsonl"))
+    (joinpath(dir, "kanban.json"), joinpath(dir, "kanban-log.jsonl"),
+     joinpath(dir, "kanban-chat.jsonl")) :
+    (joinpath(dir, "kanban-$(name).json"), joinpath(dir, "kanban-$(name)-log.jsonl"),
+     joinpath(dir, "kanban-$(name)-chat.jsonl"))
 
-# Carrega board + log de um nome; rotaciona o .jsonl para as últimas
-# _KANBAN_LOG_KEEP linhas (append-only cresceria para sempre)
+# Carrega um .jsonl append-only, rotacionando-o em disco para as últimas
+# `keep` linhas (cresceria para sempre) e devolvendo só as últimas `cap`
+# em memória. Usado pelo log de atividades e pelo chat — mesmo formato.
+function _load_capped_jsonl(path::AbstractString, cap::Int, keep::Int)
+    items = Any[]
+    isfile(path) || return items
+    try
+        lines = filter(l -> !isempty(strip(l)), readlines(path))
+        if length(lines) > keep
+            lines = lines[end - keep + 1:end]
+            tmp = path * ".tmp"
+            open(io -> foreach(l -> println(io, l), lines), tmp, "w")
+            mv(tmp, path; force = true)
+        end
+        for line in lines[max(1, end - cap + 1):end]
+            push!(items, _plain(JSON3.read(line)))
+        end
+    catch err
+        @warn "Perth kanban: ignoring unreadable file" path error = err
+    end
+    return items
+end
+
+# Carrega board + log + chat de um nome
 function _load_board_files(dir::AbstractString, name::AbstractString)
-    file, logfile = _board_paths(dir, name)
+    file, logfile, chatfile = _board_paths(dir, name)
     board = if isfile(file)
         try
             b = _plain(JSON3.read(read(file, String)))
@@ -86,32 +114,18 @@ function _load_board_files(dir::AbstractString, name::AbstractString)
     else
         _default_kanban_board()
     end
-    log = Any[]
-    if isfile(logfile)
-        try
-            lines = filter(l -> !isempty(strip(l)), readlines(logfile))
-            if length(lines) > _KANBAN_LOG_KEEP
-                lines = lines[end - _KANBAN_LOG_KEEP + 1:end]
-                tmp = logfile * ".tmp"
-                open(io -> foreach(l -> println(io, l), lines), tmp, "w")
-                mv(tmp, logfile; force = true)
-            end
-            for line in lines[max(1, end - _KANBAN_LOG_CAP + 1):end]
-                push!(log, _plain(JSON3.read(line)))
-            end
-        catch err
-            @warn "Perth kanban: ignoring unreadable activity log" logfile error = err
-        end
-    end
-    return board, log, file, logfile
+    log = _load_capped_jsonl(logfile, _KANBAN_LOG_CAP, _KANBAN_LOG_KEEP)
+    chat = _load_capped_jsonl(chatfile, _KANBAN_CHAT_CAP, _KANBAN_CHAT_KEEP)
+    return board, log, chat, file, logfile, chatfile
 end
 
 function _init_kanban!(data_dir::AbstractString; name::AbstractString = "board")
     mkpath(data_dir)
     slug = _slugify(name)
-    board, log, file, logfile = _load_board_files(data_dir, slug)
+    board, log, chat, file, logfile, chatfile = _load_board_files(data_dir, slug)
     KANBAN[] = KanbanState(board, 0, file, Dict{Int,KanbanClient}(), 0,
-                           ReentrantLock(), log, logfile, slug, String(data_dir))
+                           ReentrantLock(), log, logfile, chat, chatfile,
+                           slug, String(data_dir))
     return KANBAN[]
 end
 
@@ -124,12 +138,14 @@ function _kanban_use_board!(name::AbstractString)
     changed = lock(st.lock) do
         slug == st.name && return false
         _kanban_persist(st)
-        board, log, file, logfile = _load_board_files(st.data_dir, slug)
+        board, log, chat, file, logfile, chatfile = _load_board_files(st.data_dir, slug)
         st.board = board
         st.rev = 0
         st.file = file
         st.logfile = logfile
         st.log = log
+        st.chatfile = chatfile
+        st.chat = chat
         st.name = slug
         true
     end
@@ -429,14 +445,14 @@ function _kanban_describe(st::KanbanState, op)
     return "", false
 end
 
-function _kanban_log_append(st::KanbanState, entry)
+function _kanban_log_append(path::AbstractString, entry)
     try
-        open(st.logfile, "a") do io
+        open(path, "a") do io
             JSON3.write(io, entry)
             print(io, '\n')
         end
     catch err
-        @warn "Perth kanban: could not persist activity log" error = err
+        @warn "Perth kanban: could not persist" path error = err
     end
 end
 
@@ -570,7 +586,7 @@ function _kanban_commit!(op; from::Int = -1, actor::AbstractString = "repl",
                     "notify" => notify)
                 push!(st.log, entry)
                 length(st.log) > _KANBAN_LOG_CAP && popfirst!(st.log)
-                _kanban_log_append(st, entry)
+                _kanban_log_append(st.logfile, entry)
             end
         end
         changed
@@ -583,6 +599,24 @@ function _kanban_commit!(op; from::Int = -1, actor::AbstractString = "repl",
         linked === nothing || _apply_card_sync(linked...)
     end
     return ok
+end
+
+# Chat é um canal à parte do board (sem lock de op, sem undo/redo, sem
+# entrar no log de atividades): só uma lista append-only, persistida e
+# rebroadcast. WS e REPL passam por aqui, como em _kanban_commit!.
+function _kanban_chat_commit!(text::AbstractString; actor::AbstractString = "repl")
+    text = strip(String(text))
+    isempty(text) && return false
+    length(text) > 2000 && (text = first(text, 2000))
+    st = _kanban_state()
+    entry = Dict{String,Any}("at" => _kanban_now(), "ip" => String(actor), "text" => text)
+    lock(st.lock) do
+        push!(st.chat, entry)
+        length(st.chat) > _KANBAN_CHAT_CAP && popfirst!(st.chat)
+    end
+    _kanban_log_append(st.chatfile, entry)
+    _kanban_broadcast(JSON3.write(Dict{String,Any}("type" => "chat", "entry" => entry)))
+    return true
 end
 
 # ---------------------------------------------------------------------------
@@ -812,6 +846,24 @@ kanban_log(; limit::Integer = 50) = _with_kanban(st ->
      for e in reverse(st.log[max(1, end - limit + 1):end])])
 
 """
+    kanban_chat!(text) -> Bool
+
+Post a message to the shared kanban chat — visible live on every
+connected browser, under actor `"repl"`, same as other REPL mutations.
+"""
+kanban_chat!(text::AbstractString) = _kanban_chat_commit!(text)
+
+"""
+    kanban_chat_log(; limit = 50) -> Vector{NamedTuple}
+
+Latest messages on the shared kanban chat as `(at, by, text)` rows,
+newest first. Tables.jl-compatible.
+"""
+kanban_chat_log(; limit::Integer = 50) = _with_kanban(st ->
+    [(at = String(e["at"]), by = String(e["ip"]), text = String(e["text"]))
+     for e in reverse(st.chat[max(1, end - limit + 1):end])])
+
+"""
     kanban_aliases() -> Dict{String,String}
 
 Current IP → display-name mapping set by [`kanban_alias!`](@ref).
@@ -833,6 +885,7 @@ function _kanban_init_payload(st::KanbanState, me::KanbanClient)
             "you" => merge(_kanban_peer_payload(me),
                            Dict("host" => _kanban_is_host(me.ip))),
             "log" => st.log[max(1, end - 99):end],
+            "chat" => st.chat[max(1, end - 99):end],
             "board_name" => st.name,
             "peers" => [_kanban_peer_payload(c) for c in values(st.clients)]))
     end
@@ -896,6 +949,8 @@ function _kanban_ws(ws::HTTP.WebSockets.WebSocket, ip::String, keyok::Bool = tru
                 # op inválida (ex.: card já removido por outra máquina):
                 # ressincroniza só este cliente
                 ok || HTTP.WebSockets.send(ws, _kanban_init_payload(st, me))
+            elseif t == "chat"
+                _kanban_chat_commit!(String(get(msg, "text", "")); actor = me.ip)
             elseif t == "presence"
                 _kanban_broadcast(JSON3.write(Dict(
                     "type" => "presence", "from" => me.id,
@@ -979,7 +1034,7 @@ function _kanban_autoarchive_sweep!()
                 "text" => "auto-archived $(moved) done card$(moved == 1 ? "" : "s")")
             push!(st.log, entry)
             length(st.log) > _KANBAN_LOG_CAP && popfirst!(st.log)
-            _kanban_log_append(st, entry)
+            _kanban_log_append(st.logfile, entry)
         end
     end
     entry === nothing || _kanban_broadcast(JSON3.write(Dict{String,Any}(

@@ -39,6 +39,8 @@ const state = {
   pendingBoard: null,       // board recebido durante um arrasto
   filter: "",               // busca ativa (texto/#tag/autor), minúsculas
   log: [],                  // eventos recentes vindos do servidor
+  chat: [],                 // mensagens recentes do chat geral
+  chatOpen: false,          // painel de chat aberto (não-modal, não bloqueia o board)
   openModal: null,          // "archived" | "aliases" | "activity" | "share" | ...
   boardName: "board",       // board ativo (multi-board)
   denied: false,            // servidor recusou por falta de chave
@@ -127,6 +129,8 @@ function handleMessage(msg) {
       for (const p of msg.peers)
         if (p.id !== msg.you.id) state.peers.set(p.id, { ...p, presence: null });
       state.log = msg.log || [];
+      state.chat = msg.chat || [];
+      renderChat();
       acceptBoard(msg.board);
       renderPeers();
       renderStatus();
@@ -192,6 +196,25 @@ function handleMessage(msg) {
       const hasHold = p.presence?.dragging || p.presence?.editing;
       renderCursors();
       if (hadHold !== hasHold || hasHold) renderHolds();
+      break;
+    }
+    case "chat": {
+      state.chat.push(msg.entry);
+      state.chat.length > 500 && state.chat.shift();
+      const mine = state.me && msg.entry.ip === state.me.ip;
+      if (state.chatOpen) {
+        appendChatMsg(msg.entry);
+      } else {
+        chatUnseen += 1;
+        updateChatBadge();
+      }
+      if (!mine) {
+        playAlert();
+        if (document.hidden) {
+          unseen += 1;
+          updateTitle();
+        }
+      }
       break;
     }
   }
@@ -1647,6 +1670,108 @@ function toast(entry) {
   }, 4200);
 }
 
+/* ============================================ chat geral
+ *
+ * Painel flutuante, não-modal: fica aberto enquanto se arrasta e edita
+ * cards, ao contrário do overlay bloqueante de Activity/Archived. Sem
+ * eco otimista — a mensagem só aparece quando o servidor a rebroadcasta
+ * (mesmo canal instantâneo do resto do board, sem lock de op).
+ */
+
+const chatPanel = $("#chat-panel");
+const chatLogEl = $("#chat-log");
+const chatBadgeEl = $("#chat-badge");
+const chatInput = $("#chat-input");
+let chatUnseen = 0;
+
+function updateChatBadge() {
+  chatBadgeEl.hidden = chatUnseen === 0;
+  chatBadgeEl.textContent = chatUnseen > 9 ? "9+" : String(chatUnseen);
+}
+
+function chatMsgEl(e) {
+  const mine = state.me && e.ip === state.me.ip;
+  const row = document.createElement("div");
+  row.className = "chat-msg" + (mine ? " mine" : "");
+  row.style.setProperty("--peer", colorForIp(e.ip));
+  const meta = document.createElement("div");
+  meta.className = "chat-meta";
+  const who = document.createElement("span");
+  who.className = "chat-who";
+  who.textContent = displayFor(e.ip);
+  who.title = e.ip;
+  meta.append(who, " " + e.at);
+  const text = document.createElement("div");
+  text.className = "chat-text";
+  text.textContent = e.text;
+  row.append(meta, text);
+  return row;
+}
+
+function appendChatMsg(e) {
+  const nearBottom = chatLogEl.scrollHeight - chatLogEl.scrollTop -
+                     chatLogEl.clientHeight < 60;
+  chatLogEl.append(chatMsgEl(e));
+  if (nearBottom) chatLogEl.scrollTop = chatLogEl.scrollHeight;
+}
+
+function renderChat() {
+  chatLogEl.textContent = "";
+  if (!state.chat.length) {
+    const p = document.createElement("div");
+    p.className = "empty-note";
+    p.textContent = "No messages yet — say hi.";
+    chatLogEl.append(p);
+  } else {
+    for (const e of state.chat) chatLogEl.append(chatMsgEl(e));
+  }
+  chatLogEl.scrollTop = chatLogEl.scrollHeight;
+}
+
+function openChat() {
+  state.chatOpen = true;
+  document.body.classList.add("chat-open");
+  chatPanel.hidden = false;
+  chatUnseen = 0;
+  updateChatBadge();
+  renderChat();
+  chatInput.focus();
+}
+
+function closeChat() {
+  state.chatOpen = false;
+  document.body.classList.remove("chat-open");
+  chatPanel.hidden = true;
+}
+
+function submitChat() {
+  const v = chatInput.value.trim();
+  if (!v) return;
+  send({ type: "chat", text: v });
+  chatInput.value = "";
+  chatInput.style.height = "";
+}
+
+$("#chat-toggle").addEventListener("click", () =>
+  state.chatOpen ? closeChat() : openChat());
+$("#chat-close").addEventListener("click", closeChat);
+$("#chat-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitChat();
+});
+chatInput.addEventListener("input", () => {
+  chatInput.style.height = "auto";
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+});
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    submitChat();
+  } else if (e.key === "Escape") {
+    closeChat();
+  }
+});
+
 /* ============================================ atividade e share */
 
 function showActivity() {
@@ -2057,6 +2182,7 @@ document.addEventListener("keydown", (e) => {
     $$(".card.selected", boardEl).forEach((c) => c.classList.remove("selected"));
     closeMenus();
     closeModal();
+    if (state.chatOpen) closeChat();
   }
 });
 
