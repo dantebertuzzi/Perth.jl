@@ -160,7 +160,10 @@ select.board-chip {         /* o chip do gantt é um <select> */
 
 /* ---------- presença na menubar: um chip por máquina conectada ---------- */
 
-.peers { display: flex; align-items: center; }
+/* largura determinística: renderPeers() nunca cria mais que
+   PEERS_VISIBLE_MAX chips + 1 "+N" — sem isso, muitos peers conectados
+   empurram o resto da menubar (conn/tema/GitHub) para fora da tela */
+.peers { display: flex; align-items: center; flex: none; }
 .peer-chip {
   width: 22px;
   height: 22px;
@@ -177,6 +180,33 @@ select.board-chip {         /* o chip do gantt é um <select> */
 }
 .peer-chip:first-child { margin-left: 0; }
 .peer-chip.me { box-shadow: 0 0 0 1.5px var(--ink); }
+
+/* chip "+N": mesma pílula, mas neutra e clicável (abre a lista completa) */
+button.peer-chip.peer-more {
+  background: var(--line-soft);
+  color: var(--muted);
+  font-size: 9px;
+  cursor: pointer;
+}
+button.peer-chip.peer-more:hover { color: var(--ink); }
+.peer-more-wrap { position: relative; display: flex; }
+.peer-more-drop {
+  min-width: 190px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+}
+.peer-more-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.peer-more-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.peer-more-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.peer-more-ip { color: var(--muted); font-size: 10px; flex: none; }
 
 .conn {
   display: flex;
@@ -197,6 +227,10 @@ select.board-chip {         /* o chip do gantt é um <select> */
   z-index: 150;
   overflow: hidden;
 }
+/* preferência local (não afeta o protocolo nem a lista de conectados: a
+   máquina continua visível para os outros, só para de desenhar os
+   cursores alheios aqui) */
+.hide-remote-cursors #cursors { display: none; }
 .cursor {
   position: absolute;
   left: 0;

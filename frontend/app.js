@@ -128,7 +128,7 @@ const el = {
 /* Configurações de interface (painel estilo VitePress na menubar)      */
 /* ------------------------------------------------------------------ */
 
-const UI_DEFAULTS = { density: "cozy", tableWidth: 380, weekends: true, labels: true, baseline: true };
+const UI_DEFAULTS = { density: "cozy", tableWidth: 380, weekends: true, labels: true, baseline: true, hideCursors: false };
 let ui = { ...UI_DEFAULTS };
 try {
   ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem("perth-ui") || "{}") };
@@ -145,6 +145,8 @@ function applyUI() {
   $("#set-weekends").setAttribute("aria-pressed", String(ui.weekends));
   $("#set-labels").setAttribute("aria-pressed", String(ui.labels));
   $("#set-baseline").setAttribute("aria-pressed", String(ui.baseline));
+  $("#set-hide-cursors").setAttribute("aria-pressed", String(ui.hideCursors));
+  document.documentElement.classList.toggle("hide-remote-cursors", ui.hideCursors);
 }
 
 function saveUI() {
@@ -1873,6 +1875,11 @@ $("#set-baseline").addEventListener("click", () => {
   applyUI();
   saveUI();
   state.current && renderChart();
+});
+$("#set-hide-cursors").addEventListener("click", () => {
+  ui.hideCursors = !ui.hideCursors;
+  applyUI();
+  saveUI();
 });
 
 /* Salva pendências ao fechar a aba */

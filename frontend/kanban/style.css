@@ -66,6 +66,16 @@ button:focus-visible { outline: 2px solid var(--purple); outline-offset: 1px; }
 button.danger { color: var(--red); }
 button.danger:hover { background: rgba(203, 60, 51, 0.08); }
 
+/* ação restringida pelo host para esta máquina (ver applyRestriction() em
+   app.js) — cursor "not-allowed" e opacidade reduzida em cima do estilo
+   normal do controle, sem precisar de uma variante por componente */
+button:disabled, input:disabled, textarea:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button:disabled:hover { background: transparent; }
+.locked { cursor: not-allowed; opacity: 0.55; }
+
 input, textarea {
   font: inherit;
   color: var(--ink);
@@ -461,6 +471,57 @@ kbd {
 .alias-ip { width: 150px; flex: none; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .alias-row input { flex: 1; }
 .alias-hint { font-size: 10.5px; color: var(--muted); margin-top: 10px; }
+
+/* ---------- matriz de permissões (Board -> Permissions…) ---------- */
+
+/* mais larga que o modal padrão (480px): com ~19 ações a tabela precisa de
+   espaço, e o excedente rola dentro de .perm-scroll — nunca estoura a
+   borda do modal (ver .perm-scroll abaixo) */
+.modal.modal-wide { width: min(920px, calc(100vw - 32px)); }
+
+.perm-scroll { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
+.perm-table { border-collapse: collapse; font-size: 11.5px; }
+.perm-table input[type="checkbox"] { accent-color: var(--purple); cursor: pointer; }
+.perm-table th, .perm-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+.perm-table td { text-align: center; }
+/* cabeçalho de ação: largura fixa com o rótulo quebrando em 2-3 linhas —
+   texto vertical rotacionado foi cogitado, mas com 5 idiomas alguns
+   rótulos passam de 35 caracteres (ex.: francês) e cortariam numa coluna
+   estreita; assim cada coluna tem largura previsível em qualquer idioma,
+   e um checkbox mestre acima marca/desmarca a ação para todo mundo */
+.perm-table .perm-col-head {
+  font-weight: 400;
+  color: var(--muted);
+  vertical-align: bottom;
+  text-align: center;
+  padding-top: 8px;
+  white-space: normal;
+}
+.perm-col-head span {
+  display: block;
+  width: 92px;
+  overflow-wrap: break-word;
+  line-height: 1.25;
+  margin: 4px auto 0;
+}
+/* primeira coluna (nome/IP + checkbox mestre da linha) fixa: continua
+   visível ao rolar horizontalmente pelas 19 colunas de ação */
+.perm-row-head, .perm-corner {
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  text-align: left;
+  z-index: 1;
+}
+.perm-row-head { min-width: 190px; }
+.perm-row-head-inner { display: flex; align-items: center; gap: 8px; }
+.perm-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+.perm-row-ip { color: var(--muted); font-size: 10px; }
+.perm-corner { min-width: 28px; }
 
 /* ---------- tags (#hashtags no texto do card) ---------- */
 

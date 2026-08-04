@@ -224,6 +224,40 @@ function _kanban_col(st, key::AbstractString)
     return nothing
 end
 
+# ---------------------------------------------------------------------------
+# Permissões por IP (matriz configurada pelo host — Board -> Permissions…)
+# ---------------------------------------------------------------------------
+#
+# Toda ação que mexe em cards ou colunas pode ser restrita por máquina; fora
+# daqui ficam as ações de administração do board inteiro (resetBoard,
+# setAutoArchive, setAlias, useBoard/newBoard), que já são só-host
+# independentemente disso.
+const _KANBAN_GATED_ACTIONS = (
+    "addCard", "editCard", "delCard", "moveCard",
+    "setDone", "archiveCard", "restoreCard", "delArchived",
+    "setAssignee", "setDue", "addCheck", "toggleCheck", "delCheck",
+    "addCol", "renameCol", "delCol", "moveCol", "setWip", "sortCol",
+)
+
+# Guardadas dentro do próprio board (mesmo padrão de "aliases"): persistem
+# com o resto do board e sobrevivem a restart de graça. get! só é usado ao
+# mutar (dentro do lock, em _kanban_apply!) — leitura usa get simples.
+_kperms(st) = get!(st.board, "permissions", Dict{String,Any}())::Dict{String,Any}
+
+# Fail-open por padrão: IP sem entrada na matriz, ou ação não listada na
+# entrada do IP, é permitido. Isso preserva o comportamento atual de quem já
+# usa o board (nenhuma restrição configurada = nada muda) e mantém ações
+# futuras liberadas para IPs já restritos, em vez de negar por omissão. O
+# host nunca é restringido — senão poderia se trancar fora do próprio board.
+function _kanban_permitted(st::KanbanState, ip::AbstractString, action::AbstractString)::Bool
+    _kanban_is_host(ip) && return true
+    perms = get(st.board, "permissions", nothing)
+    perms === nothing && return true
+    ipperm = get(perms, String(ip), nothing)
+    ipperm === nothing && return true
+    return Bool(get(ipperm, action, true))
+end
+
 # Aplica uma operação (Dict de chaves String, vinda do WS ou do REPL).
 # Retorna true se o board mudou. "toIndex" chega em base 0 (protocolo JS)
 # e vira base 1 com clamp — colisões simultâneas resolvem por última
@@ -311,10 +345,13 @@ function _kanban_apply!(st::KanbanState, op)::Bool
         i === nothing && return false
         deleteat!(arch, i)
     elseif t == "resetBoard"
-        # zera colunas e arquivo; aliases são config de máquinas, sobrevivem
+        # zera colunas e arquivo; aliases/permissões são config de
+        # máquinas, não conteúdo do board — sobrevivem
         al = copy(_kaliases(st))
+        pm = copy(_kperms(st))
         st.board = _default_kanban_board()
         st.board["aliases"] = al
+        st.board["permissions"] = pm
     elseif t == "setAssignee"
         f = _kfindcard(st, String(op["id"])); f === nothing && return false
         n = strip(String(get(op, "name", "")))
@@ -363,6 +400,20 @@ function _kanban_apply!(st::KanbanState, op)::Bool
         name = strip(String(get(op, "name", "")))
         al = _kaliases(st)
         isempty(name) ? delete!(al, String(ip)) : (al[String(ip)] = String(name))
+    elseif t == "setPermissions"
+        # um único op cobre toggle individual e ações em lote (linha,
+        # coluna ou tudo, vindas do modal): um log, um broadcast
+        changes = get(op, "changes", Any[])
+        isempty(changes) && return false
+        perms = _kperms(st)
+        for ch in changes
+            ip = strip(String(get(ch, "ip", "")))
+            isempty(ip) && continue
+            action = String(get(ch, "action", ""))
+            action in _KANBAN_GATED_ACTIONS || continue
+            ipperm = get!(perms, ip, Dict{String,Any}())::Dict{String,Any}
+            ipperm[action] = Bool(get(ch, "allowed", true))
+        end
     else
         return false
     end
@@ -441,6 +492,13 @@ function _kanban_describe(st::KanbanState, op)
         name = strip(String(get(op, "name", "")))
         return (isempty(name) ? "cleared the name of $(op["ip"])" :
                                 "named $(op["ip"]) \"$(name)\""), false
+    elseif t == "setPermissions"
+        changes = get(op, "changes", Any[])
+        ips = unique(strip(String(get(c, "ip", ""))) for c in changes)
+        n = length(changes)
+        return (length(ips) == 1 ?
+            "updated $(n) permission$(n == 1 ? "" : "s") for $(first(ips))" :
+            "updated permissions for $(length(ips)) machine$(length(ips) == 1 ? "" : "s")"), false
     end
     return "", false
 end
@@ -934,14 +992,25 @@ function _kanban_ws(ws::HTTP.WebSockets.WebSocket, ip::String, keyok::Bool = tru
             if t == "op"
                 op = msg["op"]
                 optype = String(get(op, "type", ""))
+                # autoridade é o servidor: mesmo que o cliente burle a UI e
+                # mande a op direto, uma máquina restrita não passa daqui.
+                # A aplicação otimista que o cliente já fez localmente é
+                # revertida pelo resync (init) que segue a negativa.
+                if optype in _KANBAN_GATED_ACTIONS && !_kanban_permitted(st, me.ip, optype)
+                    HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                        "type" => "opDenied", "action" => optype)))
+                    HTTP.WebSockets.send(ws, _kanban_init_payload(st, me))
+                    continue
+                end
                 if optype == "addCard"
                     # criador default é a ponta da conexão; ops de undo já
                     # trazem o autor original e são respeitadas
                     haskey(op, "by") || (op["by"] = me.ip)
                     haskey(op, "at") || (op["at"] = _kanban_now())
-                elseif optype in ("setAlias", "resetBoard", "setAutoArchive") &&
+                elseif optype in ("setAlias", "resetBoard", "setAutoArchive", "setPermissions") &&
                        !_kanban_is_host(me.ip)
-                    # só o host renomeia usuários; ressincroniza o insistente
+                    # só o host renomeia usuários / mexe em config do board;
+                    # ressincroniza o insistente
                     HTTP.WebSockets.send(ws, _kanban_init_payload(st, me))
                     continue
                 end

@@ -18,6 +18,39 @@ const PALETTE = ["#9558b2", "#389826", "#cb3c33", "#4063d8",
 const COL_ACCENTS = ["#9558b2", "#4063d8", "#389826", "#b58900",
                      "#cb3c33", "#2aa198", "#d33682", "#6c71c4"];
 
+// As mesmas 19 ações que o servidor sabe restringir por IP (espelha
+// _KANBAN_GATED_ACTIONS em src/kanban.jl) — colunas da matriz de permissões
+// e rótulo do toast quando uma ação é bloqueada. Fora daqui ficam as ações
+// de administração do board inteiro (reset, auto-archive, apelidos, trocar
+// de board), que já são só-host independentemente da matriz.
+const GATED_ACTIONS = [
+  { type: "addCard", label: "add card" },
+  { type: "editCard", label: "edit card text" },
+  { type: "delCard", label: "delete card" },
+  { type: "moveCard", label: "move card between columns" },
+  { type: "setDone", label: "mark card done" },
+  { type: "archiveCard", label: "archive card" },
+  { type: "restoreCard", label: "restore from archive" },
+  { type: "delArchived", label: "delete archived forever" },
+  { type: "setAssignee", label: "set assignee" },
+  { type: "setDue", label: "set due date" },
+  { type: "addCheck", label: "add checklist item" },
+  { type: "toggleCheck", label: "check/uncheck checklist item" },
+  { type: "delCheck", label: "delete checklist item" },
+  { type: "addCol", label: "add column" },
+  { type: "renameCol", label: "rename column" },
+  { type: "delCol", label: "delete column" },
+  { type: "moveCol", label: "reorder columns" },
+  { type: "setWip", label: "set WIP limit" },
+  { type: "sortCol", label: "sort column by due date" },
+];
+
+function actionLabel(type) {
+  const found = GATED_ACTIONS.find((a) => a.type === type);
+  const label = found ? found.label : type;
+  return window.PerthI18n ? PerthI18n.t(label) : label;
+}
+
 // Chave de acesso (share protegido): vem no link ?key=... e fica na
 // sessão para sobreviver a navegação/reload
 const $  = (sel, el = document) => el.querySelector(sel);
@@ -135,6 +168,7 @@ function handleMessage(msg) {
       renderPeers();
       renderStatus();
       $("#aliases-item").hidden = !msg.you.host;
+      $("#permissions-item").hidden = !msg.you.host;
       $("#reset-item").hidden = !msg.you.host;
       $("#autoarch-item").hidden = !msg.you.host;
       break;
@@ -160,6 +194,7 @@ function handleMessage(msg) {
         }
         if (state.openModal === "activity") showActivity();
         else if (state.openModal === "archived") showArchived();
+        else if (state.openModal === "permissions") showPermissions();
       }
       renderStatus();
       break;
@@ -179,7 +214,11 @@ function handleMessage(msg) {
     }
     case "peer": {
       if (state.me && msg.peer.id === state.me.id) {
-        state.me = msg.peer;
+        // merge, não substitui: _kanban_peer_payload não traz "host" (só o
+        // "init" traz), então um replace aqui apagaria a flag de host do
+        // próprio cliente a cada troca de nome — mesmo padrão já usado em
+        // shared/presence.js para o gantt
+        state.me = { ...state.me, ...msg.peer };
         renderStatus();
       } else {
         const prev = state.peers.get(msg.peer.id);
@@ -221,6 +260,13 @@ function handleMessage(msg) {
           updateTitle();
         }
       }
+      break;
+    }
+    // O servidor recusou a op (permissão restrita pelo host) — cobre corrida
+    // com o próprio "op" que o init já resincroniza (revertendo a aplicação
+    // otimista); isto só acrescenta o motivo, visível na hora.
+    case "opDenied": {
+      deniedToast(msg.action);
       break;
     }
   }
@@ -337,8 +383,54 @@ function inverseOf(op) {
   }
 }
 
-// aplica localmente + envia; o eco do servidor confirma com o board oficial
+// Permissões: lidas direto de state.board.permissions (parte do board que
+// já chega inteiro em cada broadcast) — nunca fica desatualizada esperando
+// um payload à parte, e é o que a própria matriz do host também lê/edita.
+// Sem restrição configurada para o IP (ou ação fora da lista restringível,
+// como resetBoard) a ação é permitida: comportamento atual, sem mudança.
+function canDo(action) {
+  if (!state.me || state.me.host) return true;
+  const perms = (state.board.permissions || {})[state.me.ip];
+  if (!perms) return true;
+  return perms[action] !== false;
+}
+
+// Desabilita o controle e explica o motivo no title — evita o clique morto
+// nos controles mais comuns; commit() já bloqueia por baixo de qualquer
+// forma (atalho de teclado, drag-and-drop), então isto é só afordância.
+function applyRestriction(el, action) {
+  if (canDo(action)) return;
+  el.disabled = true;
+  const reason = window.PerthI18n
+    ? PerthI18n.t("Restricted by the host") : "Restricted by the host";
+  el.title = reason + ": " + actionLabel(action);
+}
+
+function deniedToast(action) {
+  const label = actionLabel(action);
+  const msg = (window.PerthI18n ? PerthI18n.t("The host restricted this action for your machine") :
+    "The host restricted this action for your machine") + (label ? ": " + label : "");
+  const t = document.createElement("div");
+  t.className = "toast toast-denied";
+  t.textContent = msg;
+  toastsEl.append(t);
+  while (toastsEl.children.length > 4) toastsEl.firstChild.remove();
+  setTimeout(() => {
+    t.classList.add("out");
+    setTimeout(() => t.remove(), 260);
+  }, 4200);
+}
+
+// único ponto de bloqueio no cliente: drag-and-drop, botões, atalhos de
+// teclado e o editor de card passam todos por aqui antes de mandar a op —
+// cobre as 19 ações restringíveis sem precisar caçar cada call site. O
+// servidor é sempre a autoridade final (ver _kanban_permitted em kanban.jl);
+// isto só evita o round-trip óbvio e dá o motivo na hora.
 function commit(op) {
+  if (!canDo(op.type)) {
+    deniedToast(op.type);
+    return;
+  }
   const inv = inverseOf(op);
   if (inv) {
     undoStack.push({ do: structuredClone(op), undo: inv });
@@ -562,8 +654,14 @@ function render() {
     const name = document.createElement("span");
     name.className = "col-name";
     name.textContent = col.name;
-    name.title = "double-click to rename";
-    name.addEventListener("dblclick", () => renameColInline(col, name));
+    if (canDo("renameCol")) {
+      name.title = "double-click to rename";
+      name.addEventListener("dblclick", () => renameColInline(col, name));
+    } else {
+      name.classList.add("locked");
+      name.title = (window.PerthI18n ? PerthI18n.t("Restricted by the host") : "Restricted by the host") +
+        ": " + actionLabel("renameCol");
+    }
     const count = document.createElement("span");
     count.className = "col-count";
     count.textContent = col.wip ? `${col.cards.length}/${col.wip}` : col.cards.length;
@@ -595,6 +693,7 @@ function render() {
     add.className = "add-card";
     add.textContent = "+ card";
     add.addEventListener("click", () => openNewCard(col.id));
+    applyRestriction(add, "addCard");
     foot.append(add);
     colEl.append(foot);
 
@@ -605,6 +704,7 @@ function render() {
   addCol.className = "add-col";
   addCol.textContent = "+ new column";
   addCol.addEventListener("click", newColumn);
+  applyRestriction(addCol, "addCol");
   boardEl.append(addCol);
 
   // FLIP: anima quem se moveu
@@ -660,6 +760,7 @@ function cardEl(card) {
         e.stopPropagation();
         commit({ type: "toggleCheck", card: card.id, id: it.id, done: !it.done });
       });
+      applyRestriction(box, "toggleCheck");
       const label = document.createElement("span");
       label.textContent = it.text;
       row.append(box, label);
@@ -726,6 +827,7 @@ function cardEl(card) {
         e.stopPropagation();
         commit({ type: "archiveCard", id: card.id });
       });
+      applyRestriction(arch, "archiveCard");
       meta.append(arch);
     }
     el.append(meta);
@@ -740,6 +842,7 @@ function cardEl(card) {
     e.stopPropagation();
     commit({ type: "setDone", id: card.id, done: !card.done });
   });
+  applyRestriction(done, "setDone");
   el.append(done);
 
   if (state.selected === card.id) el.classList.add("selected");
@@ -843,7 +946,7 @@ function colMenu(col, ci) {
   const drop = document.createElement("div");
   drop.className = "menu-drop";
 
-  const item = (label, fn, cls) => {
+  const item = (label, fn, cls, action) => {
     const b = document.createElement("button");
     b.textContent = label;
     if (cls) b.className = cls;
@@ -852,31 +955,33 @@ function colMenu(col, ci) {
       wrap.classList.remove("open");
       fn();
     });
+    if (action) applyRestriction(b, action);
     return b;
   };
 
   drop.append(
-    item("Rename…", () => renameColInline(col, $(".col-name", wrap.closest(".col")))),
+    item("Rename…", () => renameColInline(col, $(".col-name", wrap.closest(".col"))),
+         null, "renameCol"),
     item("WIP limit…", () => {
       const v = prompt(`WIP limit for "${col.name}" (0 = none):`, col.wip || 0);
       if (v === null) return;
       const w = parseInt(v, 10);
       if (!Number.isNaN(w) && w >= 0) commit({ type: "setWip", id: col.id, wip: w });
-    }),
-    item("Sort by due date", () => commit({ type: "sortCol", id: col.id })),
+    }, null, "setWip"),
+    item("Sort by due date", () => commit({ type: "sortCol", id: col.id }), null, "sortCol"),
   );
   if (ci > 0)
     drop.append(item("Move left", () =>
-      commit({ type: "moveCol", id: col.id, toIndex: ci - 1 })));
+      commit({ type: "moveCol", id: col.id, toIndex: ci - 1 }), null, "moveCol"));
   if (ci < cols().length - 1)
     drop.append(item("Move right", () =>
-      commit({ type: "moveCol", id: col.id, toIndex: ci + 1 })));
+      commit({ type: "moveCol", id: col.id, toIndex: ci + 1 }), null, "moveCol"));
   const hr = document.createElement("hr");
   drop.append(hr, item("Delete column", () => {
     if (col.cards.length === 0 ||
         confirm(`Delete "${col.name}" and its ${col.cards.length} cards?`))
       commit({ type: "delCol", id: col.id });
-  }, "danger"));
+  }, "danger", "delCol"));
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -949,6 +1054,9 @@ function editorEl(col, card) {
   ta.className = "card-editor";
   ta.value = state.editing.draft;
   ta.placeholder = "type and press Enter — #tags, **bold**, [links](url)…";
+  // um card existente pode ter editCard negado mas ainda assim aceitar
+  // mudança de prazo/responsável (ops independentes) — só o texto trava
+  if (card) applyRestriction(ta, "editCard");
   requestAnimationFrame(() => {
     ta.style.height = "auto";
     ta.style.height = Math.max(ta.scrollHeight, 54) + "px";
@@ -992,6 +1100,8 @@ function editorEl(col, card) {
     else if (e.key === "Escape") cancelEditor();
     e.stopPropagation();
   });
+  // card novo: prazo vai junto no addCard, não como setDue separado
+  if (card) applyRestriction(date, "setDue");
   row.append(lbl, date);
 
   const lblA = document.createElement("label");
@@ -1017,6 +1127,8 @@ function editorEl(col, card) {
     else if (e.key === "Escape") cancelEditor();
     e.stopPropagation();
   });
+  // card novo: responsável vai junto no addCard, não como setAssignee separado
+  if (card) applyRestriction(who, "setAssignee");
   row.append(lblA, who, dl);
 
   // checklist: em card existente as mudanças são ops imediatas (aparecem ao
@@ -1045,12 +1157,16 @@ function editorEl(col, card) {
         commit({ type: "delCheck", card: card.id, id: it.id });
       }
     });
+    if (!state.editing.isNew) applyRestriction(del, "delCheck");
     rowc.append(label, del);
     checks.append(rowc);
   }
   const addCheck = document.createElement("input");
   addCheck.className = "add-check";
   addCheck.placeholder = "+ checklist item";
+  // um card novo ainda não existe no servidor: o checklist fica pendente e
+  // vai junto no addCard, então addCheck não se aplica a esse caminho
+  if (!state.editing.isNew) applyRestriction(addCheck, "addCheck");
   addCheck.addEventListener("keydown", (e) => {
     e.stopPropagation();
     if (e.key === "Escape") return cancelEditor();
@@ -1126,6 +1242,9 @@ document.addEventListener("pointerdown", (e) => {
 }, true);
 
 function maybeDrag(e, card) {
+  // sem permissão de mover: nem inicia o gesto — clicar/selecionar o card
+  // continua funcionando normalmente, só o arrasto fica fora
+  if (!canDo("moveCard")) return;
   const el = e.currentTarget;
 
   // Toque: arrastar exige segurar (estilo Trello) — assim o dedo continua
@@ -1469,21 +1588,70 @@ function renderHolds() {
   }
 }
 
+// Cap de chips visíveis: sem isso, muitos peers conectados fazem #peers
+// crescer sem limite e empurram o resto da menubar (chat/conn/tema) para
+// fora — a largura de #peers precisa ser determinística (ver ui.css).
+// "Você" é sempre o primeiro do array e nunca é cortado.
+const PEERS_VISIBLE_MAX = 6;
+
+function peerChipEl(p) {
+  const chip = document.createElement("span");
+  chip.className = "peer-chip" + (p.__me ? " me" : "");
+  chip.style.background = peerColor(p);
+  chip.textContent = peerLabel(p).replace(/^\D*/, "").charAt(0) ||
+                     peerLabel(p).charAt(0).toUpperCase();
+  chip.title = (p.__me ? "you — " : "") + peerLabel(p) + " · " + p.ip;
+  return chip;
+}
+
+// chip "+N" com a lista completa das máquinas excedentes — quem quiser ver
+// todo mundo ainda consegue, sem estourar a largura da menubar
+function peerOverflowEl(hidden) {
+  const wrap = document.createElement("div");
+  wrap.className = "menu peer-more-wrap";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "peer-chip peer-more";
+  btn.textContent = "+" + hidden.length;
+  const label = window.PerthI18n ? PerthI18n.t("more connected machines") : "more connected machines";
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  const drop = document.createElement("div");
+  drop.className = "menu-drop peer-more-drop";
+  for (const p of hidden) {
+    const row = document.createElement("div");
+    row.className = "peer-more-row";
+    const dot = document.createElement("span");
+    dot.className = "peer-more-dot";
+    dot.style.background = peerColor(p);
+    const name = document.createElement("span");
+    name.className = "peer-more-name";
+    name.textContent = (p.__me ? "you — " : "") + peerLabel(p);
+    const ip = document.createElement("span");
+    ip.className = "peer-more-ip";
+    ip.textContent = p.ip;
+    row.append(dot, name, ip);
+    drop.append(row);
+  }
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = wrap.classList.contains("open");
+    closeMenus();
+    if (!open) wrap.classList.add("open");
+  });
+  wrap.append(btn, drop);
+  return wrap;
+}
+
 function renderPeers() {
   const box = $("#peers");
   box.textContent = "";
   const all = state.me
     ? [{ ...state.me, __me: true }, ...state.peers.values()]
     : [...state.peers.values()];
-  for (const p of all) {
-    const chip = document.createElement("span");
-    chip.className = "peer-chip" + (p.__me ? " me" : "");
-    chip.style.background = peerColor(p);
-    chip.textContent = peerLabel(p).replace(/^\D*/, "").charAt(0) ||
-                       peerLabel(p).charAt(0).toUpperCase();
-    chip.title = (p.__me ? "you — " : "") + peerLabel(p) + " · " + p.ip;
-    box.append(chip);
-  }
+  for (const p of all.slice(0, PEERS_VISIBLE_MAX)) box.append(peerChipEl(p));
+  const hidden = all.slice(PEERS_VISIBLE_MAX);
+  if (hidden.length) box.append(peerOverflowEl(hidden));
 }
 
 function renderStatus() {
@@ -1624,6 +1792,165 @@ function showAliases() {
   hint.textContent = "Names apply to everyone's screen: cursors, chips and card stamps. Empty = back to the IP.";
   body.append(hint);
   showModal("Rename machines", body, "aliases");
+}
+
+// Matriz de permissões (só o host vê o item de menu; o servidor também
+// valida). Estende o mesmo padrão de showAliases() — mesma coleta de IPs,
+// mesmo modal host-only — em vez de um componente novo: aqui a diferença é
+// só o corpo (uma tabela larga, com a primeira coluna fixa) e a classe
+// "modal-wide". O host nunca aparece como linha: ele é sempre permitido
+// no servidor (_kanban_permitted em kanban.jl), então uma linha para ele
+// seria enganosa.
+function showPermissions() {
+  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
+
+  // reconstruída do zero a cada eco do servidor (mesmo padrão de
+  // showActivity/showArchived) — preserva a rolagem entre reconstruções
+  // para um clique não resetar a posição horizontal da tabela
+  const prevScroll = $(".perm-scroll");
+  const savedLeft = prevScroll ? prevScroll.scrollLeft : 0;
+  const prevBody = $("#modal-root .modal-body");
+  const savedTop = prevBody ? prevBody.scrollTop : 0;
+
+  const ips = new Set();
+  for (const p of state.peers.values()) ips.add(p.ip);
+  for (const c of cols()) for (const k of c.cards) k.by && ips.add(k.by);
+  for (const e of state.board.archive || []) e.by && ips.add(e.by);
+  for (const ip of Object.keys(state.board.aliases || {})) ips.add(ip);
+  for (const ip of Object.keys(state.board.permissions || {})) ips.add(ip);
+  if (state.me) ips.delete(state.me.ip);   // host: sempre permitido, linha própria seria enganosa
+  const rows = [...ips].sort();
+
+  const permsOf = (ip) => (state.board.permissions || {})[ip] || {};
+  const allowedNow = (ip, action) => permsOf(ip)[action] !== false;
+  const commitPermissions = (changes) => commit({ type: "setPermissions", changes });
+
+  const body = document.createElement("div");
+
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-note";
+    empty.textContent = T("No other machines have connected yet.");
+    body.append(empty);
+    showModal(T("Permissions"), body, "permissions");
+    $("#modal-root .modal")?.classList.add("modal-wide");
+    return;
+  }
+
+  const scroll = document.createElement("div");
+  scroll.className = "perm-scroll";
+  const table = document.createElement("table");
+  table.className = "perm-table";
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  const corner = document.createElement("th");
+  corner.className = "perm-corner";
+  const cornerBox = document.createElement("input");
+  cornerBox.type = "checkbox";
+  cornerBox.title = T("check/uncheck everything");
+  corner.append(cornerBox);
+  headRow.append(corner);
+
+  const colMasters = [];   // um checkbox mestre por ação (topo da coluna)
+  for (const a of GATED_ACTIONS) {
+    const th = document.createElement("th");
+    th.className = "perm-col-head";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.title = T("check/uncheck this action for everyone");
+    box.addEventListener("click", (e) => {
+      e.stopPropagation();
+      commitPermissions(rows.map((ip) => ({ ip, action: a.type, allowed: box.checked })));
+    });
+    const lbl = document.createElement("span");
+    lbl.textContent = actionLabel(a.type);
+    th.append(box, lbl);
+    headRow.append(th);
+    colMasters.push({ action: a.type, box });
+  }
+  thead.append(headRow);
+  table.append(thead);
+
+  const tbody = document.createElement("tbody");
+  const rowMasters = [];   // um checkbox mestre por participante (início da linha)
+  for (const ip of rows) {
+    const tr = document.createElement("tr");
+    const rowHead = document.createElement("th");
+    rowHead.className = "perm-row-head";
+    const master = document.createElement("input");
+    master.type = "checkbox";
+    master.title = T("check/uncheck this machine");
+    master.addEventListener("click", (e) => {
+      e.stopPropagation();
+      commitPermissions(GATED_ACTIONS.map((a) =>
+        ({ ip, action: a.type, allowed: master.checked })));
+    });
+    const name = document.createElement("span");
+    name.className = "perm-row-name";
+    name.textContent = displayFor(ip);
+    const ipEl = document.createElement("span");
+    ipEl.className = "perm-row-ip";
+    ipEl.textContent = ip;
+    const inner = document.createElement("div");
+    inner.className = "perm-row-head-inner";
+    inner.append(master, name, ipEl);
+    rowHead.append(inner);
+    tr.append(rowHead);
+
+    for (const a of GATED_ACTIONS) {
+      const td = document.createElement("td");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = allowedNow(ip, a.type);
+      box.addEventListener("click", (e) => {
+        e.stopPropagation();
+        commitPermissions([{ ip, action: a.type, allowed: box.checked }]);
+      });
+      td.append(box);
+      tr.append(td);
+    }
+    tbody.append(tr);
+    rowMasters.push({ ip, box: master });
+  }
+  table.append(tbody);
+  scroll.append(table);
+  body.append(scroll);
+
+  // Estado inicial dos mestres (checked/indeterminate) — os cliques em
+  // massa reconstroem o modal inteiro no eco do servidor, então isto
+  // também cobre "depois de aplicado"
+  for (const { action, box } of colMasters) {
+    const states = rows.map((ip) => allowedNow(ip, action));
+    box.checked = states.every(Boolean);
+    box.indeterminate = !box.checked && states.some(Boolean);
+  }
+  for (const { ip, box } of rowMasters) {
+    const states = GATED_ACTIONS.map((a) => allowedNow(ip, a.type));
+    box.checked = states.every(Boolean);
+    box.indeterminate = !box.checked && states.some(Boolean);
+  }
+  cornerBox.checked = rowMasters.every((r) => r.box.checked);
+  cornerBox.indeterminate = !cornerBox.checked &&
+    rowMasters.some((r) => r.box.checked || r.box.indeterminate);
+  cornerBox.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const changes = [];
+    for (const ip of rows)
+      for (const a of GATED_ACTIONS) changes.push({ ip, action: a.type, allowed: cornerBox.checked });
+    commitPermissions(changes);
+  });
+
+  const hint = document.createElement("div");
+  hint.className = "alias-hint";
+  hint.textContent = T("Unchecked = blocked on that machine. The host machine is always allowed here, no matter this matrix.");
+  body.append(hint);
+
+  showModal(T("Permissions"), body, "permissions");
+  $("#modal-root .modal")?.classList.add("modal-wide");
+  scroll.scrollLeft = savedLeft;
+  const newBody = $("#modal-root .modal-body");
+  if (newBody) newBody.scrollTop = savedTop;
 }
 
 /* ============================================ notificações */
@@ -2170,6 +2497,9 @@ function doAction(action) {
     case "aliases":
       showAliases();
       break;
+    case "permissions":
+      showPermissions();
+      break;
     case "activity":
       showActivity();
       break;
@@ -2275,6 +2605,18 @@ soundToggle.checked = localStorage.getItem("perth-kanban-sound") !== "off";
 soundToggle.addEventListener("change", () => {
   localStorage.setItem("perth-kanban-sound", soundToggle.checked ? "on" : "off");
   if (soundToggle.checked) playAlert();   // feedback imediato do volume
+});
+
+// preferência local, não afeta o protocolo: a máquina continua visível para
+// os outros (peers/menubar), só para de desenhar os cursores alheios aqui
+const hideCursorsToggle = $("#hide-cursors-toggle");
+const applyHideCursors = () =>
+  document.documentElement.classList.toggle("hide-remote-cursors", hideCursorsToggle.checked);
+hideCursorsToggle.checked = localStorage.getItem("perth-kanban-hide-cursors") === "on";
+applyHideCursors();
+hideCursorsToggle.addEventListener("change", () => {
+  localStorage.setItem("perth-kanban-hide-cursors", hideCursorsToggle.checked ? "on" : "off");
+  applyHideCursors();
 });
 
 /* ==================================================== boot */

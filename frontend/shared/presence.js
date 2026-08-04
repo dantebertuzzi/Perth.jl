@@ -166,6 +166,61 @@ window.PerthPresence = (function () {
     l.textContent = window.PerthI18n ? PerthI18n.t(txt) : txt;
   }
 
+  // Cap de chips visíveis: sem isso, muitos peers conectados fazem #peers
+  // crescer sem limite e empurram o resto da menubar (conn/tema/GitHub) para
+  // fora — a largura de #peers precisa ser determinística (ver ui.css).
+  // "Você" é sempre o primeiro do array e nunca é cortado.
+  const PEERS_VISIBLE_MAX = 6;
+
+  function peerChipEl(p) {
+    const chip = document.createElement("span");
+    chip.className = "peer-chip" + (p.__me ? " me" : "");
+    chip.style.background = peerColor(p);
+    chip.textContent = peerLabel(p).replace(/^\D*/, "").charAt(0) ||
+                       peerLabel(p).charAt(0).toUpperCase();
+    chip.title = (p.__me ? "you — " : "") + peerLabel(p) + " · " + p.ip;
+    return chip;
+  }
+
+  // chip "+N" com a lista completa das máquinas excedentes — quem quiser ver
+  // todo mundo ainda consegue, sem estourar a largura da menubar
+  function peerOverflowEl(hidden) {
+    const wrap = document.createElement("div");
+    wrap.className = "menu peer-more-wrap";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "peer-chip peer-more";
+    btn.textContent = "+" + hidden.length;
+    const label = window.PerthI18n ? PerthI18n.t("more connected machines") : "more connected machines";
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+    const drop = document.createElement("div");
+    drop.className = "menu-drop peer-more-drop";
+    for (const p of hidden) {
+      const row = document.createElement("div");
+      row.className = "peer-more-row";
+      const dot = document.createElement("span");
+      dot.className = "peer-more-dot";
+      dot.style.background = peerColor(p);
+      const name = document.createElement("span");
+      name.className = "peer-more-name";
+      name.textContent = (p.__me ? "you — " : "") + peerLabel(p);
+      const ip = document.createElement("span");
+      ip.className = "peer-more-ip";
+      ip.textContent = p.ip;
+      row.append(dot, name, ip);
+      drop.append(row);
+    }
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = wrap.classList.contains("open");
+      document.querySelectorAll(".menu.open").forEach((m) => m.classList.remove("open"));
+      if (!open) wrap.classList.add("open");
+    });
+    wrap.append(btn, drop);
+    return wrap;
+  }
+
   function renderPeers() {
     const box = $("#peers");
     if (!box) return;
@@ -173,15 +228,9 @@ window.PerthPresence = (function () {
     const all = st.me
       ? [{ ...st.me, __me: true }, ...st.peers.values()]
       : [...st.peers.values()];
-    for (const p of all) {
-      const chip = document.createElement("span");
-      chip.className = "peer-chip" + (p.__me ? " me" : "");
-      chip.style.background = peerColor(p);
-      chip.textContent = peerLabel(p).replace(/^\D*/, "").charAt(0) ||
-                         peerLabel(p).charAt(0).toUpperCase();
-      chip.title = (p.__me ? "you — " : "") + peerLabel(p) + " · " + p.ip;
-      box.append(chip);
-    }
+    for (const p of all.slice(0, PEERS_VISIBLE_MAX)) box.append(peerChipEl(p));
+    const hidden = all.slice(PEERS_VISIBLE_MAX);
+    if (hidden.length) box.append(peerOverflowEl(hidden));
   }
 
   function renderCursors() {
