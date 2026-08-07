@@ -72,6 +72,42 @@ function loadKanbanApp() {
   return { w, runIn, close: () => w.close() };
 }
 
+// Mesma técnica de loadKanbanApp(), pro app do gantt.
+function loadGanttApp() {
+  const html = read("frontend/index.html")
+    .replace(/<script src="\/shared\/presence.js"><\/script>/, "")
+    .replace(/<script src="\/app.js"><\/script>/, "");
+  const dom = new JSDOM(html, { runScripts: "dangerously", url: "http://localhost/" });
+  const w = dom.window;
+
+  class FakeWebSocket {
+    constructor(url) { this.url = url; this.readyState = 0; }
+    send() {}
+    close() { this.readyState = 3; }
+    addEventListener() {}
+  }
+  Object.assign(FakeWebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  w.WebSocket = FakeWebSocket;
+  w.fetch = () => new Promise(() => {});
+  w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  w.structuredClone = structuredClone;
+
+  const inject = (code) => {
+    const s = w.document.createElement("script");
+    s.textContent = code;
+    w.document.head.appendChild(s);
+  };
+  inject(read("frontend/shared/i18n.js"));
+  inject(read("frontend/shared/presence.js"));
+  inject(read("frontend/app.js"));
+
+  const runIn = (code) => {
+    inject(`window.__r__ = JSON.stringify((function(){ ${code} })());`);
+    return JSON.parse(w.__r__);
+  };
+  return { w, runIn, close: () => w.close() };
+}
+
 console.log("i18n · gantt");
 {
   const w = loadPage("frontend/index.html");
@@ -229,6 +265,115 @@ console.log("kanban · permissões (client-side, canDo)");
              return canDo("addCard");`);
   check(r === true, "outro IP, sem entrada na matriz: permitido");
 
+  close();
+}
+
+console.log("gantt · undo/redo (reconciliação por tarefa)");
+{
+  // Regressão: undo/redo do gantt restaurava o snapshot do PROJETO INTEIRO,
+  // sem checar o que mudou por fora (poll, outra aba, REPL) desde a edição
+  // local — um Ctrl+Z podia apagar por completo o trabalho concorrente de
+  // alguém, não só o campo editado. Ver _reconcile/_touchedTaskIds em app.js.
+  const seedOne = `state.current = { id: "p1", name: "Proj", tasks: [
+    { id: "t1", name: "Tarefa 1", start: "2026-08-03", duration: 5, dependencies: [] }
+  ] };`;
+
+  let { runIn, close } = loadGanttApp();
+  let r = runIn(`${seedOne}
+    pushUndo();
+    state.current.tasks[0].name = "editada localmente";
+    markDirty();
+    // reload por polling: REPL adicionou uma tarefa nesse meio tempo
+    state.current = { id: "p1", name: "Proj", tasks: [
+      { id: "t1", name: "editada localmente", start: "2026-08-03", duration: 5, dependencies: [] },
+      { id: "t2", name: "Tarefa do REPL", start: "2026-08-10", duration: 3, dependencies: [] }
+    ] };
+    undo();
+    return state.current.tasks.map(t => t.name);`);
+  check(r.includes("Tarefa do REPL"), "undo: preserva tarefa concorrente do REPL");
+  check(r.includes("Tarefa 1"), "undo: reverte a edição local mesmo assim");
+  close();
+
+  ({ runIn, close } = loadGanttApp());
+  r = runIn(`${seedOne}
+    pushUndo();
+    state.current.tasks[0].name = "editada";
+    markDirty();
+    undo();
+    return state.current.tasks[0].name;`);
+  check(r === "Tarefa 1", "undo sem conflito: continua revertendo normalmente");
+  close();
+
+  ({ runIn, close } = loadGanttApp());
+  r = runIn(`state.current = { id: "p1", name: "Proj", tasks: [
+      { id: "t1", name: "Tarefa 1", start: "2026-08-03", duration: 5, dependencies: [] },
+      { id: "t2", name: "Tarefa 2", start: "2026-08-05", duration: 2, dependencies: [] }
+    ] };
+    pushUndo();
+    state.current.tasks[0].name = "editada";              // só t1
+    markDirty();
+    state.current.tasks[1].name = "mudou por fora";        // concorrente, t2 nunca tocada
+    undo();
+    return { t1: state.current.tasks[0].name, t2: state.current.tasks[1].name };`);
+  check(r.t1 === "Tarefa 1", "undo: reverte a tarefa tocada pela ação");
+  check(r.t2 === "mudou por fora", "undo: não mexe numa tarefa que a ação nunca tocou");
+  close();
+
+  ({ runIn, close } = loadGanttApp());
+  r = runIn(`state.current = { id: "p1", name: "Proj", tasks: [
+      { id: "t1", name: "foo", start: "2026-08-03", duration: 5, dependencies: [] }
+    ] };
+    pushUndo();
+    state.current.tasks[0].name = "bar";
+    markDirty();
+    undo();                                    // sem conflito -> volta pra "foo"
+    state.current.tasks[0].name = "colega-editou";   // concorrente, depois do undo
+    redo();
+    return state.current.tasks[0].name;`);
+  check(r === "colega-editou", "redo: mesmo guard, sentido contrário, preserva o colega");
+  close();
+
+  ({ runIn, close } = loadGanttApp());
+  r = runIn(`state.current = { id: "p1", name: "Original", tasks: [] };
+    pushUndo();
+    state.current.name = "Renomeado localmente";
+    markDirty();
+    state.current.name = "Renomeado pelo REPL";   // concorrente
+    undo();
+    return state.current.name;`);
+  check(r === "Renomeado pelo REPL", "undo: conflito no nome do projeto também preserva o de fora");
+  close();
+
+  ({ runIn, close } = loadGanttApp());
+  r = runIn(`state.current = { id: "p1", name: "Proj", tasks: [
+      { id: "t1", name: "Vai ser apagada", start: "2026-08-03", duration: 5, dependencies: [] }
+    ] };
+    pushUndo();
+    state.current.tasks = [];                    // simula deleteSelectedTask
+    markDirty();
+    state.current.tasks.push({ id: "t2", name: "Nova do REPL", start: "2026-08-10",
+                               duration: 2, dependencies: [] });
+    undo();
+    return state.current.tasks.map(t => t.name).sort();`);
+  check(JSON.stringify(r) === JSON.stringify(["Nova do REPL", "Vai ser apagada"]),
+        "undo: restaura a tarefa apagada e preserva a adicionada por fora");
+  close();
+
+  ({ runIn, close } = loadGanttApp());
+  r = runIn(`state.current = { id: "p1", name: "Proj", tasks: [
+      { id: "t1", name: "v0", start: "2026-08-03", duration: 5, dependencies: [] }
+    ] };
+    const seq = [];
+    for (const v of ["v1", "v2", "v3"]) { pushUndo(); state.current.tasks[0].name = v; markDirty(); }
+    undo(); seq.push(state.current.tasks[0].name);
+    undo(); seq.push(state.current.tasks[0].name);
+    undo(); seq.push(state.current.tasks[0].name);
+    redo(); seq.push(state.current.tasks[0].name);
+    redo(); seq.push(state.current.tasks[0].name);
+    redo(); seq.push(state.current.tasks[0].name);
+    return seq;`);
+  check(JSON.stringify(r) === JSON.stringify(["v2", "v1", "v0", "v1", "v2", "v3"]),
+        "múltiplos ciclos de undo/redo sem conflito: sem degradar (sem aliasing entre snapshots)");
   close();
 }
 

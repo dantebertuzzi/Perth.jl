@@ -62,26 +62,101 @@ function _restore(snap) {
   state.selected = null;
 }
 
+// pushUndo() só guarda o "antes" (antes de qualquer mutação local); o
+// "depois" (o que a sua própria edição de fato produziu) é preenchido por
+// _closeUndoEntry(), chamado de markDirty() — que já roda logo após toda
+// edição local completar (submitModal, drag no pointerup, newTask, etc.).
+// Sem o par completo não dá pra saber, na hora do undo, o que era "seu"
+// versus o que chegou por fora (poll, outra aba, REPL) nesse meio tempo.
 function pushUndo() {
   if (!state.current) return;
   const snap = _snapshot();
   if (!snap) return;
-  state.undoStack.push(snap);
+  state.undoStack.push({ before: snap, after: null });
   state.redoStack = [];
 }
 
+function _closeUndoEntry() {
+  const e = state.undoStack[state.undoStack.length - 1];
+  if (e && e.after === null) e.after = _snapshot();
+}
+
+function _tasksById(snap) {
+  return new Map(snap.tasks.map((t) => [t.id, t]));
+}
+const _taskEq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const _cloneTask = (t) => ({ ...t, dependencies: [...(t.dependencies || [])] });
+
+// Tarefas que a ação original (o par before/after de uma entrada de undo)
+// de fato tocou: criadas, apagadas ou com algum campo diferente. Undo/redo
+// só mexem nessas — o resto do projeto é sempre preservado como está.
+function _touchedTaskIds(before, after) {
+  const B = _tasksById(before), A = _tasksById(after);
+  const ids = new Set([...B.keys(), ...A.keys()]);
+  const touched = new Set();
+  for (const id of ids) if (!_taskEq(B.get(id), A.get(id))) touched.add(id);
+  return touched;
+}
+
+// Aplica `target` (before no undo, after no redo) por cima do estado
+// atual, mas só nas tarefas tocadas pela ação original — e só nelas se
+// ninguém mexeu por fora desde `reference` (after no undo, before no
+// redo). Tarefas concorrentes (adicionadas por fora, fora do par
+// before/after) nunca são tocadas. Retorna true se algo foi pulado por
+// conflito (aviso ao chamador).
+function _reconcile(before, after, reference, target) {
+  const cur = _snapshot();
+  const touched = _touchedTaskIds(before, after);
+  const C = _tasksById(cur), R = _tasksById(reference);
+  const outTasks = [];
+  const seen = new Set();
+  let skipped = false;
+
+  for (const t of target.tasks) {
+    seen.add(t.id);
+    if (!touched.has(t.id)) { const c = C.get(t.id); if (c) outTasks.push(c); continue; }
+    const c = C.get(t.id), r = R.get(t.id);
+    // clona: `t` referencia o snapshot guardado na entrada de undo/redo —
+    // sem clonar, uma mutação futura em state.current vazaria pra ele
+    if (_taskEq(c, r)) outTasks.push(_cloneTask(t));  // sem mudança concorrente: aplica
+    else if (c !== undefined) { outTasks.push(c); skipped = true; }  // preserva o concorrente
+    // c === undefined e a tarefa era tocada: já não existe em lugar nenhum, nada a fazer
+  }
+  for (const [id, c] of C) {                         // tarefas concorrentes fora do par
+    if (seen.has(id) || touched.has(id)) continue;
+    outTasks.push(c);
+  }
+
+  state.current.tasks = outTasks;
+  if (before.name !== after.name) {                  // a ação tocou o nome do projeto
+    if (cur.name === reference.name) state.current.name = target.name;
+    else skipped = true;
+  }
+  state.selected = null;
+  return skipped;
+}
+
 function undo() {
-  if (!state.undoStack.length) return;
-  state.redoStack.push(_snapshot());
-  _restore(state.undoStack.pop());
+  const e = state.undoStack.pop();
+  if (!e) return;
+  if (!e.after) {
+    _restore(e.before);                               // par incompleto: sem referência segura
+  } else if (_reconcile(e.before, e.after, e.after, e.before)) {
+    console.warn("Perth: undo pulou uma tarefa alterada por fora nesse meio tempo.");
+  }
+  state.redoStack.push(e);
   renderAll();
   markDirty();
 }
 
 function redo() {
-  if (!state.redoStack.length) return;
-  state.undoStack.push(_snapshot());
-  _restore(state.redoStack.pop());
+  const e = state.redoStack.pop();
+  if (!e) return;
+  if (!e.after) return;                               // não deveria acontecer
+  if (_reconcile(e.before, e.after, e.before, e.after)) {
+    console.warn("Perth: redo pulou uma tarefa alterada por fora nesse meio tempo.");
+  }
+  state.undoStack.push(e);
   renderAll();
   markDirty();
 }
@@ -317,6 +392,7 @@ let saveTimer = null;
 
 function markDirty() {
   if (!state.current) return;
+  _closeUndoEntry();     // fecha o par before/after da edição que acabou de rodar
   state.dirty = true;
   setSaveStatus("saving", "saving…");
   clearTimeout(saveTimer);
@@ -1689,6 +1765,7 @@ async function autoSchedule() {
     state.current = await api(`/api/projects/${state.current.id}/schedule`, {
       method: "POST",
     });
+    _closeUndoEntry();   // já persistido no servidor: não passa por markDirty()
     noteBase();
     state.knownRev = await fetchRev();
     await fetchCPM();

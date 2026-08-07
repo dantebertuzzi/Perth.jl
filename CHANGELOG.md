@@ -47,6 +47,18 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   The base package now declares the function with zero methods instead
   of a same-signature fallback, so the extension adds the only method
   and precompiles cleanly.
+- Gantt: `Ctrl+Z`/`Ctrl+Shift+Z` no longer silently discard a colleague's
+  concurrent work. Undo/redo restored a full-project snapshot taken
+  before your edit, and the undo/redo stacks were never invalidated
+  when the page reloaded data from elsewhere (REPL, another tab, the
+  2.5s poll) — so undoing your own edit after any such reload could
+  wipe out whatever changed in the meantime, including entire tasks
+  someone else had just added. Undo/redo now reconcile task by task:
+  only the tasks (and the project name) your own action actually
+  touched are reverted/reapplied, and only if nothing else changed them
+  since; anything added, removed or edited concurrently — by the REPL,
+  another tab, or a teammate — is left alone. This directly affects the
+  package's core pitch (REPL and UI over the same data, side by side).
 
 ## [0.2.4] - 2026-08-04
 
