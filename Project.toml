@@ -39,7 +39,9 @@ Tables = "1"
 julia = "1.10"
 
 [extras]
+BusinessDays = "4f18b42c-503e-5345-9536-bb0f25fc7038"
+QRCoders = "f42e9828-16f3-11ed-2883-9126170b272d"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["BusinessDays", "QRCoders", "Test"]

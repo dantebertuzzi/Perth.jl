@@ -38,6 +38,15 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   action set; if someone else changed it since, the undo/redo is
   skipped with a toast instead of clobbering their edit. Structural
   actions (create/delete/move) were already safe and are unaffected.
+- `using BusinessDays` alongside Perth could never precompile: the
+  BusinessDays extension overrode a base-package method with the exact
+  same signature, which Julia disallows during precompilation. It still
+  worked (falling back to just-in-time compilation every session), but
+  printed a scary `ERROR: Method overwriting is not permitted...` on
+  every fresh session and never benefited from the precompile cache.
+  The base package now declares the function with zero methods instead
+  of a same-signature fallback, so the extension adds the only method
+  and precompiles cleanly.
 
 ## [0.2.4] - 2026-08-04
 

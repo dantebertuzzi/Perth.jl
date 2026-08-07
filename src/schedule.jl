@@ -40,12 +40,21 @@ _dep_id(d::AbstractString) = _parse_dep(d).id
 abstract type AbstractCalendar end
 struct CalendarDays <: AbstractCalendar end
 
-_cal(p::Project) = isempty(p.calendar) ? CalendarDays() : _business_calendar(p.calendar)
+function _cal(p::Project)
+    isempty(p.calendar) && return CalendarDays()
+    hasmethod(_business_calendar, Tuple{String}) ||
+        error("Perth: project uses business-day calendar $(repr(p.calendar)). " *
+              "Run `using BusinessDays` to enable it (weak dependency).")
+    _business_calendar(p.calendar)
+end
 
-# Sobrescrita pela extensão; sem ela, calendário nomeado é um erro claro
-_business_calendar(name::String) = error(
-    "Perth: project uses business-day calendar $(repr(name)). " *
-    "Run `using BusinessDays` to enable it (weak dependency).")
+# Implementada pela extensão (método para (::String)); ver _cal acima para a
+# mensagem de erro quando ela não está carregada. Sem nenhum método aqui de
+# propósito: um fallback com a MESMA assinatura seria sobrescrito pela
+# extensão, e sobrescrita de método é proibida durante pré-compilação —
+# `using BusinessDays` falhava a pré-compilar (funcionava, mas com um
+# ERROR assustador no console toda sessão, sem nunca cachear).
+function _business_calendar end
 
 _snap(::CalendarDays, d::Date) = d                                # próximo dia válido
 _end_of(::CalendarDays, s::Date, dur::Int) = s + Dates.Day(dur - 1)

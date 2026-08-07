@@ -5,6 +5,8 @@ using Perth
 import JSON3
 import HTTP
 import Sockets
+import BusinessDays    # ativa PerthBusinessDaysExt: ver "business-day calendar"
+import QRCoders        # ativa PerthQRCodersExt: ver "QR code (extensão QRCoders)"
 
 # Estado isolado num diretório temporário, sem tocar em ~/.perth
 tmp = mktempdir()
@@ -460,13 +462,34 @@ end
         @test occursin("calendar = \"Brazil\"", read(path, String))
         @test Perth.load(path; register = false).calendar == "Brazil"
 
-        # Sem BusinessDays carregado, o motor falha com mensagem clara
-        # (os testes nao declaram BusinessDays de proposito: valida o fallback)
-        @test_throws ErrorException critical_path(p)
-        @test_throws ErrorException end_date(p, t)
+        # com BusinessDays carregado (import no topo do arquivo), a extensão
+        # resolve de verdade — não é só o fallback. "Work" (seg 03/08 a sex
+        # 07/08) não cruza fim de semana, então dias úteis == dias corridos
+        # aqui; critical_path funciona normalmente com o calendário nomeado
+        @test end_date(p, t) == Date(2026, 8, 7)
+        @test critical_path(p) == [t.id]
+
+        # tarefa que cruza um fim de semana: dias úteis empurram o fim pra
+        # frente (qui 06/08 + 5 dias úteis = qua 12/08, pulando sáb/dom),
+        # contra seg 10/08 em dias corridos — prova que o cálculo é real
+        t2 = add_task!(p, "Weekend"; start = Date(2026, 8, 6), duration = 5)
+        @test end_date(p, t2) == Date(2026, 8, 12)
+        @test end_date(t2) == Date(2026, 8, 10)          # dias corridos, sem calendário
+
+        # nome de calendário inexistente ainda dá um erro claro (não krash
+        # genérico), mesmo com a extensão carregada
+        set_calendar!(p, "NaoExiste123")
+        err = try
+            end_date(p, t)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException
+        @test occursin("NaoExiste123", err.msg) && occursin("BusinessDays", err.msg)
 
         set_calendar!(p, "")                     # reverte para dias corridos
-        @test critical_path(p) == [t.id]
+        @test critical_path(p) == [t2.id]        # t2 termina depois (10/08); t tem folga
         delete_project(p.id)
     end
 
@@ -521,6 +544,23 @@ end
         lines = split(String(take!(io)), '\n'; keepempty = false)
         @test length(lines) == cld(2, 2)          # 2 linhas de matriz -> 1 linha de terminal
         @test all(l -> all(ch -> ch in "  ▀▄█", l), lines)
+    end
+
+    @testset "QR code (extensão QRCoders)" begin
+        # QRCoders importado no topo do arquivo ativa PerthQRCodersExt de
+        # verdade — _qr_matrix não é mais o stub `nothing` do pacote base
+        m = Perth._qr_matrix("http://192.168.0.10:8150")
+        @test m isa BitMatrix
+        @test size(m, 1) == size(m, 2) > 0        # QR é sempre quadrado
+        @test any(m)                              # não é uma matriz vazia/toda falsa
+
+        # a matriz real passa pelo mesmo render em meio-blocos já testado
+        # acima com uma matriz sintética — aqui é ponta a ponta de verdade
+        io = IOBuffer()
+        Perth._print_qr(io, m)
+        out = String(take!(io))
+        @test !isempty(out)
+        @test occursin("█", out) || occursin("▀", out) || occursin("▄", out)
     end
 
     @testset "kanban" begin
