@@ -112,6 +112,33 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   is still accepted)
 - Keyboard shortcuts: `N`, `Del`, `Enter`, `1/2/3`, `T`, `S`, `C`, `D`, `Esc`
 
+### Sharing the Gantt on the network
+
+By default `Perth.run()` binds to `localhost` only — the REPL and the
+browser on the same machine. Pass `share = true` and every machine on
+the local network can open the same project:
+
+```julia
+Perth.run()                # localhost only
+Perth.run(share = true)    # binds 0.0.0.0, prints the LAN links (+ QR
+                            # code in the terminal if `using QRCoders`)
+```
+
+Unlike the kanban — which is WebSocket-authoritative end to end — the
+Gantt keeps its normal model, the REST API plus polling of `/api/rev`;
+`share = true` adds a lightweight WebSocket just for presence: every
+connected machine shows up as a labelled cursor with its name and IP,
+exactly like `Perth.kanban(share = true)`, and edits push an instant
+"rev" notice so other machines reload the moment something changes
+instead of waiting for the next poll. `host` overrides the bind address
+explicitly; `key = "…"` requires that access key from every non-host
+machine (embedded automatically in the LAN links Perth prints, so
+nobody has to type it) — both on the WebSocket and on the REST API.
+
+**Security:** without `key`, anyone on the network who knows the port
+can open and edit every project — same caveat as the kanban. Never
+expose the port to the internet.
+
 ## Kanban: a shared board for the office
 
 `Perth.kanban()` starts a second, independent app: a collaborative kanban
