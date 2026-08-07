@@ -427,6 +427,59 @@ Perth._init_state!(tmp)
         delete_project(p.id)
     end
 
+    @testset "presença compartilhada (gantt+kanban)" begin
+        # host: só as duas formas de loopback contam
+        @test Perth._presence_is_host("127.0.0.1")
+        @test Perth._presence_is_host("::1")
+        @test !Perth._presence_is_host("192.168.0.50")
+        @test !Perth._presence_is_host("")
+
+        # cor por IP: estável (memoizada) e sem colisão até esgotar a paleta
+        assigned = Dict{String,Int}()
+        c1 = Perth._color_for_ip(assigned, "192.168.0.10")
+        @test Perth._color_for_ip(assigned, "192.168.0.10") == c1   # mesma máquina, mesma cor
+        @test 0 <= c1 < Perth._PRESENCE_NCOLORS
+
+        assigned2 = Dict{String,Int}()
+        ips = ["192.168.0.$(i)" for i in 1:Perth._PRESENCE_NCOLORS]
+        cols = [Perth._color_for_ip(assigned2, ip) for ip in ips]
+        @test length(unique(cols)) == Perth._PRESENCE_NCOLORS   # 8 IPs, 8 cores, sem repetir
+
+        # a nona máquina força reuso (só existem 8 cores), mas continua num valor válido
+        extra = Perth._color_for_ip(assigned2, "192.168.0.99")
+        @test 0 <= extra < Perth._PRESENCE_NCOLORS
+        @test extra in cols
+
+        # desconexão abrupta (aba fechada, rede caiu) é o fim normal de uma
+        # conexão; outros erros não podem ser silenciados como se fossem
+        @test Perth._ws_disconnect(EOFError())
+        @test Perth._ws_disconnect(Base.IOError("connection reset", -104))
+        @test !Perth._ws_disconnect(ArgumentError("boom"))
+
+        # _plain: converte a leitura preguiçosa do JSON3 (Object/Array) em
+        # Dict/Vector nativos e mutáveis, recursivamente
+        raw = JSON3.read("""{"type":"op","op":{"id":"a1","tags":["x","y"]},"n":3}""")
+        plain = Perth._plain(raw)
+        @test plain isa Dict{String,Any}
+        @test plain["type"] == "op"
+        @test plain["op"] isa Dict{String,Any}
+        @test plain["op"]["tags"] isa Vector{Any}
+        @test plain["op"]["tags"] == ["x", "y"]
+        plain["op"]["tags"][1] = "z"              # mutável de verdade (JSON3.Array não é)
+        @test plain["op"]["tags"][1] == "z"
+        @test plain["n"] == 3
+        @test Perth._plain(5) === 5               # passthrough para valores já nativos
+
+        # _print_qr: meio-blocos Unicode, duas linhas da matriz por linha de
+        # terminal
+        m = BitMatrix([true false; false true])
+        io = IOBuffer()
+        Perth._print_qr(io, m; pad = 0)
+        lines = split(String(take!(io)), '\n'; keepempty = false)
+        @test length(lines) == cld(2, 2)          # 2 linhas de matriz -> 1 linha de terminal
+        @test all(l -> all(ch -> ch in "  ▀▄█", l), lines)
+    end
+
     @testset "kanban" begin
         ktmp = mktempdir()
         Perth._init_kanban!(ktmp)
