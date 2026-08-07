@@ -51,12 +51,8 @@ const _KANBAN_LOG_KEEP = 2000                 # linhas mantidas no .jsonl ao sub
 const _KANBAN_CHAT_CAP = 300                  # mensagens em memória
 const _KANBAN_CHAT_KEEP = 2000                # linhas mantidas no .jsonl ao subir
 
-# Teto de tamanho pra texto livre vindo da rede (card, coluna, checklist,
-# assignee, alias, due): sem isso, um peer malicioso — ou só um paste
-# acidental de um blob gigante — infla o kanban.json pra sempre, sem o
-# cap de retenção que o log/chat já têm. Mesmo padrão do chat (abaixo).
-const _KANBAN_TEXT_CAP = 2000
-_cap_text(s::AbstractString) = length(s) > _KANBAN_TEXT_CAP ? first(s, _KANBAN_TEXT_CAP) : String(s)
+# _cap_text (teto de tamanho pra texto livre) vem de types.jl — compartilhado
+# com o normalize! do gantt, mesmo valor no pacote inteiro.
 
 _default_kanban_board() = Dict{String,Any}(
     "columns" => Any[

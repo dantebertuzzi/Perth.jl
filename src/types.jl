@@ -71,6 +71,13 @@ StructTypes.StructType(::Type{Project}) = StructTypes.Mutable()
 # Gera um id curto (8 hex) a partir de um UUID v4
 _short_id() = string(UUIDs.uuid4())[1:8]
 
+# Teto de tamanho pra texto livre vindo de fora (REST, WS, REPL): sem isso,
+# um campo gigante — de um cliente malicioso, ou só um paste acidental —
+# infla o projeto/board no disco pra sempre, sem cap de retenção como o
+# log/chat do kanban têm. Mesmo valor no pacote inteiro (gantt e kanban).
+const _TEXT_CAP = 2000
+_cap_text(s::AbstractString) = length(s) > _TEXT_CAP ? first(s, _TEXT_CAP) : String(s)
+
 """
     end_date(t::GanttTask) -> Date
 
@@ -98,6 +105,9 @@ function _normalize!(t::GanttTask)
     t.duration = max(t.duration, 1)
     t.cost = max(t.cost, 0.0)
     t.progress = clamp(t.progress, 0, 100)
+    t.name = _cap_text(t.name)
+    t.assignee = _cap_text(t.assignee)
+    t.notes = _cap_text(t.notes)
     unique!(t.dependencies)
     # Baseline coerente: com snapshot, duração ≥ 1; sem snapshot, zero
     if t.baseline_start === nothing

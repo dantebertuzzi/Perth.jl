@@ -20,6 +20,11 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   capped at 2000 characters, same as chat already was. Previously any
   connected peer could grow `kanban.json` without bound with a single
   oversized field.
+- Gantt: task name/assignee/notes and the project name are now capped
+  at 2000 characters too (same limit, now shared between gantt and
+  kanban). A single `PUT /api/projects/{id}` with an oversized field —
+  from `share = true` or just a large paste — used to grow the project
+  file on disk without bound.
 
 ### Fixed
 - Kanban: `setPermissions` no longer reports a change (log entry, disk

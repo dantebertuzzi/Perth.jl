@@ -175,6 +175,7 @@ _project_file(st::AppState, p::Project) = joinpath(st.data_dir, "$(p.id).json")
 # Persiste um projeto em disco e incrementa a revisão
 function _save!(st::AppState, p::Project)
     p.updated_at = Dates.now()
+    p.name = _cap_text(p.name)
     _prune_dependencies!(p)
     _prune_parents!(p)
     _rollup_summaries!(p)

@@ -51,6 +51,26 @@ end
         @test t.progress == 100
     end
 
+    @testset "teto de texto livre (name/assignee/notes/project)" begin
+        blob = "x"^3000   # acima do teto de 2000 (Perth._TEXT_CAP)
+        @test length(Perth._cap_text(blob)) == Perth._TEXT_CAP
+        @test Perth._cap_text("curto") == "curto"    # abaixo do teto: intacto
+
+        # _normalize! (chamado em todo save!, REPL e REST) corta os três campos
+        t = GanttTask(name = blob, start = Date(2026, 1, 1),
+                      assignee = blob, notes = blob)
+        Perth._normalize!(t)
+        @test length(t.name) == Perth._TEXT_CAP
+        @test length(t.assignee) == Perth._TEXT_CAP
+        @test length(t.notes) == Perth._TEXT_CAP
+
+        # nome do projeto: cortado em _save! (create_project, PUT, add_task! etc.)
+        p = create_project(blob)
+        @test length(p.name) == Perth._TEXT_CAP
+        @test length(project(p.id).name) == Perth._TEXT_CAP   # persistiu cortado
+        delete_project(p.id)
+    end
+
     @testset "projetos e tarefas via REPL" begin
         p = create_project("Obra do cartório")
         @test project("obra do cartório").id == p.id  # busca por nome, case-insensitive
@@ -621,7 +641,7 @@ end
         st = Perth._kanban_state()
 
         blob = "x"^3000   # acima do teto de 2000 (_KANBAN_TEXT_CAP)
-        @test length(Perth._cap_text(blob)) == Perth._KANBAN_TEXT_CAP
+        @test length(Perth._cap_text(blob)) == Perth._TEXT_CAP
         @test Perth._cap_text("curto") == "curto"    # abaixo do teto: intacto
 
         # addCard: texto do card e due
@@ -629,45 +649,45 @@ end
             "type" => "addCard", "col" => "c1", "id" => "bigcard1",
             "text" => blob, "due" => blob))
         card = Perth._kfindcard(st, "bigcard1")[1]["cards"][1]
-        @test length(card["text"]) == Perth._KANBAN_TEXT_CAP
-        @test length(card["due"]) == Perth._KANBAN_TEXT_CAP
+        @test length(card["text"]) == Perth._TEXT_CAP
+        @test length(card["due"]) == Perth._TEXT_CAP
 
         # editCard
         @test Perth._kanban_apply!(st, Dict{String,Any}(
             "type" => "editCard", "id" => "bigcard1", "text" => blob))
         @test length(Perth._kfindcard(st, "bigcard1")[1]["cards"][1]["text"]) ==
-              Perth._KANBAN_TEXT_CAP
+              Perth._TEXT_CAP
 
         # addCol / renameCol: nome da coluna
         @test Perth._kanban_apply!(st, Dict{String,Any}(
             "type" => "addCol", "id" => "bigcol", "name" => blob))
         @test length(Perth._kcols(st)[Perth._kfindcol(st, "bigcol")]["name"]) ==
-              Perth._KANBAN_TEXT_CAP
+              Perth._TEXT_CAP
         @test Perth._kanban_apply!(st, Dict{String,Any}(
             "type" => "renameCol", "id" => "bigcol", "name" => blob))
         @test length(Perth._kcols(st)[Perth._kfindcol(st, "bigcol")]["name"]) ==
-              Perth._KANBAN_TEXT_CAP
+              Perth._TEXT_CAP
 
         # setAssignee / setDue
         @test Perth._kanban_apply!(st, Dict{String,Any}(
             "type" => "setAssignee", "id" => "bigcard1", "name" => blob))
         @test length(Perth._kfindcard(st, "bigcard1")[1]["cards"][1]["assignee"]) ==
-              Perth._KANBAN_TEXT_CAP
+              Perth._TEXT_CAP
         @test Perth._kanban_apply!(st, Dict{String,Any}(
             "type" => "setDue", "id" => "bigcard1", "due" => blob))
         @test length(Perth._kfindcard(st, "bigcard1")[1]["cards"][1]["due"]) ==
-              Perth._KANBAN_TEXT_CAP
+              Perth._TEXT_CAP
 
         # addCheck: texto do item de checklist
         @test Perth._kanban_apply!(st, Dict{String,Any}(
             "type" => "addCheck", "card" => "bigcard1", "id" => "chk1", "text" => blob))
         f = Perth._kfindcard(st, "bigcard1")
-        @test length(f[1]["cards"][f[2]]["checklist"][1]["text"]) == Perth._KANBAN_TEXT_CAP
+        @test length(f[1]["cards"][f[2]]["checklist"][1]["text"]) == Perth._TEXT_CAP
 
         # setAlias: nome da máquina
         @test Perth._kanban_apply!(st, Dict{String,Any}(
             "type" => "setAlias", "ip" => "192.168.0.80", "name" => blob))
-        @test length(Perth._kaliases(st)["192.168.0.80"]) == Perth._KANBAN_TEXT_CAP
+        @test length(Perth._kaliases(st)["192.168.0.80"]) == Perth._TEXT_CAP
     end
 
     @testset "kanban: matriz de permissões" begin
