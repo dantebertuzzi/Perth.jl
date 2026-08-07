@@ -26,6 +26,52 @@ function loadPage(htmlPath) {
   return dom.window;
 }
 
+// Carrega o app do kanban de verdade (não só o i18n): script tags reais via
+// runScripts:"dangerously", não window.eval — em eval o "use strict" do topo
+// do arquivo isola cada chamada em seu próprio escopo e function/const de
+// topo somem; como <script> de verdade, ficam no ambiente léxico global da
+// página, do jeito que o próprio devtools do navegador os vê. Precisa de
+// stubs pro que o jsdom não implementa (WebSocket, fetch, matchMedia,
+// structuredClone) — a conexão nunca abre de verdade, então toda a lógica
+// exercida aqui é local: commit/undo/redo, canDo, inverseOf.
+function loadKanbanApp() {
+  const html = read("frontend/kanban/index.html")
+    .replace(/<script src="\/shared\/presence.js"><\/script>/, "")
+    .replace(/<script src="app.js"><\/script>/, "");
+  const dom = new JSDOM(html, { runScripts: "dangerously", url: "http://localhost/board" });
+  const w = dom.window;
+
+  class FakeWebSocket {
+    constructor(url) { this.url = url; this.readyState = 0; }
+    send() {}
+    close() { this.readyState = 3; }
+    addEventListener() {}
+  }
+  Object.assign(FakeWebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  w.WebSocket = FakeWebSocket;
+  w.fetch = () => new Promise(() => {});   // nunca resolve: nada depende da rede aqui
+  w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  w.structuredClone = structuredClone;     // não existe em window por padrão no jsdom
+
+  const inject = (code) => {
+    const s = w.document.createElement("script");
+    s.textContent = code;
+    w.document.head.appendChild(s);
+  };
+  inject(read("frontend/shared/i18n.js"));
+  inject(read("frontend/kanban/app.js"));
+
+  // Roda `code` como mais um <script> na mesma página — mesmo ambiente
+  // léxico do app.js injetado acima, então commit/state/undo/etc. são
+  // identificadores livres ali dentro, como num console de devtools real.
+  // `code` deve terminar numa expressão JSON-serializável.
+  const runIn = (code) => {
+    inject(`window.__r__ = JSON.stringify((function(){ ${code} })());`);
+    return JSON.parse(w.__r__);
+  };
+  return { w, runIn, close: () => w.close() };
+}
+
 console.log("i18n · gantt");
 {
   const w = loadPage("frontend/index.html");
@@ -89,6 +135,101 @@ console.log("chrome compartilhado");
   check(!g.slice(g.indexOf('class="toolbar"')).slice(0, 400)
           .includes("project-select"),
         "project-select saiu da toolbar");
+}
+
+console.log("kanban · commit/undo/redo");
+{
+  const { runIn, close } = loadKanbanApp();
+  const seedBoard = `state.board = { columns: [{ id: "c1", name: "backlog", cards: [] }],
+                                     archive: [], aliases: {} };`;
+
+  // ida e volta básica: addCard -> undo remove -> redo recoloca
+  let r = runIn(`${seedBoard}
+    commit({type: "addCard", col: "c1", id: "card1", text: "hello"});
+    const afterAdd = state.board.columns[0].cards.map(c => c.text);
+    undo();
+    const afterUndo = state.board.columns[0].cards.map(c => c.text);
+    redo();
+    const afterRedo = state.board.columns[0].cards.map(c => c.text);
+    return { afterAdd, afterUndo, afterRedo };`);
+  check(JSON.stringify(r.afterAdd) === '["hello"]', "addCard: commit aplica local");
+  check(JSON.stringify(r.afterUndo) === "[]", "addCard: undo remove");
+  check(JSON.stringify(r.afterRedo) === '["hello"]', "addCard: redo reaplica");
+
+  // undo sem conflito: edita duas vezes, desfaz uma, volta ao valor anterior
+  r = runIn(`${seedBoard}
+    commit({type: "addCard", col: "c1", id: "card1", text: "foo"});
+    commit({type: "editCard", id: "card1", text: "bar"});
+    undo();
+    return { text: state.board.columns[0].cards[0].text };`);
+  check(r.text === "foo", "editCard: undo sem conflito volta ao valor anterior");
+
+  // o achado do last-write-wins: undo NÃO pode sobrescrever uma edição
+  // que um colega fez depois da sua (ver fieldUnchangedSince em app.js)
+  r = runIn(`${seedBoard}
+    commit({type: "addCard", col: "c1", id: "card1", text: "foo"});
+    commit({type: "editCard", id: "card1", text: "bar"});
+    state.board.columns[0].cards[0].text = "colleague-edit";   // broadcast simulado
+    const stackLenBefore = undoStack.length;
+    undo();
+    return { text: state.board.columns[0].cards[0].text,
+             stackLenBefore, stackLenAfter: undoStack.length,
+             toast: document.querySelector(".toast")?.textContent || null };`);
+  check(r.text === "colleague-edit",
+        "editCard: undo com conflito preserva a edição do colega");
+  check(r.stackLenAfter === r.stackLenBefore - 1,
+        "editCard: entrada conflitante é descartada da undo stack (não vai pro redo)");
+  check(typeof r.toast === "string" && r.toast.includes("edit card text"),
+        "editCard: toast avisa que o undo foi pulado");
+
+  // mesmo guard, sentido redo: undo (sem conflito), colega edita, redo pula
+  r = runIn(`${seedBoard}
+    commit({type: "addCard", col: "c1", id: "card1", text: "foo"});
+    commit({type: "editCard", id: "card1", text: "bar"});
+    undo();                                            // volta pra "foo", sem conflito
+    state.board.columns[0].cards[0].text = "colleague-edit-2";
+    redo();
+    return { text: state.board.columns[0].cards[0].text };`);
+  check(r.text === "colleague-edit-2", "editCard: redo com conflito preserva o colega");
+
+  // ação estrutural (delCard) não entra no guard: sempre opera por ID
+  r = runIn(`${seedBoard}
+    commit({type: "addCard", col: "c1", id: "card1", text: "foo"});
+    commit({type: "delCard", id: "card1"});
+    undo();
+    return { texts: state.board.columns[0].cards.map(c => c.text) };`);
+  check(JSON.stringify(r.texts) === '["foo"]',
+        "delCard: undo estrutural não é bloqueado pelo guard de campo");
+
+  close();
+}
+
+console.log("kanban · permissões (client-side, canDo)");
+{
+  const { runIn, close } = loadKanbanApp();
+  const seed = `state.board = { columns: [], archive: [], aliases: {},
+                                 permissions: { "192.168.0.9": { addCard: false } } };`;
+
+  let r = runIn(`${seed} state.me = null; return canDo("addCard");`);
+  check(r === true, "sem state.me (ainda não conectou): permitido por padrão");
+
+  r = runIn(`${seed} state.me = { ip: "192.168.0.9", host: true };
+             return canDo("addCard");`);
+  check(r === true, "host nunca é restringido, mesmo com entrada bloqueando");
+
+  r = runIn(`${seed} state.me = { ip: "192.168.0.9", host: false };
+             return canDo("addCard");`);
+  check(r === false, "IP com a ação explicitamente bloqueada: negado");
+
+  r = runIn(`${seed} state.me = { ip: "192.168.0.9", host: false };
+             return canDo("delCard");`);
+  check(r === true, "mesmo IP, ação não listada na matriz: permitido (fail-open)");
+
+  r = runIn(`${seed} state.me = { ip: "10.0.0.5", host: false };
+             return canDo("addCard");`);
+  check(r === true, "outro IP, sem entrada na matriz: permitido");
+
+  close();
 }
 
 console.log(failures ? `\n${failures} falha(s)` : "\nTodos os testes passaram.");
