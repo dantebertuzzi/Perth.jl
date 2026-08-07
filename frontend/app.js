@@ -561,6 +561,15 @@ async function poll() {
   }
 }
 
+// O ciclo periódico é só um fallback: com o WS de presença conectado, o
+// servidor já empurra "rev" na hora (ver onRev abaixo) e este poll() vira
+// puro round-trip redundante. Só roda de verdade enquanto o WS estiver
+// caído/reconectando — mesma função poll(), sem duplicar a lógica.
+function pollFallback() {
+  if (window.PerthPresence && PerthPresence.isLive()) return;
+  poll();
+}
+
 /* ------------------------------------------------------------------ */
 /* Cálculo do intervalo visível                                         */
 /* ------------------------------------------------------------------ */
@@ -1917,7 +1926,7 @@ window.addEventListener("resize", () => state.current && renderChart());
       ? "no connection to the server — is Perth.run() active?"
       : `startup error: ${err.message}`;
   }
-  setInterval(poll, POLL_MS);
+  setInterval(pollFallback, POLL_MS);
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => null);

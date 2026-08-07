@@ -7,6 +7,13 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 
 ## [Unreleased]
 
+### Changed
+- Gantt: the 2.5s data-polling loop now skips itself while the presence
+  WebSocket is connected, since the server already pushes a "rev" event
+  the instant something changes — the periodic check was pure redundant
+  traffic whenever the socket was live. Still runs as a fallback while
+  the socket is down or reconnecting.
+
 ### Security
 - Kanban: free-text fields coming from the network (card text, column
   name, checklist items, assignee, machine alias, due date) are now

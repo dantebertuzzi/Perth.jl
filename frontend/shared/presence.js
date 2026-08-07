@@ -35,6 +35,7 @@ window.PerthPresence = (function () {
     lastMsgAt: 0,
     retry: 0,
     opts: null,
+    live: false,               // WS conectado — ver isLive() e setConn()
   };
 
   const $ = (sel) => document.querySelector(sel);
@@ -157,6 +158,7 @@ window.PerthPresence = (function () {
   const peerLabel = (p) => (p.name && p.name !== p.ip ? p.name : p.ip);
 
   function setConn(live, label) {
+    st.live = live;
     const conn = $("#conn");
     if (!conn) return;
     conn.classList.toggle("live", live);
@@ -279,6 +281,9 @@ window.PerthPresence = (function () {
     // reancorar cursores em scroll/resize do app
     refreshCursors: renderCursors,
     keyQS,
+    // WS conectado agora: quem usa "rev" como push (ver onRev) pode
+    // dispensar polling redundante enquanto isto for true
+    isLive: () => st.live,
   };
 
   return { connect, ...api };
