@@ -3,10 +3,33 @@ using Dates
 using Logging          # ← acrescente (para NullLogger / with_logger)
 using Perth
 import JSON3
+import HTTP
+import Sockets
 
 # Estado isolado num diretório temporário, sem tocar em ~/.perth
 tmp = mktempdir()
 Perth._init_state!(tmp)
+
+# Harness mínimo pra testar o dispatch de WS do kanban de verdade
+# (autorização, ações só-host, resync) sem duplicar o handler HTTP de
+# produção. Numa conexão loopback o IP "de origem" é sempre 127.0.0.1 —
+# não dá pra fingir de verdade — por isso ele é passado por fora via
+# Ref, em vez de lido da conexão TCP como em produção (_peer_ip).
+function _kanban_test_server(ipref::Ref{String}; keyok::Bool = true)
+    handler = function (http::HTTP.Stream)
+        if HTTP.WebSockets.isupgrade(http.message)
+            HTTP.WebSockets.upgrade(ws -> Perth._kanban_ws(ws, ipref[], keyok), http)
+        else
+            HTTP.setstatus(http, 404); HTTP.startwrite(http)
+        end
+        return nothing
+    end
+    server = Perth._quiet() do             # engole os @info de listen!/close do HTTP.jl
+        HTTP.listen!(handler, "127.0.0.1", 0; verbose = false)
+    end
+    port = Int(Sockets.getsockname(server.listener.server)[2])
+    return server, port
+end
 
 @testset "Perth.jl" begin
 
@@ -657,6 +680,86 @@ Perth._init_state!(tmp)
         st = Perth._kanban_state()
         @test !Perth._kanban_permitted(st, other, "editCard")
         @test Perth._kanban_permitted(st, other, "delCard")   # revertido antes, nunca voltou a ser bloqueado
+    end
+
+    @testset "kanban: dispatch de WS (autorização de verdade)" begin
+        ktmp = mktempdir()
+        Perth._init_kanban!(ktmp)
+        st = Perth._kanban_state()
+
+        other = "192.168.0.60"
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setPermissions", "changes" => Any[
+                Dict{String,Any}("ip" => other, "action" => "addCard", "allowed" => false)]))
+
+        ipref = Ref("")
+        server, port = _kanban_test_server(ipref)
+        try
+            # ação restringida pro IP: opDenied + resync, nada aplicado —
+            # o servidor barra mesmo que o cliente burle a UI e mande a op
+            # direto (é exatamente o que o comentário em kanban.jl promete)
+            ipref[] = other
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)     # init da conexão
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "op", "op" => Dict(
+                    "type" => "addCard", "col" => "c1", "id" => "denied01", "text" => "nope"))))
+                denied = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test denied["type"] == "opDenied"
+                @test denied["action"] == "addCard"
+                resync = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test resync["type"] == "init"
+            end
+            @test isempty(kanban_cards())
+
+            # mesma ação, IP sem restrição: aplica e faz broadcast normal
+            ipref[] = "192.168.0.61"
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "op", "op" => Dict(
+                    "type" => "addCard", "col" => "c1", "id" => "ok01", "text" => "sim"))))
+                applied = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test applied["type"] == "op"
+            end
+            @test any(c -> c.id == "ok01", kanban_cards())
+
+            # ação só-host (resetBoard) vinda de não-host: resync silencioso,
+            # sem opDenied — é barrada antes mesmo de consultar a matriz
+            ipref[] = other
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "op", "op" => Dict(
+                    "type" => "resetBoard"))))
+                resync = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test resync["type"] == "init"
+            end
+            @test any(c -> c.id == "ok01", kanban_cards())   # board não foi resetado
+
+            # mesma ação, do host (127.0.0.1 é sempre host): aplica
+            ipref[] = "127.0.0.1"
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "op", "op" => Dict(
+                    "type" => "resetBoard"))))
+                applied = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test applied["type"] == "op"
+            end
+            @test isempty(kanban_cards())
+        finally
+            Perth._quiet(() -> close(server))
+        end
+
+        # keyok = false: nega educadamente e encerra a conexão, sem
+        # chegar a registrar o cliente nem expor o board
+        ipref2 = Ref(other)
+        server2, port2 = _kanban_test_server(ipref2; keyok = false)
+        try
+            HTTP.WebSockets.open("ws://127.0.0.1:$port2") do ws
+                denied = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test denied["type"] == "denied"
+            end
+        finally
+            Perth._quiet(() -> close(server2))
+        end
     end
 
     @testset "ponte gantt↔kanban" begin
