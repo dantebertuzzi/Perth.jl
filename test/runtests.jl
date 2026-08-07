@@ -635,8 +635,9 @@ Perth._init_state!(tmp)
         @test !Perth._kanban_permitted(st, other, "moveCard")
 
         # ação fora de _KANBAN_GATED_ACTIONS é ignorada: não dá pra restringir
-        # ações de admin do board (resetBoard etc.) por essa via
-        Perth._kanban_apply!(st, Dict{String,Any}(
+        # ações de admin do board (resetBoard etc.) por essa via — e como
+        # nada muda de fato, o op não deve gerar log/persistência/broadcast
+        @test !Perth._kanban_apply!(st, Dict{String,Any}(
             "type" => "setPermissions", "changes" => Any[
                 Dict{String,Any}("ip" => other, "action" => "resetBoard", "allowed" => false)]))
         @test !haskey(get(Perth._kperms(st), other, Dict()), "resetBoard")

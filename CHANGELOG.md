@@ -5,6 +5,14 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- Kanban: `setPermissions` no longer reports a change (log entry, disk
+  write, broadcast) when every entry in the batch was invalid (empty IP
+  or an action outside the gated list) — it was a no-op that looked like
+  one.
+
 ## [0.2.4] - 2026-08-04
 
 ### Added

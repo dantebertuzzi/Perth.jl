@@ -406,6 +406,7 @@ function _kanban_apply!(st::KanbanState, op)::Bool
         changes = get(op, "changes", Any[])
         isempty(changes) && return false
         perms = _kperms(st)
+        changed = false
         for ch in changes
             ip = strip(String(get(ch, "ip", "")))
             isempty(ip) && continue
@@ -413,7 +414,11 @@ function _kanban_apply!(st::KanbanState, op)::Bool
             action in _KANBAN_GATED_ACTIONS || continue
             ipperm = get!(perms, ip, Dict{String,Any}())::Dict{String,Any}
             ipperm[action] = Bool(get(ch, "allowed", true))
+            changed = true
         end
+        # nenhuma mudança válida (só IPs vazios/ações fora da lista): não
+        # gera log, persistência nem broadcast à toa
+        changed || return false
     else
         return false
     end
