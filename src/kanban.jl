@@ -51,6 +51,13 @@ const _KANBAN_LOG_KEEP = 2000                 # linhas mantidas no .jsonl ao sub
 const _KANBAN_CHAT_CAP = 300                  # mensagens em memória
 const _KANBAN_CHAT_KEEP = 2000                # linhas mantidas no .jsonl ao subir
 
+# Teto de tamanho pra texto livre vindo da rede (card, coluna, checklist,
+# assignee, alias, due): sem isso, um peer malicioso — ou só um paste
+# acidental de um blob gigante — infla o kanban.json pra sempre, sem o
+# cap de retenção que o log/chat já têm. Mesmo padrão do chat (abaixo).
+const _KANBAN_TEXT_CAP = 2000
+_cap_text(s::AbstractString) = length(s) > _KANBAN_TEXT_CAP ? first(s, _KANBAN_TEXT_CAP) : String(s)
+
 _default_kanban_board() = Dict{String,Any}(
     "columns" => Any[
         Dict{String,Any}("id" => "c1", "name" => "backlog", "cards" => Any[]),
@@ -266,11 +273,11 @@ function _kanban_apply!(st::KanbanState, op)::Bool
     t = String(op["type"])
     if t == "addCard"
         ci = _kfindcol(st, String(op["col"])); ci === nothing && return false
-        card = Dict{String,Any}("id" => String(op["id"]), "text" => String(op["text"]),
+        card = Dict{String,Any}("id" => String(op["id"]), "text" => _cap_text(String(op["text"])),
                                 "done" => Bool(get(op, "done", false)))
         haskey(op, "by") && (card["by"] = String(op["by"]))
         haskey(op, "at") && (card["at"] = String(op["at"]))
-        d = strip(String(get(op, "due", "")))
+        d = strip(_cap_text(String(get(op, "due", ""))))
         isempty(d) || (card["due"] = String(d))
         for k in ("assignee", "done_at", "task", "project")   # undo/vínculo gantt preserva tudo
             haskey(op, k) && !isempty(String(op[k])) && (card[k] = String(op[k]))
@@ -282,7 +289,7 @@ function _kanban_apply!(st::KanbanState, op)::Bool
         insert!(dest, idx, card)
     elseif t == "editCard"
         f = _kfindcard(st, String(op["id"])); f === nothing && return false
-        f[1]["cards"][f[2]]["text"] = String(op["text"])
+        f[1]["cards"][f[2]]["text"] = _cap_text(String(op["text"]))
     elseif t == "delCard"
         f = _kfindcard(st, String(op["id"])); f === nothing && return false
         deleteat!(f[1]["cards"], f[2])
@@ -296,14 +303,14 @@ function _kanban_apply!(st::KanbanState, op)::Bool
     elseif t == "addCol"
         cards = Any[c for c in get(op, "cards", Any[])]
         col = Dict{String,Any}("id" => String(op["id"]),
-                               "name" => String(op["name"]), "cards" => cards)
+                               "name" => _cap_text(String(op["name"])), "cards" => cards)
         idx = haskey(op, "index") ?
             clamp(Int(op["index"]) + 1, 1, length(_kcols(st)) + 1) :
             length(_kcols(st)) + 1
         insert!(_kcols(st), idx, col)
     elseif t == "renameCol"
         ci = _kfindcol(st, String(op["id"])); ci === nothing && return false
-        _kcols(st)[ci]["name"] = String(op["name"])
+        _kcols(st)[ci]["name"] = _cap_text(String(op["name"]))
     elseif t == "delCol"
         ci = _kfindcol(st, String(op["id"])); ci === nothing && return false
         deleteat!(_kcols(st), ci)
@@ -354,14 +361,14 @@ function _kanban_apply!(st::KanbanState, op)::Bool
         st.board["permissions"] = pm
     elseif t == "setAssignee"
         f = _kfindcard(st, String(op["id"])); f === nothing && return false
-        n = strip(String(get(op, "name", "")))
+        n = strip(_cap_text(String(get(op, "name", ""))))
         card = f[1]["cards"][f[2]]
         isempty(n) ? delete!(card, "assignee") : (card["assignee"] = String(n))
     elseif t == "addCheck"
         f = _kfindcard(st, String(op["card"])); f === nothing && return false
         cl = get!(f[1]["cards"][f[2]], "checklist", Any[])
         push!(cl, Dict{String,Any}("id" => String(op["id"]),
-                                   "text" => String(op["text"]), "done" => false))
+                                   "text" => _cap_text(String(op["text"])), "done" => false))
     elseif t == "toggleCheck"
         f = _kfindcard(st, String(op["card"])); f === nothing && return false
         cl = get(f[1]["cards"][f[2]], "checklist", Any[])
@@ -387,7 +394,7 @@ function _kanban_apply!(st::KanbanState, op)::Bool
         w > 0 ? (col["wip"] = w) : delete!(col, "wip")
     elseif t == "setDue"
         f = _kfindcard(st, String(op["id"])); f === nothing && return false
-        d = strip(String(get(op, "due", "")))
+        d = strip(_cap_text(String(get(op, "due", ""))))
         card = f[1]["cards"][f[2]]
         isempty(d) ? delete!(card, "due") : (card["due"] = String(d))
     elseif t == "sortCol"
@@ -397,7 +404,7 @@ function _kanban_apply!(st::KanbanState, op)::Bool
     elseif t == "setAlias"
         ip = strip(String(op["ip"]))
         isempty(ip) && return false
-        name = strip(String(get(op, "name", "")))
+        name = strip(_cap_text(String(get(op, "name", ""))))
         al = _kaliases(st)
         isempty(name) ? delete!(al, String(ip)) : (al[String(ip)] = String(name))
     elseif t == "setPermissions"

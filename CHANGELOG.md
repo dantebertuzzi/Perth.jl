@@ -7,6 +7,13 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 
 ## [Unreleased]
 
+### Security
+- Kanban: free-text fields coming from the network (card text, column
+  name, checklist items, assignee, machine alias, due date) are now
+  capped at 2000 characters, same as chat already was. Previously any
+  connected peer could grow `kanban.json` without bound with a single
+  oversized field.
+
 ### Fixed
 - Kanban: `setPermissions` no longer reports a change (log entry, disk
   write, broadcast) when every entry in the batch was invalid (empty IP
