@@ -129,7 +129,10 @@ card animates on everyone's screen, and each connected machine shows up
 as a labelled cursor with its name and IP — pair-programming style, plus
 a colored outline on any card someone else is moving or editing. Remote
 cursors are anchored to elements (card/column + fractional offset), not
-pixels, so they survive different window sizes and zoom levels.
+pixels, so they survive different window sizes and zoom levels. Each
+browser can locally turn off *seeing* other people's cursors (menubar →
+*Hide other cursors*) — a rendering preference remembered per browser,
+not a presence opt-out: everyone else still sees yours.
 
 Cards carry a done state (✓ on hover) and, once done, an **archive**
 button; the archive panel (Board → Archived cards…) can restore or
@@ -140,6 +143,17 @@ Board → Rename machines… or `kanban_alias!`; the mapping applies to
 cursors, presence chips and card stamps on everyone's screen. `Ctrl+Z` /
 `Ctrl+Shift+Z` undo and redo your own actions (collaborative-style: they
 never revert what a colleague did afterwards).
+
+The **host** can also restrict what a given machine is allowed to do:
+`Board → Permissions…` opens a matrix of every card/column action
+(add/edit/delete/move cards, columns and checklist items, WIP limits,
+due dates, sorting — 19 in total) against every IP that has connected,
+toggled individually or in bulk (a whole row, a whole column, or
+everything at once). It's enforced **server-side** — a client can't get
+around it by talking to the WebSocket directly, only the UI hides what's
+denied — and stored inside the board itself, so it survives reconnects
+and server restarts. New boards start unrestricted, so nothing changes
+until you touch the matrix; the host itself can never be restricted.
 
 Flow features: per-column **WIP limits** (the counter turns red when
 exceeded — a signal, not a lock), **due dates** on cards (overdue in red,
@@ -172,7 +186,11 @@ concurrent edits resolve as last write wins). Clients apply their own
 edits optimistically and reconnect on their own if the server restarts.
 
 **Security:** `share = true` means no authentication — anyone on the
-network who knows the port can edit the board. The Gantt server is
+network who knows the port can *connect* to the board. The permission
+matrix (above) restricts what a connected machine can then *do*, but it
+is not a login: it doesn't gate the connection itself, and identity is
+just an IP address (spoofable on an untrusted LAN). Treat it as
+reducing blast radius, not as authentication. The Gantt server is
 unaffected and still binds to localhost only. Never expose either port
 to the internet.
 
