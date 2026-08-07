@@ -383,6 +383,49 @@ function inverseOf(op) {
   }
 }
 
+// Ações que sobrescrevem um campo (texto/nome/valor) em vez de criar,
+// apagar ou mover algo por ID: o undo delas só é seguro se ninguém
+// mexeu no mesmo campo depois da sua edição — ver fieldUnchangedSince.
+// Ações estruturais (addCard, delCard, moveCard, archiveCard...) ficam
+// de fora: operam por ID e não pisam em conteúdo alheio.
+const FIELD_OPS = new Set(["editCard", "renameCol", "setWip", "setDue",
+                           "setAssignee", "setAutoArchive", "setAlias"]);
+
+// Confere se o campo alvo de refOp ainda está com o valor que refOp
+// deixou. Usado antes de aplicar a inversa (undo) ou reaplicar a ação
+// original (redo): se o valor mudou nesse meio tempo, um colega editou
+// o mesmo campo depois — desfazer/refazer aqui apagaria a edição dele.
+function fieldUnchangedSince(refOp) {
+  switch (refOp.type) {
+    case "editCard": {
+      const f = findCard(refOp.id);
+      return !!f && f.col.cards[f.index].text === refOp.text;
+    }
+    case "renameCol": {
+      const c = colById(refOp.id);
+      return !!c && c.name === refOp.name;
+    }
+    case "setWip": {
+      const c = colById(refOp.id);
+      return !!c && (c.wip || 0) === refOp.wip;
+    }
+    case "setDue": {
+      const f = findCard(refOp.id);
+      return !!f && (f.col.cards[f.index].due || "") === (refOp.due || "");
+    }
+    case "setAssignee": {
+      const f = findCard(refOp.id);
+      return !!f && (f.col.cards[f.index].assignee || "") === (refOp.name || "");
+    }
+    case "setAutoArchive":
+      return (state.board.auto_archive_days || 0) === refOp.days;
+    case "setAlias":
+      return aliasOf(refOp.ip) === (refOp.name || "");
+    default:
+      return true;
+  }
+}
+
 // Permissões: lidas direto de state.board.permissions (parte do board que
 // já chega inteiro em cada broadcast) — nunca fica desatualizada esperando
 // um payload à parte, e é o que a própria matriz do host também lê/edita.
@@ -406,12 +449,9 @@ function applyRestriction(el, action) {
   el.title = reason + ": " + actionLabel(action);
 }
 
-function deniedToast(action) {
-  const label = actionLabel(action);
-  const msg = (window.PerthI18n ? PerthI18n.t("The host restricted this action for your machine") :
-    "The host restricted this action for your machine") + (label ? ": " + label : "");
+function showToast(msg, cls = "toast-denied") {
   const t = document.createElement("div");
-  t.className = "toast toast-denied";
+  t.className = "toast " + cls;
   t.textContent = msg;
   toastsEl.append(t);
   while (toastsEl.children.length > 4) toastsEl.firstChild.remove();
@@ -419,6 +459,20 @@ function deniedToast(action) {
     t.classList.add("out");
     setTimeout(() => t.remove(), 260);
   }, 4200);
+}
+
+function deniedToast(action) {
+  const label = actionLabel(action);
+  showToast((window.PerthI18n ? PerthI18n.t("The host restricted this action for your machine") :
+    "The host restricted this action for your machine") + (label ? ": " + label : ""));
+}
+
+// Undo/redo pulou um campo porque um colega mexeu nele depois da sua
+// edição (ver fieldUnchangedSince) — avisa em vez de sobrescrever calado.
+function concurrentEditToast(action) {
+  const label = actionLabel(action);
+  showToast((window.PerthI18n ? PerthI18n.t("Someone changed this since your edit — undo skipped") :
+    "Someone changed this since your edit — undo skipped") + (label ? ": " + label : ""));
 }
 
 // único ponto de bloqueio no cliente: drag-and-drop, botões, atalhos de
@@ -449,6 +503,10 @@ function commitRaw(op) {
 function undo() {
   const e = undoStack.pop();
   if (!e) return;
+  if (FIELD_OPS.has(e.do.type) && !fieldUnchangedSince(e.do)) {
+    concurrentEditToast(e.do.type);
+    return;   // descarta esta entrada: já não reflete o estado atual
+  }
   commitRaw(e.undo);
   redoStack.push(e);
 }
@@ -456,6 +514,10 @@ function undo() {
 function redo() {
   const e = redoStack.pop();
   if (!e) return;
+  if (FIELD_OPS.has(e.undo.type) && !fieldUnchangedSince(e.undo)) {
+    concurrentEditToast(e.undo.type);
+    return;
+  }
   commitRaw(e.do);
   undoStack.push(e);
 }

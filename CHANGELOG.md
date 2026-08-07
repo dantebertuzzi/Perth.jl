@@ -19,6 +19,13 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   write, broadcast) when every entry in the batch was invalid (empty IP
   or an action outside the gated list) — it was a no-op that looked like
   one.
+- Kanban: `Ctrl+Z`/`Ctrl+Shift+Z` no longer silently overwrite a
+  colleague's edit made after yours. Undo/redo of a field-overwrite
+  action (card text, column name/WIP, due date, assignee, machine
+  alias) now checks whether the field still holds the value your own
+  action set; if someone else changed it since, the undo/redo is
+  skipped with a toast instead of clobbering their edit. Structural
+  actions (create/delete/move) were already safe and are unaffected.
 
 ## [0.2.4] - 2026-08-04
 
