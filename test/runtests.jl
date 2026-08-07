@@ -539,6 +539,72 @@ Perth._init_state!(tmp)
         @test isfile(st.logfile)
     end
 
+    @testset "kanban: matriz de permissões" begin
+        ktmp = mktempdir()
+        Perth._init_kanban!(ktmp)
+        st = Perth._kanban_state()
+
+        host = "127.0.0.1"
+        other = "192.168.0.50"
+
+        # fail-open: sem matriz, sem entrada pro IP, ou ação não listada -> permitido
+        @test Perth._kanban_permitted(st, other, "addCard")
+        @test Perth._kanban_permitted(st, other, "delCol")
+
+        # host nunca é restringido, mesmo com uma entrada bloqueando explicitamente
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setPermissions", "changes" => Any[
+                Dict{String,Any}("ip" => host, "action" => "addCard", "allowed" => false)]))
+        @test Perth._kanban_permitted(st, host, "addCard")
+
+        # restringe uma ação pontual pra um IP: só ela fica bloqueada
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setPermissions", "changes" => Any[
+                Dict{String,Any}("ip" => other, "action" => "delCard", "allowed" => false)]))
+        @test !Perth._kanban_permitted(st, other, "delCard")
+        @test Perth._kanban_permitted(st, other, "addCard")      # outras ações seguem liberadas
+        @test Perth._kanban_permitted(st, "192.168.0.99", "delCard")  # outro IP não é afetado
+
+        # reverter (allowed = true) libera de novo
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setPermissions", "changes" => Any[
+                Dict{String,Any}("ip" => other, "action" => "delCard", "allowed" => true)]))
+        @test Perth._kanban_permitted(st, other, "delCard")
+
+        # ação em lote: várias mudanças num único op (linha inteira do modal)
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setPermissions", "changes" => Any[
+                Dict{String,Any}("ip" => other, "action" => "addCard", "allowed" => false),
+                Dict{String,Any}("ip" => other, "action" => "editCard", "allowed" => false),
+                Dict{String,Any}("ip" => other, "action" => "moveCard", "allowed" => false)]))
+        @test !Perth._kanban_permitted(st, other, "addCard")
+        @test !Perth._kanban_permitted(st, other, "editCard")
+        @test !Perth._kanban_permitted(st, other, "moveCard")
+
+        # ação fora de _KANBAN_GATED_ACTIONS é ignorada: não dá pra restringir
+        # ações de admin do board (resetBoard etc.) por essa via
+        Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setPermissions", "changes" => Any[
+                Dict{String,Any}("ip" => other, "action" => "resetBoard", "allowed" => false)]))
+        @test !haskey(get(Perth._kperms(st), other, Dict()), "resetBoard")
+
+        # op sem changes (lista vazia) não altera nada
+        @test !Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setPermissions", "changes" => Any[]))
+
+        # sobrevive a resetBoard (config de máquina, não conteúdo do board)
+        @test Perth._kanban_apply!(st, Dict{String,Any}("type" => "resetBoard"))
+        @test !Perth._kanban_permitted(st, other, "editCard")
+        @test !Perth._kanban_permitted(st, other, "moveCard")
+
+        # sobrevive a persistência + reload, como aliases
+        Perth._kanban_persist(st)
+        Perth._init_kanban!(ktmp)
+        st = Perth._kanban_state()
+        @test !Perth._kanban_permitted(st, other, "editCard")
+        @test Perth._kanban_permitted(st, other, "delCard")   # revertido antes, nunca voltou a ser bloqueado
+    end
+
     @testset "ponte gantt↔kanban" begin
         # estado limpo para as duas pontas (isola do resto da suíte)
         gtmp = mktempdir(); Perth._init_state!(gtmp)
