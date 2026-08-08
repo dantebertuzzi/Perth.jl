@@ -17,6 +17,10 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   behavior, F11, window manager) is caught via the `fullscreenchange`
   event so the UI chrome comes back in sync either way.
 
+### Changed
+- Kanban: swapped `alert.mp3`, the notification sound played on new
+  board activity, for a new clip.
+
 ## [0.3.0] - 2026-08-07
 
 ### Added
