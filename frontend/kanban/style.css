@@ -640,101 +640,7 @@ kbd {
   to { opacity: 1; transform: none; }
 }
 
-/* ---------- chat geral ---------- */
-
-/* badge de não lidas no ícone do menubar (mesmo vermelho do WIP estourado) */
-.chat-badge {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: var(--red);
-  color: #fff;
-  font-size: 9.5px;
-  font-weight: 700;
-  line-height: 14px;
-  text-align: center;
-}
-#chat-toggle { position: relative; }
-
-/* painel flutuante, não-modal: fica aberto durante o drag/edição de cards
-   (ao contrário do overlay bloqueante de Activity/Archived) */
-.chat-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 320px;
-  max-width: 100vw;
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border-left: 1px solid var(--line);
-  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.22);
-  z-index: 260;
-}
-.chat-head {
-  display: flex;
-  align-items: center;
-  flex: none;
-  height: 36px;
-  padding: 0 8px 0 14px;
-  border-bottom: 1px solid var(--line);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-.chat-head button { margin-left: auto; color: var(--muted); padding: 2px 8px; }
-.chat-head button:hover { color: var(--ink); }
-.chat-log {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.chat-msg { max-width: 88%; }
-.chat-msg.mine { align-self: flex-end; text-align: right; }
-.chat-meta { font-size: 10.5px; color: var(--muted); }
-.chat-who { font-weight: 700; color: var(--peer, var(--purple)); }
-.chat-text {
-  margin-top: 2px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  background: var(--line-soft);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  text-align: left;
-}
-.chat-msg.mine .chat-text { background: var(--sel); }
-.chat-typing {
-  flex: none;
-  padding: 3px 12px;
-  font-size: 11px;
-  font-style: italic;
-  color: var(--muted);
-}
-.chat-form {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  flex: none;
-  padding: 8px;
-  border-top: 1px solid var(--line);
-}
-.chat-form textarea {
-  flex: 1;
-  resize: none;
-  max-height: 120px;
-  padding: 6px 8px;
-}
-.chat-form button { flex: none; }
-
-/* enquanto o chat está aberto, os toasts não ficam escondidos atrás dele */
-body.chat-open #toasts { right: 334px; }
+/* chat geral: CSS movida pra shared/ui.css (gantt também usa agora) */
 
 /* ==========================================================================
    Features do release 0.2.0: board chip, checklist, responsável, markdown
@@ -942,6 +848,5 @@ a.card-link:hover { border-bottom-color: var(--blue); }
   #toasts { right: 8px; left: 8px; bottom: 12px; }
   .toast { max-width: none; }
 
-  .chat-panel { width: 100vw; }
-  body.chat-open #toasts { right: 8px; }
+  /* .chat-panel/#toasts em telas estreitas: ver shared/ui.css */
 }

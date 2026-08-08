@@ -17,6 +17,11 @@ function check(cond, msg) {
   else { failures++; console.error("  ✗ " + msg); }
 }
 
+// IIFE assíncrona: o novo bloco "gantt · chat" precisa aguardar o init()
+// do app (rejeita o fetch stub de propósito — ver loadGanttApp — pra
+// PerthPresence.connect() rodar) antes de simular mensagens no WS.
+(async () => {
+
 function loadPage(htmlPath) {
   const html = read(htmlPath)
     .replace(/<script src="\/app.js"><\/script>/, "")
@@ -80,17 +85,24 @@ function loadGanttApp() {
   const dom = new JSDOM(html, { runScripts: "dangerously", url: "http://localhost/" });
   const w = dom.window;
 
+  // window.__ws sempre aponta pra instância mais recente: PerthPresence.
+  // connect() reabre em cada retry de "onclose", então o teste precisa do
+  // socket ATUAL, não de uma referência congelada no momento do load.
   class FakeWebSocket {
-    constructor(url) { this.url = url; this.readyState = 0; }
+    constructor(url) { this.url = url; this.readyState = 0; w.__ws = this; }
     send() {}
     close() { this.readyState = 3; }
     addEventListener() {}
   }
   Object.assign(FakeWebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   w.WebSocket = FakeWebSocket;
-  w.fetch = () => new Promise(() => {});
+  // rejeita na hora (não trava pra sempre): o init() do gantt só chama
+  // PerthPresence.connect() DEPOIS do try/catch de fetchRev()/loadProjects
+  // — sem rejeitar, esse await nunca resolve e o WS nunca chega a abrir
+  w.fetch = () => Promise.reject(new Error("fetch disabled in test"));
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   w.structuredClone = structuredClone;
+  w.console.error = () => {};   // init() loga o fetch rejeitado de propósito acima; ruído esperado
 
   const inject = (code) => {
     const s = w.document.createElement("script");
@@ -105,7 +117,10 @@ function loadGanttApp() {
     inject(`window.__r__ = JSON.stringify((function(){ ${code} })());`);
     return JSON.parse(w.__r__);
   };
-  return { w, runIn, close: () => w.close() };
+  // simula o servidor mandando `msg` pelo socket atual (dispara handle()
+  // dentro de presence.js, que por sua vez chama onChat/onTyping/onRev)
+  const simulate = (msg) => w.__ws.onmessage({ data: JSON.stringify(msg) });
+  return { w, runIn, simulate, close: () => w.close() };
 }
 
 console.log("i18n · gantt");
@@ -279,6 +294,7 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
   ] };`;
 
   let { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));   // deixa init() assentar antes de fechar
   let r = runIn(`${seedOne}
     pushUndo();
     state.current.tasks[0].name = "editada localmente";
@@ -295,6 +311,7 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
   close();
 
   ({ runIn, close } = loadGanttApp());
+  await new Promise((r) => setTimeout(r, 50));   // deixa init() assentar antes de fechar
   r = runIn(`${seedOne}
     pushUndo();
     state.current.tasks[0].name = "editada";
@@ -305,6 +322,7 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
   close();
 
   ({ runIn, close } = loadGanttApp());
+  await new Promise((r) => setTimeout(r, 50));   // deixa init() assentar antes de fechar
   r = runIn(`state.current = { id: "p1", name: "Proj", tasks: [
       { id: "t1", name: "Tarefa 1", start: "2026-08-03", duration: 5, dependencies: [] },
       { id: "t2", name: "Tarefa 2", start: "2026-08-05", duration: 2, dependencies: [] }
@@ -320,6 +338,7 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
   close();
 
   ({ runIn, close } = loadGanttApp());
+  await new Promise((r) => setTimeout(r, 50));   // deixa init() assentar antes de fechar
   r = runIn(`state.current = { id: "p1", name: "Proj", tasks: [
       { id: "t1", name: "foo", start: "2026-08-03", duration: 5, dependencies: [] }
     ] };
@@ -334,6 +353,7 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
   close();
 
   ({ runIn, close } = loadGanttApp());
+  await new Promise((r) => setTimeout(r, 50));   // deixa init() assentar antes de fechar
   r = runIn(`state.current = { id: "p1", name: "Original", tasks: [] };
     pushUndo();
     state.current.name = "Renomeado localmente";
@@ -345,6 +365,7 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
   close();
 
   ({ runIn, close } = loadGanttApp());
+  await new Promise((r) => setTimeout(r, 50));   // deixa init() assentar antes de fechar
   r = runIn(`state.current = { id: "p1", name: "Proj", tasks: [
       { id: "t1", name: "Vai ser apagada", start: "2026-08-03", duration: 5, dependencies: [] }
     ] };
@@ -360,6 +381,7 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
   close();
 
   ({ runIn, close } = loadGanttApp());
+  await new Promise((r) => setTimeout(r, 50));   // deixa init() assentar antes de fechar
   r = runIn(`state.current = { id: "p1", name: "Proj", tasks: [
       { id: "t1", name: "v0", start: "2026-08-03", duration: 5, dependencies: [] }
     ] };
@@ -377,5 +399,91 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
   close();
 }
 
-console.log(failures ? `\n${failures} falha(s)` : "\nTodos os testes passaram.");
-process.exit(failures ? 1 : 0);
+console.log("gantt · chat");
+{
+  const { w, runIn, simulate, close } = loadGanttApp();
+  // init() só chama PerthPresence.connect() depois do catch do fetch
+  // rejeitado (ver loadGanttApp) — espera essa volta assíncrona terminar
+  await new Promise((r) => setTimeout(r, 50));
+  check(!!w.__ws, "WS do PerthPresence abriu (init assíncrono completou)");
+
+  simulate({ type: "init", you: { id: 1, ip: "127.0.0.1", name: "127.0.0.1", color: 0, host: true },
+             peers: [], chat: [{ at: "2026-01-01 10:00", ip: "10.0.0.2", text: "oi time" }] });
+  let r = runIn(`return PerthPresence.chat().length;`);
+  check(r === 1, "init popula o histórico via PerthPresence.chat()");
+
+  // painel fechado (estado inicial): mensagem nova só incrementa o badge
+  simulate({ type: "chat", entry: { at: "2026-01-01 10:01", ip: "10.0.0.3", text: "primeira" } });
+  r = runIn(`return { badgeHidden: el.chatBadge.hidden, badgeText: el.chatBadge.textContent };`);
+  check(r.badgeHidden === false, "mensagem nova com painel fechado: badge aparece");
+  check(r.badgeText === "1", "badge mostra a contagem certa");
+
+  // abrir zera o badge e renderiza o histórico inteiro
+  r = runIn(`
+    openChat();
+    return { badgeHidden: el.chatBadge.hidden, rows: el.chatLog.querySelectorAll(".chat-msg").length };
+  `);
+  check(r.badgeHidden === true, "abrir o chat zera o badge de não lidas");
+  check(r.rows === 2, "abrir o chat renderiza todo o histórico (init + a nova)");
+
+  // mensagem do próprio IP ganha a classe .mine
+  simulate({ type: "chat", entry: { at: "2026-01-01 10:02", ip: "127.0.0.1", text: "minha" } });
+  r = runIn(`
+    const rows = [...el.chatLog.querySelectorAll(".chat-msg")];
+    const last = rows[rows.length - 1];
+    return { count: rows.length, mine: last.classList.contains("mine"),
+             text: last.querySelector(".chat-text").textContent };
+  `);
+  check(r.count === 3, "painel aberto: mensagem nova é anexada na hora");
+  check(r.mine === true, "mensagem do próprio IP ganha a classe .mine");
+  check(r.text === "minha", "texto da mensagem renderizado corretamente");
+
+  // enviar: chama PerthPresence.sendChat com o texto sem espaços, limpa o campo
+  r = runIn(`
+    let sent = null;
+    const orig = PerthPresence.sendChat;
+    PerthPresence.sendChat = (t) => { sent = t; };
+    el.chatInput.value = "  mensagem de teste  ";
+    submitChat();
+    const out = { sent, value: el.chatInput.value };
+    PerthPresence.sendChat = orig;
+    return out;
+  `);
+  check(r.sent === "mensagem de teste", "submitChat manda o texto aparado");
+  check(r.value === "", "submitChat limpa o campo depois de enviar");
+
+  // vazio (ou só espaço) não envia
+  r = runIn(`
+    let sent = null;
+    const orig = PerthPresence.sendChat;
+    PerthPresence.sendChat = (t) => { sent = t; };
+    el.chatInput.value = "   ";
+    submitChat();
+    PerthPresence.sendChat = orig;
+    return sent;
+  `);
+  check(r === null, "submitChat não manda mensagem vazia/só espaço");
+
+  // indicador de digitação: só atualiza com o painel aberto
+  runIn(`closeChat(); return null;`);
+  simulate({ type: "typing", from: 42 });
+  r = runIn(`return el.chatTyping.hidden;`);
+  check(r === true, "typing com painel fechado: não mostra o indicador");
+
+  runIn(`openChat(); return null;`);
+  simulate({ type: "join", peer: { id: 42, ip: "10.0.0.9", name: "10.0.0.9", color: 2 } });
+  simulate({ type: "typing", from: 42 });
+  r = runIn(`return { hidden: el.chatTyping.hidden, text: el.chatTyping.textContent };`);
+  check(r.hidden === false, "typing com painel aberto: mostra o indicador");
+  check(r.text.includes("10.0.0.9"), "indicador de digitação mostra quem está digitando");
+
+  close();
+}
+
+})().then(() => {
+  console.log(failures ? `\n${failures} falha(s)` : "\nTodos os testes passaram.");
+  process.exit(failures ? 1 : 0);
+}).catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

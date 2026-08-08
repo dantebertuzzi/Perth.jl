@@ -197,6 +197,11 @@ const el = {
   fbHint: $("#fb-hint"),
   fbChoose: $("#fb-choose"),
   highlightSelect: $("#highlight-select"),
+  chatPanel: $("#chat-panel"),
+  chatLog: $("#chat-log"),
+  chatBadge: $("#chat-badge"),
+  chatInput: $("#chat-input"),
+  chatTyping: $("#chat-typing"),
 };
 
 /* ------------------------------------------------------------------ */
@@ -1922,7 +1927,10 @@ document.addEventListener("keydown", (ev) => {
     case "1": setZoom("day"); break;
     case "2": setZoom("week"); break;
     case "3": setZoom("month"); break;
-    case "Escape": state.selected = null; renderTable(); renderChart(); break;
+    case "Escape":
+      if (chatOpen) { closeChat(); break; }
+      state.selected = null; renderTable(); renderChart();
+      break;
   }
 });
 
@@ -1978,6 +1986,167 @@ window.addEventListener("beforeunload", () => {
 });
 
 window.addEventListener("resize", () => state.current && renderChart());
+
+/* ------------------------------------------------------------------ */
+/* Chat geral                                                            */
+/*                                                                        */
+/* Painel flutuante, não-modal (fica aberto durante drag/edição, ao       */
+/* contrário do modal de tarefa). Mesmo desenho do kanban                */
+/* (frontend/kanban/app.js), mas sobre o canal do PerthPresence — sem     */
+/* WS próprio, sem eco otimista: a mensagem só aparece quando o servidor  */
+/* rebroadcasta (ver onChat/onTyping no PerthPresence.connect() abaixo).  */
+/* ------------------------------------------------------------------ */
+
+let chatOpen = false;
+let chatUnseen = 0;
+
+// "alguém está digitando": sinal efêmero (não entra no histórico). Cada
+// peer some da lista sozinho se não reenviar em TYPING_TTL.
+const TYPING_TTL = 4000;
+const typingPeers = new Map();   // peer id -> timeout handle
+let lastTypingSent = 0;
+
+function renderTyping() {
+  const peers = PerthPresence ? PerthPresence.peers() : [];
+  const names = [...typingPeers.keys()]
+    .map((id) => peers.find((p) => p.id === id))
+    .filter(Boolean)
+    .map((p) => PerthPresence.labelFor(p.ip));
+  el.chatTyping.hidden = !names.length;
+  el.chatTyping.textContent = names.length === 0 ? "" :
+    names.length === 1 ? `${names[0]} is typing…` :
+    `${names.length} people are typing…`;
+}
+
+function markTyping(peerId) {
+  if (typingPeers.has(peerId)) clearTimeout(typingPeers.get(peerId));
+  typingPeers.set(peerId, setTimeout(() => {
+    typingPeers.delete(peerId);
+    renderTyping();
+  }, TYPING_TTL));
+  renderTyping();
+}
+
+function clearTypingByIp(ip) {
+  const p = PerthPresence.peers().find((p) => p.ip === ip);
+  if (!p || !typingPeers.has(p.id)) return;
+  clearTimeout(typingPeers.get(p.id));
+  typingPeers.delete(p.id);
+  renderTyping();
+}
+
+function updateChatBadge() {
+  el.chatBadge.hidden = chatUnseen === 0;
+  el.chatBadge.textContent = chatUnseen > 9 ? "9+" : String(chatUnseen);
+}
+
+function chatMsgEl(e) {
+  const me = PerthPresence.me();
+  const mine = me && e.ip === me.ip;
+  const row = document.createElement("div");
+  row.className = "chat-msg" + (mine ? " mine" : "");
+  row.style.setProperty("--peer", PerthPresence.colorFor(e.ip));
+  const meta = document.createElement("div");
+  meta.className = "chat-meta";
+  const who = document.createElement("span");
+  who.className = "chat-who";
+  who.textContent = PerthPresence.labelFor(e.ip);
+  who.title = e.ip;
+  meta.append(who, " " + e.at);
+  const text = document.createElement("div");
+  text.className = "chat-text";
+  text.textContent = e.text;
+  row.append(meta, text);
+  return row;
+}
+
+function appendChatMsg(e) {
+  const nearBottom = el.chatLog.scrollHeight - el.chatLog.scrollTop -
+                     el.chatLog.clientHeight < 60;
+  el.chatLog.append(chatMsgEl(e));
+  if (nearBottom) el.chatLog.scrollTop = el.chatLog.scrollHeight;
+}
+
+function renderChat() {
+  el.chatLog.textContent = "";
+  const chat = PerthPresence.chat();
+  if (!chat.length) {
+    const p = document.createElement("div");
+    p.className = "empty-note";
+    p.textContent = T("No messages yet — say hi.");
+    el.chatLog.append(p);
+  } else {
+    for (const e of chat) el.chatLog.append(chatMsgEl(e));
+  }
+  el.chatLog.scrollTop = el.chatLog.scrollHeight;
+}
+
+function openChat() {
+  chatOpen = true;
+  document.body.classList.add("chat-open");
+  el.chatPanel.hidden = false;
+  chatUnseen = 0;
+  updateChatBadge();
+  renderChat();
+  el.chatInput.focus();
+}
+
+function closeChat() {
+  chatOpen = false;
+  document.body.classList.remove("chat-open");
+  el.chatPanel.hidden = true;
+  for (const id of typingPeers.keys()) clearTimeout(typingPeers.get(id));
+  typingPeers.clear();
+}
+
+function submitChat() {
+  const v = el.chatInput.value.trim();
+  if (!v) return;
+  PerthPresence.sendChat(v);
+  el.chatInput.value = "";
+  el.chatInput.style.height = "";
+  lastTypingSent = 0;   // próxima letra já reavisa, sem esperar o throttle
+}
+
+// chamados pelo PerthPresence quando "chat"/"typing" chegam pelo WS —
+// ver onChat/onTyping em PerthPresence.connect() logo abaixo
+function handleChatEntry(entry) {
+  clearTypingByIp(entry.ip);
+  if (chatOpen) {
+    appendChatMsg(entry);
+  } else {
+    chatUnseen += 1;
+    updateChatBadge();
+  }
+}
+
+function handleTyping(fromId) {
+  if (chatOpen) markTyping(fromId);
+}
+
+$("#chat-toggle")?.addEventListener("click", () => (chatOpen ? closeChat() : openChat()));
+$("#chat-close")?.addEventListener("click", closeChat);
+$("#chat-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitChat();
+});
+el.chatInput?.addEventListener("input", () => {
+  el.chatInput.style.height = "auto";
+  el.chatInput.style.height = Math.min(el.chatInput.scrollHeight, 120) + "px";
+  const now = Date.now();
+  if (el.chatInput.value.trim() && now - lastTypingSent > 2000) {
+    lastTypingSent = now;
+    PerthPresence.sendTyping();
+  }
+});
+el.chatInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    submitChat();
+  } else if (e.key === "Escape") {
+    closeChat();
+  }
+});
 
 /* ------------------------------------------------------------------ */
 /* Inicialização                                                        */
@@ -2090,6 +2259,8 @@ window.addEventListener("resize", () => state.current && renderChart());
       // o servidor avisa "rev" na hora da mudança: recarrega sem esperar
       // o próximo ciclo de polling
       onRev: () => poll(),
+      onChat: handleChatEntry,
+      onTyping: handleTyping,
     });
     // cursores são ancorados a elementos: reancorar em scroll/resize
     tlBody?.addEventListener("scroll", PerthPresence.refreshCursors,

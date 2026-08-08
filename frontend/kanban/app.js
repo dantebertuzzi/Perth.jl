@@ -2154,7 +2154,8 @@ function renderChat() {
   if (!state.chat.length) {
     const p = document.createElement("div");
     p.className = "empty-note";
-    p.textContent = "No messages yet — say hi.";
+    p.textContent = window.PerthI18n
+      ? PerthI18n.t("No messages yet — say hi.") : "No messages yet — say hi.";
     chatLogEl.append(p);
   } else {
     for (const e of state.chat) chatLogEl.append(chatMsgEl(e));

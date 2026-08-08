@@ -671,9 +671,8 @@ end
 # entrar no log de atividades): só uma lista append-only, persistida e
 # rebroadcast. WS e REPL passam por aqui, como em _kanban_commit!.
 function _kanban_chat_commit!(text::AbstractString; actor::AbstractString = "repl")
-    text = strip(String(text))
+    text = _cap_text(strip(String(text)))
     isempty(text) && return false
-    length(text) > 2000 && (text = first(text, 2000))
     st = _kanban_state()
     entry = Dict{String,Any}("at" => _kanban_now(), "ip" => String(actor), "text" => text)
     lock(st.lock) do

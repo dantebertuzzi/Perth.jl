@@ -33,6 +33,24 @@ function _kanban_test_server(ipref::Ref{String}; keyok::Bool = true)
     return server, port
 end
 
+# Mesma técnica de _kanban_test_server, pro _presence_ws genérico (gantt).
+# `hub` isolado (não o GANTT_HUB global) pra não vazar estado entre testes.
+function _presence_test_server(hub::Perth.PresenceHub, ipref::Ref{String}; keyok::Bool = true)
+    handler = function (http::HTTP.Stream)
+        if HTTP.WebSockets.isupgrade(http.message)
+            HTTP.WebSockets.upgrade(ws -> Perth._presence_ws(hub, ws, ipref[], keyok), http)
+        else
+            HTTP.setstatus(http, 404); HTTP.startwrite(http)
+        end
+        return nothing
+    end
+    server = Perth._quiet() do
+        HTTP.listen!(handler, "127.0.0.1", 0; verbose = false)
+    end
+    port = Int(Sockets.getsockname(server.listener.server)[2])
+    return server, port
+end
+
 @testset "Perth.jl" begin
 
     @testset "tipos" begin
@@ -561,6 +579,97 @@ end
         out = String(take!(io))
         @test !isempty(out)
         @test occursin("█", out) || occursin("▀", out) || occursin("▄", out)
+    end
+
+    @testset "gantt: chat geral" begin
+        # unidade: _hub_chat_commit! num hub isolado (não o GANTT_HUB global)
+        hub = Perth.PresenceHub()
+        @test isempty(hub.chat)
+        @test Perth._hub_chat_commit!(hub, "oi"; actor = "192.168.0.5")
+        @test length(hub.chat) == 1
+        @test hub.chat[1]["text"] == "oi"
+        @test hub.chat[1]["ip"] == "192.168.0.5"
+        @test haskey(hub.chat[1], "at")
+
+        # texto vazio (ou só espaço) é no-op
+        @test !Perth._hub_chat_commit!(hub, "")
+        @test !Perth._hub_chat_commit!(hub, "   ")
+        @test length(hub.chat) == 1
+
+        # teto de tamanho: mesmo _cap_text usado no resto do pacote
+        @test Perth._hub_chat_commit!(hub, "x"^3000)
+        @test length(hub.chat[end]["text"]) == Perth._TEXT_CAP
+
+        # cap em memória
+        empty!(hub.chat)
+        for i in 1:(Perth._HUB_CHAT_CAP + 5)
+            Perth._hub_chat_commit!(hub, "msg $i")
+        end
+        @test length(hub.chat) == Perth._HUB_CHAT_CAP
+        @test hub.chat[end]["text"] == "msg $(Perth._HUB_CHAT_CAP + 5)"
+
+        # persistência: grava em chatfile e recarrega via _load_capped_jsonl
+        chattmp = mktempdir()
+        hub2 = Perth.PresenceHub()
+        hub2.chatfile = joinpath(chattmp, "chat.jsonl")
+        Perth._hub_chat_commit!(hub2, "primeira"; actor = "repl")
+        Perth._hub_chat_commit!(hub2, "segunda"; actor = "repl")
+        @test isfile(hub2.chatfile)
+        reloaded = Perth._load_capped_jsonl(hub2.chatfile, Perth._HUB_CHAT_CAP, Perth._HUB_CHAT_KEEP)
+        @test length(reloaded) == 2
+        @test reloaded[1]["text"] == "primeira" && reloaded[2]["text"] == "segunda"
+
+        # API REPL: Perth.chat!/Perth.chat_log usam o GANTT_HUB global
+        Perth.GANTT_HUB.chat = Any[]
+        Perth.GANTT_HUB.chatfile = ""
+        @test Perth.chat!("mensagem do repl")
+        rows = Perth.chat_log()
+        @test length(rows) == 1
+        @test rows[1].text == "mensagem do repl" && rows[1].by == "repl"
+        Perth.chat!("segunda mensagem")
+        @test Perth.chat_log()[1].text == "segunda mensagem"   # mais recente primeiro
+        @test length(Perth.chat_log(limit = 1)) == 1
+
+        # WS de verdade: init traz o histórico, "chat" flui pelo socket e persiste
+        wshub = Perth.PresenceHub()
+        Perth._hub_chat_commit!(wshub, "histórico antigo"; actor = "10.0.0.1")
+        ipref = Ref("192.168.0.9")
+        server, port = _presence_test_server(wshub, ipref)
+        try
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                init = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test length(init["chat"]) == 1
+                @test init["chat"][1]["text"] == "histórico antigo"
+
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "chat", "text" => "oi de novo")))
+                m = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test m["type"] == "chat"
+                @test m["entry"]["text"] == "oi de novo"
+                @test m["entry"]["ip"] == "192.168.0.9"
+            end
+            @test length(wshub.chat) == 2
+
+            # "typing" é retransmitido pra quem já estava conectado (não pra
+            # quem mandou) — um cliente fica escutando enquanto outro digita
+            ipref[] = "192.168.0.10"
+            got = Ref{Any}(nothing)   # HTTP.WebSockets.open não propaga o valor do bloco
+            t = @async HTTP.WebSockets.open("ws://127.0.0.1:$port") do wsB
+                HTTP.WebSockets.receive(wsB)   # init
+                HTTP.WebSockets.receive(wsB)   # "join" (quando o outro cliente conecta)
+                got[] = JSON3.read(HTTP.WebSockets.receive(wsB))["type"]
+            end
+            sleep(0.3)   # garante que wsB já está conectado e recebendo
+            ipref[] = "192.168.0.11"
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do wsA
+                HTTP.WebSockets.receive(wsA)   # init
+                HTTP.WebSockets.send(wsA, JSON3.write(Dict("type" => "typing")))
+                sleep(0.3)
+            end
+            wait(t)
+            @test got[] == "typing"
+        finally
+            Perth._quiet(() -> close(server))
+        end
     end
 
     @testset "kanban" begin

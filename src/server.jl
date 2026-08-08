@@ -66,6 +66,11 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
         length(projects())
     end
 
+    # Chat geral: mesmo arquivo append-only do kanban, uma pasta acima —
+    # recarrega a cada run() (troca de data_dir muda o histórico visível)
+    GANTT_HUB.chatfile = joinpath(_state().data_dir, "chat.jsonl")
+    GANTT_HUB.chat = _load_capped_jsonl(GANTT_HUB.chatfile, _HUB_CHAT_CAP, _HUB_CHAT_KEEP)
+
     server, chosen = _step(stdout, "Starting HTTP server") do
         _quiet() do                   # engole os @info do HTTP.jl
             _serve_with_fallback(_build_router(), addr, port)
@@ -210,6 +215,24 @@ function stop()
     @info "Perth stopped."
     return nothing
 end
+
+"""
+    Perth.chat!(text) -> Bool
+
+Post a message to the shared gantt chat — visible live on every
+connected browser, under actor `"repl"`, same as other REPL mutations.
+"""
+chat!(text::AbstractString) = _hub_chat_commit!(GANTT_HUB, text)
+
+"""
+    Perth.chat_log(; limit = 50) -> Vector{NamedTuple}
+
+Latest messages on the shared gantt chat as `(at, by, text)` rows,
+newest first. Tables.jl-compatible.
+"""
+chat_log(; limit::Integer = 50) =
+    [(at = String(e["at"]), by = String(e["ip"]), text = String(e["text"]))
+     for e in reverse(GANTT_HUB.chat[max(1, end - limit + 1):end])]
 
 # Abre a URL no navegador padrão, cross-platform, sem dependência extra
 function _open_browser(url::AbstractString)

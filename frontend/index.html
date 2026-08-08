@@ -128,6 +128,11 @@
       <span class="mb-sep"></span>
       <span class="conn" id="conn"><span class="conn-dot"></span><span id="conn-label">connecting…</span></span>
       <span class="mb-sep"></span>
+      <button class="icon-btn" id="chat-toggle" title="Chat" aria-label="Chat">
+        <svg viewBox="0 0 24 24"><path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H9.5L5 20.5a.8.8 0 0 1-1.3-.62V5z"/></svg>
+        <span class="chat-badge" id="chat-badge" hidden></span>
+      </button>
+      <span class="mb-sep"></span>
       <div class="menu settings-menu">
         <button class="menu-title icon-btn" title="Interface settings" aria-label="Interface settings">
           <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><circle cx="16" cy="6" r="2.2" fill="currentColor"/><circle cx="8" cy="12" r="2.2" fill="currentColor"/><circle cx="16" cy="18" r="2.2" fill="currentColor"/></svg>
@@ -313,6 +318,20 @@
   <input type="file" id="import-file" accept=".jl,.json" hidden>
 
   <div id="cursors"></div>
+
+  <div class="chat-panel" id="chat-panel" hidden>
+    <div class="chat-head">
+      <span>Chat</span>
+      <button id="chat-close" title="Close (Esc)">✕</button>
+    </div>
+    <div class="chat-log" id="chat-log"></div>
+    <div class="chat-typing" id="chat-typing" hidden></div>
+    <form class="chat-form" id="chat-form">
+      <textarea id="chat-input" rows="1" maxlength="2000"
+                placeholder="Message the team…" autocomplete="off"></textarea>
+      <button type="submit" title="Send (Enter)">Send</button>
+    </form>
+  </div>
 
   <script src="/shared/i18n.js"></script>
   <script src="/shared/presence.js"></script>

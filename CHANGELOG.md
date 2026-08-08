@@ -7,6 +7,16 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 
 ## [Unreleased]
 
+### Added
+- Gantt: general chat (`Board` menu icon in the kanban already had this —
+  now the gantt page does too), sharing the same presence WebSocket used
+  for cursors. Persisted append-only per data dir (`chat.jsonl`), capped
+  at 2000 characters per message, with a typing indicator and an unread
+  badge on the toggle button. `Perth.chat!(text)` / `Perth.chat_log()`
+  post/read from the REPL, same as `kanban_chat!`/`kanban_chat_log`.
+  The kanban and gantt chat panels now share one CSS definition
+  (`frontend/shared/ui.css`) instead of two copies.
+
 ### Changed
 - Gantt: the 2.5s data-polling loop now skips itself while the presence
   WebSocket is connected, since the server already pushes a "rev" event

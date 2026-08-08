@@ -110,6 +110,10 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 - Import/export projects as readable Julia source (`.perth.jl`; imports
   go through a restricted parser that never executes code — legacy JSON
   is still accepted)
+- **General chat**: the speech-bubble icon in the menubar opens a
+  floating panel over the same presence connection as the cursors —
+  persisted, with a typing indicator and an unread badge. `Perth.chat!`
+  / `Perth.chat_log()` post and read from the REPL.
 - Keyboard shortcuts: `N`, `Del`, `Enter`, `1/2/3`, `T`, `S`, `C`, `D`, `Esc`
 
 ### Sharing the Gantt on the network

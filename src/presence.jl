@@ -24,10 +24,15 @@ mutable struct PresenceHub
     nextid::Int
     colors::Dict{String,Int}   # IP -> cor estável (sobrevive a refresh)
     lock::ReentrantLock
+    chat::Vector{Any}          # últimas mensagens do chat geral (cap em memória)
+    chatfile::String           # append-only; "" = persistência ainda não configurada
 end
 
 PresenceHub() = PresenceHub(Dict{Int,PresenceClient}(), 0,
-                            Dict{String,Int}(), ReentrantLock())
+                            Dict{String,Int}(), ReentrantLock(), Any[], "")
+
+const _HUB_CHAT_CAP = 300      # mensagens em memória (mesmo valor do kanban)
+const _HUB_CHAT_KEEP = 2000    # linhas mantidas no .jsonl ao subir
 
 # Espelha a paleta de cores dos frontends (shared/presence.js e kanban)
 const _PRESENCE_NCOLORS = 8
@@ -90,10 +95,28 @@ function _hub_broadcast(hub::PresenceHub, msg::String; except::Int = -1)
     return nothing
 end
 
+# Chat geral do hub: canal à parte da presença (sem lock de op, sem
+# undo/redo, sem entrar em nenhum log de atividades) — só uma lista
+# append-only, persistida e rebroadcast. Mesmo desenho de
+# _kanban_chat_commit!, reaproveitando os helpers de lá (_kanban_now,
+# _kanban_log_append, _load_capped_jsonl são genéricos apesar do nome).
+function _hub_chat_commit!(hub::PresenceHub, text::AbstractString; actor::AbstractString = "repl")
+    text = _cap_text(strip(String(text)))
+    isempty(text) && return false
+    entry = Dict{String,Any}("at" => _kanban_now(), "ip" => String(actor), "text" => text)
+    lock(hub.lock) do
+        push!(hub.chat, entry)
+        length(hub.chat) > _HUB_CHAT_CAP && popfirst!(hub.chat)
+    end
+    isempty(hub.chatfile) || _kanban_log_append(hub.chatfile, entry)
+    _hub_broadcast(hub, JSON3.write(Dict{String,Any}("type" => "chat", "entry" => entry)))
+    return true
+end
+
 function _hub_init_payload(hub::PresenceHub, me::PresenceClient; extra = (;))
     lock(hub.lock) do
         JSON3.write(merge(Dict{String,Any}(
-            "type" => "init",
+            "type" => "init", "chat" => hub.chat[max(1, end - 99):end],
             "you" => merge(_peer_payload(me),
                            Dict("host" => _presence_is_host(me.ip))),
             "peers" => [_peer_payload(c) for c in values(hub.clients)]),
@@ -140,6 +163,13 @@ function _presence_ws(hub::PresenceHub, ws::HTTP.WebSockets.WebSocket,
                 end
                 _hub_broadcast(hub, JSON3.write(Dict("type" => "peer",
                                                      "peer" => _peer_payload(me))))
+            elseif t == "chat"
+                _hub_chat_commit!(hub, String(get(msg, "text", "")); actor = me.ip)
+            elseif t == "typing"
+                # sinal efêmero, não persiste: cada cliente expira sozinho
+                # quem estava digitando se ninguém reenviar em alguns segundos
+                _hub_broadcast(hub, JSON3.write(Dict("type" => "typing",
+                                                     "from" => me.id)); except = me.id)
             end
         end
     catch err

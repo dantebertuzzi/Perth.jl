@@ -31,6 +31,7 @@ window.PerthPresence = (function () {
   const st = {
     me: null,                 // {id, ip, name, color, host}
     peers: new Map(),         // id -> {id, ip, name, color, presence}
+    chat: [],                 // histórico do chat geral (mesmo canal do WS)
     ws: null,
     lastMsgAt: 0,
     retry: 0,
@@ -95,8 +96,17 @@ window.PerthPresence = (function () {
         st.peers.clear();
         for (const p of msg.peers || [])
           if (p.id !== msg.you.id) st.peers.set(p.id, { ...p, presence: null });
+        st.chat = msg.chat || [];
         renderPeers();
         renderCursors();
+        break;
+      case "chat":
+        st.chat.push(msg.entry);
+        st.chat.length > 500 && st.chat.shift();
+        st.opts.onChat && st.opts.onChat(msg.entry);
+        break;
+      case "typing":
+        st.opts.onTyping && st.opts.onTyping(msg.from);
         break;
       case "join":
         st.peers.set(msg.peer.id, { ...msg.peer, presence: null });
@@ -156,6 +166,25 @@ window.PerthPresence = (function () {
 
   const peerColor = (p) => PALETTE[p.color % PALETTE.length];
   const peerLabel = (p) => (p.name && p.name !== p.ip ? p.name : p.ip);
+
+  // cor estável derivada do texto — usada pra IP de mensagens de chat sem
+  // peer conectado no momento (histórico de alguém que já saiu)
+  function _hashColor(s) {
+    let h = 0;
+    for (const ch of s) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+    return PALETTE[h % PALETTE.length];
+  }
+  // cor/nome por IP, com ou sem peer conectado agora — usado pelo chat
+  function colorFor(ip) {
+    if (st.me && st.me.ip === ip) return peerColor(st.me);
+    for (const p of st.peers.values()) if (p.ip === ip) return peerColor(p);
+    return _hashColor(ip);
+  }
+  function labelFor(ip) {
+    if (st.me && st.me.ip === ip && st.me.name !== ip) return st.me.name;
+    for (const p of st.peers.values()) if (p.ip === ip && p.name !== ip) return p.name;
+    return ip;
+  }
 
   function setConn(live, label) {
     st.live = live;
@@ -284,6 +313,13 @@ window.PerthPresence = (function () {
     // WS conectado agora: quem usa "rev" como push (ver onRev) pode
     // dispensar polling redundante enquanto isto for true
     isLive: () => st.live,
+    // chat geral: histórico + envio; o app renderiza (ver onChat/onTyping
+    // em connect()) — este módulo só carrega o canal e guarda o estado
+    chat: () => st.chat,
+    sendChat: (text) => send({ type: "chat", text }),
+    sendTyping: () => send({ type: "typing" }),
+    colorFor,
+    labelFor,
   };
 
   return { connect, ...api };
