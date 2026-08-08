@@ -46,6 +46,7 @@ const state = {
   overalloc: { pairs: [], ids: new Set() },
   undoStack: [],       // snapshots para Ctrl+Z
   redoStack: [],       // snapshots para Ctrl+Y / Ctrl+Shift+Z
+  presenting: false,   // modo apresentação: menubar/toolbar/tabela escondidos + fullscreen
 };
 
 function _snapshot() {
@@ -1792,6 +1793,32 @@ function toggleTheme() {
   localStorage.setItem("perth-theme", root.dataset.theme);
 }
 
+/* Modo apresentação: some com menubar/toolbar/tabela de tarefas e pede
+   tela cheia do navegador — sobra só a timeline do gráfico. */
+function enterPresentation() {
+  state.presenting = true;
+  document.body.classList.add("presenting");
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  state.current && renderChart();
+}
+
+function exitPresentation() {
+  state.presenting = false;
+  document.body.classList.remove("presenting");
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  state.current && renderChart();
+}
+
+function togglePresentation() {
+  state.presenting ? exitPresentation() : enterPresentation();
+}
+
+// Esc nativo do navegador sai da tela cheia sem passar pelo nosso handler
+// de teclado — sincroniza o estado quando isso acontece (F11, gesto do SO...)
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && state.presenting) exitPresentation();
+});
+
 const ACTIONS = {
   "welcome": showWelcome,
   "close-welcome": () => state.current && hideWelcome(),
@@ -1820,13 +1847,15 @@ const ACTIONS = {
   "auto-schedule": autoSchedule,
   "toggle-critical": toggleCritical,
   "toggle-theme": toggleTheme,
+  "presentation": togglePresentation,
   "shortcuts": () => alert(
     "Shortcuts:\n\n" +
     "N — new task\nEnter / double-click — edit task\nDel — delete selected task\n" +
     "Ctrl+D — duplicate selected task\n" +
     "Ctrl+Z — undo\nCtrl+Shift+Z / Ctrl+Y — redo\n" +
     "S — auto-schedule\nC — toggle critical path\nD — toggle dark mode\n" +
-    "1 / 2 / 3 — zoom day / week / month\nT — go to today\nEsc — close / deselect"),
+    "P — presentation mode\n" +
+    "1 / 2 / 3 — zoom day / week / month\nT — go to today\nEsc — close / deselect / exit presentation"),
   "about": () => alert(
     "Perth — Gantt charts with a Julia backend.\n" +
     "Data lives on the local server; edit from the REPL too:\n\n" +
@@ -1924,10 +1953,12 @@ document.addEventListener("keydown", (ev) => {
     case "s": case "S": autoSchedule(); break;
     case "c": case "C": toggleCritical(); break;
     case "d": case "D": toggleTheme(); break;
+    case "p": case "P": togglePresentation(); break;
     case "1": setZoom("day"); break;
     case "2": setZoom("week"); break;
     case "3": setZoom("month"); break;
     case "Escape":
+      if (state.presenting) { exitPresentation(); break; }
       if (chatOpen) { closeChat(); break; }
       state.selected = null; renderTable(); renderChart();
       break;

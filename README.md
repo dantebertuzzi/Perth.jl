@@ -114,7 +114,11 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   floating panel over the same presence connection as the cursors —
   persisted, with a typing indicator and an unread badge. `Perth.chat!`
   / `Perth.chat_log()` post and read from the REPL.
-- Keyboard shortcuts: `N`, `Del`, `Enter`, `1/2/3`, `T`, `S`, `C`, `D`, `Esc`
+- **Presentation mode** (`P`, or the menubar icon — also in the kanban):
+  hides the menubar/toolbar/task table and requests browser fullscreen,
+  leaving just the timeline for showing the plan on a projector; `Esc`
+  or the floating corner button exits
+- Keyboard shortcuts: `N`, `Del`, `Enter`, `1/2/3`, `T`, `S`, `C`, `D`, `P`, `Esc`
 
 ### Sharing the Gantt on the network
 

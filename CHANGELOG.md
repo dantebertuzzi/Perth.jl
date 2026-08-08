@@ -5,6 +5,18 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **Presentation mode**: a new menubar icon (both gantt and kanban),
+  `P`, or *View → Presentation mode* hides the menubar — and, on the
+  gantt, the toolbar and task table too — and requests browser
+  fullscreen, leaving just the timeline/board for showing the plan on
+  a projector. A small floating button in the corner (plus `Esc`)
+  exits; leaving fullscreen by any other means (`Esc`'s native
+  behavior, F11, window manager) is caught via the `fullscreenchange`
+  event so the UI chrome comes back in sync either way.
+
 ## [0.3.0] - 2026-08-07
 
 ### Added

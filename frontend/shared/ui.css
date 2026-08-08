@@ -158,6 +158,24 @@ select.board-chip {         /* o chip do gantt é um <select> */
 :root[data-theme="dark"] .knob .sun { display: none; }
 :root[data-theme="dark"] .knob .moon { display: block; }
 
+/* ---------- modo apresentação: esconde a menubar, sobra só o conteúdo ---------- */
+
+body.presenting #menubar { display: none; }
+
+/* botão flutuante para sair, já que a menubar (e o botão que abriu o modo
+   junto com ela) somem — sempre no canto, fora do fluxo do resto da UI */
+.presentation-exit {
+  display: none;
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 220;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+}
+body.presenting .presentation-exit { display: flex; }
+
 /* ---------- presença na menubar: um chip por máquina conectada ---------- */
 
 /* largura determinística: renderPeers() nunca cria mais que

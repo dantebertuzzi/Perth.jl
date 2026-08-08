@@ -58,6 +58,7 @@ window.PerthI18n = (function () {
       "Critical path": "Caminho crítico",
       "Go to today": "Ir para hoje",
       "Dark mode": "Modo escuro",
+      "Presentation mode": "Modo apresentação",
       "Keyboard shortcuts": "Atalhos de teclado",
       "About Perth": "Sobre o Perth",
       // caixa de caminho / toolbar / tabela (gantt)
@@ -97,6 +98,8 @@ window.PerthI18n = (function () {
       "Perth.jl on GitHub": "Perth.jl no GitHub",
       "Source on GitHub": "Código no GitHub",
       "Toggle dark mode (D)": "Alternar modo escuro (D)",
+      "Presentation mode (P)": "Modo apresentação (P)",
+      "Exit presentation mode (Esc)": "Sair do modo apresentação (Esc)",
       "Interface settings": "Configurações da interface",
       "Mirror the project to a .perth.jl file on every save":
         "Espelhar o projeto num arquivo .perth.jl a cada salvamento",
@@ -223,6 +226,7 @@ window.PerthI18n = (function () {
       "Critical path": "Ruta crítica",
       "Go to today": "Ir a hoy",
       "Dark mode": "Modo oscuro",
+      "Presentation mode": "Modo presentación",
       "Keyboard shortcuts": "Atajos de teclado",
       "About Perth": "Acerca de Perth",
       "save to": "guardar en",
@@ -257,6 +261,8 @@ window.PerthI18n = (function () {
       "Perth.jl on GitHub": "Perth.jl en GitHub",
       "Source on GitHub": "Código en GitHub",
       "Toggle dark mode (D)": "Alternar modo oscuro (D)",
+      "Presentation mode (P)": "Modo presentación (P)",
+      "Exit presentation mode (Esc)": "Salir del modo presentación (Esc)",
       "Interface settings": "Configuración de la interfaz",
       "Mirror the project to a .perth.jl file on every save":
         "Reflejar el proyecto en un archivo .perth.jl en cada guardado",
@@ -378,6 +384,7 @@ window.PerthI18n = (function () {
       "Critical path": "Chemin critique",
       "Go to today": "Aller à aujourd'hui",
       "Dark mode": "Mode sombre",
+      "Presentation mode": "Mode présentation",
       "Keyboard shortcuts": "Raccourcis clavier",
       "About Perth": "À propos de Perth",
       "save to": "enregistrer dans",
@@ -412,6 +419,8 @@ window.PerthI18n = (function () {
       "Perth.jl on GitHub": "Perth.jl sur GitHub",
       "Source on GitHub": "Code source sur GitHub",
       "Toggle dark mode (D)": "Basculer le mode sombre (D)",
+      "Presentation mode (P)": "Mode présentation (P)",
+      "Exit presentation mode (Esc)": "Quitter le mode présentation (Échap)",
       "Interface settings": "Réglages de l'interface",
       "Mirror the project to a .perth.jl file on every save":
         "Refléter le projet dans un fichier .perth.jl à chaque enregistrement",
@@ -533,6 +542,7 @@ window.PerthI18n = (function () {
       "Critical path": "关键路径",
       "Go to today": "转到今天",
       "Dark mode": "深色模式",
+      "Presentation mode": "演示模式",
       "Keyboard shortcuts": "键盘快捷键",
       "About Perth": "关于 Perth",
       "save to": "保存到",
@@ -567,6 +577,8 @@ window.PerthI18n = (function () {
       "Perth.jl on GitHub": "GitHub 上的 Perth.jl",
       "Source on GitHub": "GitHub 源码",
       "Toggle dark mode (D)": "切换深色模式 (D)",
+      "Presentation mode (P)": "演示模式 (P)",
+      "Exit presentation mode (Esc)": "退出演示模式 (Esc)",
       "Interface settings": "界面设置",
       "Mirror the project to a .perth.jl file on every save":
         "每次保存时将项目镜像到 .perth.jl 文件",

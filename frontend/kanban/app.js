@@ -77,6 +77,7 @@ const state = {
   openModal: null,          // "archived" | "aliases" | "activity" | "share" | ...
   boardName: "board",       // board ativo (multi-board)
   denied: false,            // servidor recusou por falta de chave
+  presenting: false,        // modo apresentação: menubar escondida + fullscreen
 };
 
 const boardEl   = $("#board");
@@ -2530,6 +2531,30 @@ document.addEventListener("pointerdown", (e) => {
   if (wrap && !wrap.contains(e.target)) commitEditor();
 });
 
+/* Modo apresentação: some com a menubar e pede tela cheia do navegador —
+   sobra só o board. */
+function enterPresentation() {
+  state.presenting = true;
+  document.body.classList.add("presenting");
+  document.documentElement.requestFullscreen?.().catch(() => {});
+}
+
+function exitPresentation() {
+  state.presenting = false;
+  document.body.classList.remove("presenting");
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+}
+
+function togglePresentation() {
+  state.presenting ? exitPresentation() : enterPresentation();
+}
+
+// Esc nativo do navegador sai da tela cheia sem passar pelo nosso handler
+// de teclado — sincroniza o estado quando isso acontece (F11, gesto do SO...)
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && state.presenting) exitPresentation();
+});
+
 function doAction(action) {
   switch (action) {
     case "new-card": {
@@ -2552,6 +2577,9 @@ function doAction(action) {
       localStorage.setItem("perth-theme", root.dataset.theme);
       break;
     }
+    case "presentation":
+      togglePresentation();
+      break;
     case "resync":
       send({ type: "sync" });
       break;
@@ -2628,9 +2656,11 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "n" || e.key === "N") doAction("new-card");
   else if (e.key === "d" || e.key === "D") doAction("toggle-theme");
+  else if (e.key === "p" || e.key === "P") doAction("presentation");
   else if (e.key === "Delete") doAction("delete-card");
   else if (e.key === "Enter" && state.selected) openEditor(state.selected);
   else if (e.key === "Escape") {
+    if (state.presenting) { exitPresentation(); return; }
     state.selected = null;
     $$(".card.selected", boardEl).forEach((c) => c.classList.remove("selected"));
     closeMenus();
