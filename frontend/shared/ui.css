@@ -323,22 +323,38 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
 }
 #chat-toggle { position: relative; }
 
-/* painel flutuante, não-modal: fica aberto durante o drag/edição
-   (ao contrário do overlay bloqueante de Activity/Archived) */
+/* widget flutuante, não-modal: fica aberto durante o drag/edição (ao
+   contrário do overlay bloqueante de Activity/Archived) — arrastável
+   pelo cabeçalho, ver frontend/shared/draggable.js. Posição padrão é o
+   canto inferior direito (bottom/right); ao arrastar, a mesma posição
+   vira left/top salvo (ver PerthDraggable), o que também sobrescreve
+   bottom/right — daí "auto" nos quatro, controlados por quem estiver
+   ativo a cada momento. */
 .chat-panel {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  bottom: 16px;
+  right: 16px;
+  top: auto;
+  left: auto;
   width: 320px;
-  max-width: 100vw;
+  height: 440px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
   display: flex;
   flex-direction: column;
-  background: var(--panel);
-  border-left: 1px solid var(--line);
-  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.22);
+  background: var(--chat-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
   z-index: 260;
+  transition: border-color .15s;
 }
+/* mesma cor do card selecionado no kanban (.card.selected): sinaliza que
+   o widget está em uso assim que algo dentro dele (campo, botão) foca */
+.chat-panel:focus-within { border-color: var(--purple); }
 .chat-head {
   display: flex;
   align-items: center;
@@ -348,8 +364,11 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
   border-bottom: 1px solid var(--line);
   font-weight: 700;
   letter-spacing: 0.04em;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
 }
-.chat-head button { margin-left: auto; color: var(--muted); padding: 2px 8px; }
+.chat-head button { margin-left: auto; color: var(--muted); padding: 2px 8px; cursor: pointer; }
 .chat-head button:hover { color: var(--ink); }
 .chat-log {
   flex: 1;
@@ -395,12 +414,3 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
   padding: 6px 8px;
 }
 .chat-form button { flex: none; }
-
-/* enquanto o chat está aberto, os toasts não ficam escondidos atrás dele
-   (só o kanban tem #toasts; no-op inofensivo no gantt) */
-body.chat-open #toasts { right: 334px; }
-
-@media (max-width: 720px) {
-  .chat-panel { width: 100vw; }
-  body.chat-open #toasts { right: 8px; }
-}

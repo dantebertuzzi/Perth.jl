@@ -2080,6 +2080,13 @@ const chatInput = $("#chat-input");
 const chatTypingEl = $("#chat-typing");
 let chatUnseen = 0;
 
+// widget flutuante arrastável (ver frontend/shared/draggable.js); restaura
+// a posição salva na hora — não precisa esperar a primeira abertura
+const chatDrag = window.PerthDraggable
+  ? PerthDraggable(chatPanel, chatPanel.querySelector(".chat-head"), "perth-chat-pos")
+  : null;
+chatDrag?.restore();
+
 // "alguém está digitando": sinal efêmero (não entra no histórico). Cada
 // peer some da lista sozinho se não reenviar em TYPING_TTL — sem
 // "parei de digitar" explícito, mais simples e tolerante a desconexão.

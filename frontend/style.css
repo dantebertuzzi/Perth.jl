@@ -10,6 +10,7 @@
   --muted:     #8e8798;   /* texto secundário                   */
   --line:      #e0d8c8;   /* hairlines                          */
   --line-soft: #ece5d6;
+  --chat-bg:   rgba(252, 249, 242, .88);  /* mesmo --panel, translúcido (widget flutuante) */
 
   /* Paleta Julia, dessaturada para o papel */
   --purple: #9558b2;
@@ -640,6 +641,7 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   --muted:    #8f8a9e;
   --line:     #3a3b47;
   --line-soft:#31323c;
+  --chat-bg:  rgba(38, 39, 47, .88);
   --sel:      rgba(149, 88, 178, .25);
   --weekend:  rgba(255, 255, 255, .05);
   --field:    #1a1b21;

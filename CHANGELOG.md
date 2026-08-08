@@ -16,6 +16,13 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   post/read from the REPL, same as `kanban_chat!`/`kanban_chat_log`.
   The kanban and gantt chat panels now share one CSS definition
   (`frontend/shared/ui.css`) instead of two copies.
+- Chat panel (both apps) redesigned as a small floating, draggable
+  widget instead of a full-height edge panel: rounded corners,
+  translucent/blurred background, default bottom-right position.
+  Drag it by the header to anywhere on the page — position is
+  remembered per browser (`frontend/shared/draggable.js`, a new small
+  shared helper, clamped to the viewport). The border highlights in
+  the same purple as a selected kanban card while the panel has focus.
 
 ### Changed
 - Gantt: the 2.5s data-polling loop now skips itself while the presence

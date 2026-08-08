@@ -1143,6 +1143,7 @@ const _KANBAN_FILES = Dict(
     "/shared/ui.css" => ("shared/ui.css", :main),
     "/shared/presence.js" => ("shared/presence.js", :main),
     "/shared/i18n.js" => ("shared/i18n.js", :main),
+    "/shared/draggable.js" => ("shared/draggable.js", :main),
     "/manifest.webmanifest" => ("kanban/manifest.webmanifest", :root),
     "/sw.js" => ("shared/sw.js", :root),
 )

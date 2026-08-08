@@ -11,6 +11,7 @@
   --muted:     #8e8798;
   --line:      #e0d8c8;
   --line-soft: #ece5d6;
+  --chat-bg:   rgba(252, 249, 242, .88);  /* mesmo --panel, translúcido (widget flutuante) */
 
   --purple: #9558b2;
   --green:  #389826;
@@ -33,6 +34,7 @@
   --muted:    #8f8a9e;
   --line:     #3a3b47;
   --line-soft:#31323c;
+  --chat-bg:  rgba(38, 39, 47, .88);
   --sel:      rgba(149, 88, 178, 0.25);
   --field:    #1a1b21;
   --modalbg:  rgba(0, 0, 0, 0.45);
@@ -847,6 +849,4 @@ a.card-link:hover { border-bottom-color: var(--blue); }
 
   #toasts { right: 8px; left: 8px; bottom: 12px; }
   .toast { max-width: none; }
-
-  /* .chat-panel/#toasts em telas estreitas: ver shared/ui.css */
 }

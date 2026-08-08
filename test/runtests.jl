@@ -581,6 +581,30 @@ end
         @test occursin("█", out) || occursin("▀", out) || occursin("▄", out)
     end
 
+    @testset "arquivos estáticos compartilhados (gantt + kanban)" begin
+        # regressão: /shared/draggable.js foi adicionado ao disco mas
+        # esquecido nas duas whitelists de rota (gantt e kanban usam
+        # mecanismos diferentes) — 404 silencioso, só visível testando
+        # a requisição de verdade. Cobre todo o /shared/ pra não repetir.
+        # Importante: despacha pelo ROUTER construído por _build_router(),
+        # não chama _static(...) direto — senão o teste não pega esquecer
+        # o HTTP.register!, que foi exatamente o bug original.
+        shared_files = ("ui.css", "presence.js", "i18n.js", "draggable.js")
+        router = Perth._build_router()
+
+        for f in shared_files
+            resp = router(HTTP.Request("GET", "/shared/$f"))
+            @test resp.status == 200
+            @test !isempty(resp.body)
+        end
+
+        for f in shared_files
+            path = "/shared/$f"
+            @test haskey(Perth._KANBAN_FILES, path)
+            @test Perth._KANBAN_FILES[path][1] == "shared/$f"
+        end
+    end
+
     @testset "gantt: chat geral" begin
         # unidade: _hub_chat_commit! num hub isolado (não o GANTT_HUB global)
         hub = Perth.PresenceHub()
