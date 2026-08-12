@@ -180,6 +180,24 @@ end
         @test has_cycle(p)
         @test_throws ArgumentError schedule!(p)
         delete_project(p.id)
+
+        # Regressão: o término do projeto sai das tarefas, nunca do
+        # calendário de parede. `maximum(ef; init = Dates.today())` fazia o
+        # término virar max(hoje, último fim) — `init` é a semente da
+        # redução, não um default para vetor vazio —, então todo projeto já
+        # concluído ganhava folga fantasma do tamanho do tempo decorrido e
+        # ficava sem caminho crítico. Datas no passado por construção: o
+        # teste vale hoje e daqui a dez anos.
+        old = create_project("Concluído")
+        o1 = add_task!(old, "Escavação"; start = Date(2020, 1, 6), duration = 5)
+        o2 = add_task!(old, "Fundação"; start = Date(2020, 1, 13), duration = 5,
+                       dependencies = [o1.id])
+        @test project_finish(old) == Date(2020, 1, 17)
+        @test critical_path(old) == [o2.id]
+        osl = Dict(r.id => r.slack_days for r in slack(old))
+        @test osl[o2.id] == 0
+        @test osl[o1.id] == 2          # folga real: o2 só começa 2 dias depois
+        delete_project(old.id)
     end
 
     @testset "renderizacao nativa" begin

@@ -205,7 +205,11 @@ function _cpm(p::Project)
         ef[i] = _end_of(cal, es[i], _effdur(t))
     end
 
-    finish = maximum(ef; init = Dates.today())
+    # `init` de maximum é a semente da redução, não um default para vetor
+    # vazio: com `init = today()` o término do projeto virava
+    # max(hoje, último fim) e todo projeto já concluído ganhava folga
+    # fantasma — caminho crítico vazio, folga = dias desde o fim.
+    finish = isempty(ef) ? Dates.today() : maximum(ef)
     lf = fill(finish, n)
     ls = Vector{Date}(undef, n)
     for i in reverse(order)              # backward pass (ciente de tipo/lag)

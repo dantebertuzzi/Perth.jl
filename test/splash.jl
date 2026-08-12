@@ -183,7 +183,8 @@ _forced(f) = withenv(f, "PERTH_SPLASH" => "always")
             s = String(take!(buf))
             @test occursin("localhost:8123", s)
             @test occursin("192.168.0.9", s)
-            @test occursin("3 in ~/.perth", s)          # homedir abreviado
+            # homedir abreviado; o separador é o da plataforma (~\.perth no Windows)
+            @test occursin("3 in " * joinpath("~", ".perth"), s)
             @test occursin("aviso um", s) && occursin("aviso dois", s)
             @test occursin("QR-AQUI", s)                # tail antes do rodapé
             @test occursin("Perth.stop()", s)
