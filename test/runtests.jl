@@ -51,6 +51,16 @@ function _presence_test_server(hub::Perth.PresenceHub, ipref::Ref{String}; keyok
     return server, port
 end
 
+# Registro de cliente no hub é assíncrono (o handshake do WS roda em outra
+# tarefa): espera o hub chegar ao tamanho esperado em vez de cravar um sleep
+function _await_clients(hub::Perth.PresenceHub, n::Int; timeout = 5.0)
+    deadline = time() + timeout
+    while length(hub.clients) != n && time() < deadline
+        sleep(0.05)
+    end
+    return length(hub.clients)
+end
+
 @testset "Perth.jl" begin
 
     @testset "tipos" begin
@@ -562,6 +572,137 @@ end
         lines = split(String(take!(io)), '\n'; keepempty = false)
         @test length(lines) == cld(2, 2)          # 2 linhas de matriz -> 1 linha de terminal
         @test all(l -> all(ch -> ch in "  ▀▄█", l), lines)
+    end
+
+    @testset "transmissão (share) ao vivo" begin
+        # O socket sobe sempre em 0.0.0.0 e quem filtra é o porteiro, que lê
+        # a flag a cada conexão — é isso que permite ligar/desligar sem
+        # derrubar o servidor. Aqui as flags são mexidas na mão (sem subir
+        # servidor de verdade) e o porteiro é exercitado pelas duas pontas.
+        gantt_was, gantt_can = Perth.GANTT_SHARED[], Perth.GANTT_CAN_SHARE[]
+        kanban_was, kanban_can = Perth.KANBAN_SHARED[], Perth.KANBAN_CAN_SHARE[]
+        try
+            other = "192.168.0.60"
+            for shared in (false, true)
+                Perth.GANTT_SHARED[] = shared
+                Perth.KANBAN_SHARED[] = shared
+                # o host entra sempre, transmitindo ou não
+                @test Perth._gantt_share_ok("127.0.0.1")
+                @test Perth._kanban_share_ok("::1")
+                # as demais máquinas, só enquanto a transmissão estiver ligada
+                @test Perth._gantt_share_ok(other) == shared
+                @test Perth._kanban_share_ok(other) == shared
+            end
+
+            # requisição de verdade pelo handler estático do kanban: com a
+            # transmissão desligada a porta responde 403 pra quem é de fora,
+            # inclusive nos arquivos da página (não só na API)
+            ktmp = mktempdir(); Perth._init_kanban!(ktmp)
+            Perth.KANBAN_PORT[] = 8150
+            Perth.KANBAN_CAN_SHARE[] = true
+            Perth.KANBAN_SHARED[] = false
+            Perth.GANTT_SHARED[] = false
+            # o toggle exige board no ar: um listener de mentira no loopback
+            # basta (o que importa é KANBAN_SERVER[] não ser `nothing`)
+            dummy = Perth._quiet() do
+                HTTP.listen!(http -> nothing, "127.0.0.1", 0; verbose = false)
+            end
+            Perth.KANBAN_SERVER[] = dummy
+            @test Perth._kanban_static(HTTP.Request("GET", "/"), other).status == 403
+            @test Perth._kanban_static(HTTP.Request("GET", "/api/share"), other).status == 403
+            @test Perth._kanban_static(HTTP.Request("GET", "/"), "127.0.0.1").status == 200
+
+            # payload de /api/share: sem transmissão, só o link de localhost
+            info = JSON3.read(Perth._kanban_static(
+                HTTP.Request("GET", "/api/share"), "127.0.0.1").body)
+            @test info["shared"] == false
+            @test info["can_share"] == true
+            @test info["host"] == true
+            @test length(info["urls"]) == 1
+            @test occursin("localhost", info["urls"][1])
+
+            # só o host alterna: de fora, 403 e nada muda
+            denied = Perth._kanban_static(
+                HTTP.Request("POST", "/api/share", ["Content-Type" => "application/json"],
+                             """{"on":true}"""), other)
+            @test denied.status == 403
+            @test Perth.KANBAN_SHARED[] == false
+
+            # do host: liga, e a partir daí a máquina de fora passa
+            on = Perth._kanban_static(
+                HTTP.Request("POST", "/api/share", ["Content-Type" => "application/json"],
+                             """{"on":true}"""), "127.0.0.1")
+            @test on.status == 200
+            @test Perth.KANBAN_SHARED[] == true
+            @test JSON3.read(on.body)["shared"] == true
+            @test Perth._kanban_static(HTTP.Request("GET", "/"), other).status == 200
+            @test length(Perth._kanban_urls()) >= 1   # + IPs de LAN, se houver
+
+            # e desliga de volta (o toggle é simétrico)
+            off = Perth._kanban_static(
+                HTTP.Request("POST", "/api/share", ["Content-Type" => "application/json"],
+                             """{"on":false}"""), "127.0.0.1")
+            @test off.status == 200
+            @test Perth.KANBAN_SHARED[] == false
+            @test Perth._kanban_static(HTTP.Request("GET", "/"), other).status == 403
+
+            # a alternância entra no log de atividades do board
+            @test any(e -> e["type"] == "share", Perth._kanban_state().log)
+
+            # com `host` fixo no socket o alcance não é do porteiro: o toggle
+            # é recusado em vez de mentir que ligou
+            Perth.KANBAN_CAN_SHARE[] = false
+            @test_throws ArgumentError Perth.kanban_share!(true)
+            conflict = Perth._kanban_static(
+                HTTP.Request("POST", "/api/share", ["Content-Type" => "application/json"],
+                             """{"on":true}"""), "127.0.0.1")
+            @test conflict.status == 409
+
+            # gantt: sem servidor no ar não há o que transmitir
+            @test Perth.SERVER[] === nothing
+            @test_throws ArgumentError Perth.share!(true)
+            @test Perth.GANTT_SHARED[] == false
+        finally
+            Perth.GANTT_SHARED[], Perth.GANTT_CAN_SHARE[] = gantt_was, gantt_can
+            Perth.KANBAN_SHARED[], Perth.KANBAN_CAN_SHARE[] = kanban_was, kanban_can
+            if Perth.KANBAN_SERVER[] !== nothing
+                Perth._quiet(() -> close(Perth.KANBAN_SERVER[]))
+                Perth.KANBAN_SERVER[] = nothing
+            end
+        end
+
+        # desligar a transmissão derruba quem já estava conectado de fora —
+        # o porteiro sozinho só barra conexões novas
+        hub = Perth.PresenceHub()
+        ipref = Ref("192.168.0.77")
+        server, port = _presence_test_server(hub, ipref)
+        try
+            reason = Ref{Any}(nothing)
+            t = @async HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)          # init
+                msg = JSON3.read(HTTP.WebSockets.receive(ws))
+                reason[] = (msg["type"], get(msg, "reason", nothing))
+            end
+            _await_clients(hub, 1)
+            @test length(hub.clients) == 1
+            @test Perth._hub_drop_remote!(hub) == 1
+            wait(t)
+            @test reason[] == ("denied", "share_off")
+            @test isempty(hub.clients)
+
+            # a conexão do host sobrevive ao desligamento
+            ipref[] = "127.0.0.1"
+            alive = @async HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)          # init
+                sleep(0.6)
+            end
+            _await_clients(hub, 1)
+            @test Perth._hub_drop_remote!(hub) == 0
+            @test length(hub.clients) == 1
+            wait(alive)
+        finally
+            Perth._quiet(() -> close(server))
+        end
     end
 
     @testset "QR code (extensão QRCoders)" begin

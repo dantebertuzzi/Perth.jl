@@ -480,6 +480,197 @@ console.log("gantt · chat");
   close();
 }
 
+/* ------------------------------------------------------------------ *
+ * Transmitir (share): o diálogo é montado a partir do payload de
+ * /api/share e a chave de ligar/desligar só aparece pra quem é host num
+ * servidor que pode alternar. Servidor de mentira via window.fetch — o
+ * que importa aqui é o DOM que o app monta e o POST que ele dispara.
+ * ------------------------------------------------------------------ */
+
+const tick = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); };
+
+// payload igual ao de _kanban_share_payload/_gantt_share_payload no Julia
+const fakeShareServer = (host, canShare) => `
+  window.__posts = [];
+  window.__share = { urls: ["http://localhost:8150"], target: "http://localhost:8150",
+                     qr: null, shared: false, can_share: ${canShare}, keyed: false,
+                     host: ${host} };
+  window.fetch = (url, opts) => {
+    if (opts && opts.method === "POST") {
+      const on = JSON.parse(opts.body).on;
+      window.__posts.push(on);
+      window.__share = Object.assign({}, window.__share, { shared: on,
+        urls: on ? ["http://localhost:8150", "http://192.168.0.7:8150"]
+                 : ["http://localhost:8150"] });
+    }
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(window.__share) });
+  };`;
+
+console.log("kanban · transmitir (share)");
+{
+  const { runIn, close } = loadKanbanApp();
+
+  runIn(`${fakeShareServer(true, true)} showShare(); return null;`);
+  await tick();
+  let r = runIn(`return { toggle: !!document.querySelector(".share-toggle"),
+                          btn: document.querySelector(".share-toggle button")?.textContent,
+                          urls: document.querySelectorAll(".share-url").length,
+                          modal: state.openModal };`);
+  check(r.modal === "share", "kanban: diálogo de share abre");
+  check(r.toggle === true, "kanban: host vê a chave de transmissão");
+  check(r.btn === "Start transmitting", "kanban: desligado, o botão oferece transmitir");
+  check(r.urls === 1, "kanban: desligado, só o link de localhost");
+
+  runIn(`document.querySelector(".share-toggle button").click(); return null;`);
+  await tick();
+  r = runIn(`return { posts: window.__posts,
+                      btn: document.querySelector(".share-toggle button")?.textContent,
+                      urls: document.querySelectorAll(".share-url").length };`);
+  check(JSON.stringify(r.posts) === "[true]", "kanban: clique manda POST {on:true}");
+  check(r.btn === "Stop transmitting", "kanban: ligado, o botão oferece desligar");
+  check(r.urls === 2, "kanban: ligado, o link da LAN entra na lista");
+
+  runIn(`document.querySelector(".share-toggle button").click(); return null;`);
+  await tick();
+  r = runIn(`return { posts: window.__posts,
+                      btn: document.querySelector(".share-toggle button")?.textContent };`);
+  check(JSON.stringify(r.posts) === "[true,false]", "kanban: toggle é simétrico (POST {on:false})");
+  check(r.btn === "Start transmitting", "kanban: volta a oferecer transmitir");
+
+  // máquina remota: sem chave de transmissão (o servidor também recusaria)
+  runIn(`closeModal(); ${fakeShareServer(false, true)} showShare(); return null;`);
+  await tick();
+  r = runIn(`return { toggle: !!document.querySelector(".share-toggle"),
+                      hint: document.querySelector(".alias-hint")?.textContent };`);
+  check(r.toggle === false, "kanban: quem não é host não vê a chave");
+  check(/machine running Perth/.test(r.hint), "kanban: e a dica explica quem liga");
+
+  // servidor preso a um `host` fixo: o toggle não existe nem pro host
+  runIn(`closeModal(); ${fakeShareServer(true, false)} showShare(); return null;`);
+  await tick();
+  r = runIn(`return !!document.querySelector(".share-toggle");`);
+  check(r === false, "kanban: sem can_share, nem o host vê a chave");
+
+  // botão da menubar: espelha o estado e alterna sem abrir o diálogo
+  runIn(`closeModal(); ${fakeShareServer(true, true)} refreshShareBtn(); return null;`);
+  await tick();
+  r = runIn(`const b = document.getElementById("share-toggle");
+             return { hidden: b.hidden, on: b.classList.contains("broadcasting"),
+                      pressed: b.getAttribute("aria-pressed") };`);
+  check(r.hidden === false, "kanban: host vê o botão de transmitir na menubar");
+  check(r.on === false && r.pressed === "false", "kanban: botão apagado com a transmissão desligada");
+
+  runIn(`document.getElementById("share-toggle").click(); return null;`);
+  await tick();
+  r = runIn(`const b = document.getElementById("share-toggle");
+             return { posts: window.__posts, on: b.classList.contains("broadcasting"),
+                      pressed: b.getAttribute("aria-pressed"), title: b.title };`);
+  check(JSON.stringify(r.posts) === "[true]", "kanban: botão da menubar alterna direto (POST {on:true})");
+  check(r.on === true && r.pressed === "true", "kanban: botão acende transmitindo");
+  check(/click to stop/.test(r.title), "kanban: e o tooltip passa a oferecer parar");
+
+  runIn(`document.getElementById("share-toggle").click(); return null;`);
+  await tick();
+  r = runIn(`return { posts: window.__posts,
+                      on: document.getElementById("share-toggle").classList.contains("broadcasting") };`);
+  check(JSON.stringify(r.posts) === "[true,false]", "kanban: segundo clique desliga");
+  check(r.on === false, "kanban: e o botão apaga");
+
+  // quem não pode alternar não vê o botão
+  runIn(`${fakeShareServer(false, true)} refreshShareBtn(); return null;`);
+  await tick();
+  r = runIn(`return document.getElementById("share-toggle").hidden;`);
+  check(r === true, "kanban: máquina remota não vê o botão da menubar");
+
+  runIn(`${fakeShareServer(true, false)} refreshShareBtn(); return null;`);
+  await tick();
+  r = runIn(`return document.getElementById("share-toggle").hidden;`);
+  check(r === true, "kanban: sem can_share o botão some da menubar");
+
+  // "denied" com motivo share_off: modal próprio, não o de chave de acesso
+  r = runIn(`closeModal();
+    handleMessage({ type: "denied", reason: "share_off" });
+    return { modal: state.openModal, denied: state.denied };`);
+  check(r.modal === "shareoff", "kanban: denied/share_off abre o aviso de transmissão desligada");
+  check(r.denied === true, "kanban: e para o retry automático");
+
+  r = runIn(`handleMessage({ type: "denied" });
+    return state.openModal;`);
+  check(r === "keygate", "kanban: denied sem motivo continua pedindo a chave");
+
+  close();
+}
+
+console.log("gantt · transmitir (share)");
+{
+  const { runIn, simulate, close } = loadGanttApp();
+
+  runIn(`${fakeShareServer(true, true)} showShare(); return null;`);
+  await tick();
+  let r = runIn(`return { overlay: !!document.getElementById("perth-overlay"),
+                          btn: document.querySelector(".share-toggle button")?.textContent,
+                          urls: document.querySelectorAll(".share-url").length };`);
+  check(r.overlay === true, "gantt: diálogo de share abre");
+  check(r.btn === "Start transmitting", "gantt: desligado, o botão oferece transmitir");
+  check(r.urls === 1, "gantt: desligado, só o link de localhost");
+
+  runIn(`document.querySelector(".share-toggle button").click(); return null;`);
+  await tick();
+  r = runIn(`return { posts: window.__posts,
+                      btn: document.querySelector(".share-toggle button")?.textContent,
+                      urls: document.querySelectorAll(".share-url").length };`);
+  check(JSON.stringify(r.posts) === "[true]", "gantt: clique manda POST {on:true}");
+  check(r.btn === "Stop transmitting", "gantt: ligado, o botão oferece desligar");
+  check(r.urls === 2, "gantt: ligado, o link da LAN entra na lista");
+
+  // o menu File tem a entrada e ela dispara a mesma função
+  r = runIn(`document.getElementById("perth-overlay")?.remove();
+    document.querySelector('[data-action="share"]').click();
+    return !!document.getElementById("perth-overlay");`);
+  check(r === true, "gantt: File → Share / QR… abre o diálogo");
+
+  // o servidor avisa pelo WS quando a transmissão muda: o diálogo aberto
+  // se redesenha sozinho (o host pode ter alternado pelo REPL)
+  runIn(`window.__share = Object.assign({}, window.__share, { shared: false,
+           urls: ["http://localhost:8150"] }); return null;`);
+  simulate({ type: "share", shared: false });
+  await tick();
+  r = runIn(`return { btn: document.querySelector(".share-toggle button")?.textContent,
+                      urls: document.querySelectorAll(".share-url").length };`);
+  check(r.btn === "Start transmitting", "gantt: msg \"share\" do servidor redesenha o diálogo");
+  check(r.urls === 1, "gantt: e os links acompanham o novo estado");
+
+  // botão da menubar: alterna direto e acompanha o diálogo aberto
+  runIn(`document.getElementById("perth-overlay")?.remove();
+         ${fakeShareServer(true, true)} refreshShareBtn(); return null;`);
+  await tick();
+  r = runIn(`const b = document.getElementById("share-toggle");
+             return { hidden: b.hidden, on: b.classList.contains("broadcasting") };`);
+  check(r.hidden === false && r.on === false, "gantt: botão da menubar aparece apagado");
+
+  runIn(`document.getElementById("share-toggle").click(); return null;`);
+  await tick();
+  r = runIn(`const b = document.getElementById("share-toggle");
+             return { posts: window.__posts, on: b.classList.contains("broadcasting"),
+                      title: b.title };`);
+  check(JSON.stringify(r.posts) === "[true]", "gantt: botão da menubar alterna direto (POST {on:true})");
+  check(r.on === true, "gantt: botão acende transmitindo");
+  check(/click to stop/.test(r.title), "gantt: e o tooltip passa a oferecer parar");
+
+  runIn(`${fakeShareServer(false, true)} refreshShareBtn(); return null;`);
+  await tick();
+  r = runIn(`return document.getElementById("share-toggle").hidden;`);
+  check(r === true, "gantt: máquina remota não vê o botão da menubar");
+
+  // recusa por transmissão desligada: aviso próprio, com botão de repetir
+  simulate({ type: "denied", reason: "share_off" });
+  await tick();
+  r = runIn(`return document.getElementById("perth-overlay")?.textContent || "";`);
+  check(/stopped transmitting/.test(r), "gantt: denied/share_off avisa que o host parou");
+
+  close();
+}
+
 })().then(() => {
   console.log(failures ? `\n${failures} falha(s)` : "\nTodos os testes passaram.");
   process.exit(failures ? 1 : 0);

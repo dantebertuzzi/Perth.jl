@@ -9,3 +9,11 @@ revision for cheap change polling; project CRUD lives under
 
 With `Perth.run(share = true, key = "...")`, non-host machines must
 append `?key=...` to API calls and the `/ws` presence socket.
+
+`GET /api/share` reports the current sharing state — the URLs to hand
+out, a QR matrix for the LAN link, and whether the caller is the host.
+`POST /api/share` with `{"on": true|false}` flips it live; only the
+machine running the server may call it (403 otherwise, 409 if the server
+was started with an explicit `host`). While sharing is off, every other
+route answers 403 to any machine but this one. The kanban server exposes
+the same two endpoints on its own port.

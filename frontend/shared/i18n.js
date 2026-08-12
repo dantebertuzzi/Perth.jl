@@ -119,6 +119,37 @@ window.PerthI18n = (function () {
       "Archived cards…": "Cards arquivados…",
       "Activity…": "Atividade…",
       "Share / QR…": "Compartilhar / QR…",
+      // transmitir (share): diálogo de compartilhamento e avisos
+      "Transmit to your network": "Transmitir para a sua rede",
+      "Transmitting — click to stop": "Transmitindo — clique para parar",
+      "Share this board": "Compartilhar este quadro",
+      "Share this project": "Compartilhar este projeto",
+      "Transmitting to your network": "Transmitindo para a sua rede",
+      "Localhost only": "Só nesta máquina",
+      "Start transmitting": "Transmitir",
+      "Stop transmitting": "Parar de transmitir",
+      "Transmission on": "Transmissão ligada",
+      "Transmission off": "Transmissão desligada",
+      "Nobody else can reach this board yet — start transmitting to hand out a link.":
+        "Ninguém mais alcança este quadro ainda — transmita para poder passar um link.",
+      "Nobody else can reach this server yet — start transmitting to hand out a link.":
+        "Ninguém mais alcança este servidor ainda — transmita para poder passar um link.",
+      "Localhost only — the machine running Perth turns transmission on.":
+        "Só nesta máquina — quem liga a transmissão é a máquina que roda o Perth.",
+      "Scan with a phone on the same Wi-Fi to open":
+        "Aponte o celular na mesma rede Wi-Fi para abrir",
+      "Tip: run `using QRCoders` before Perth.kanban() to get a QR code here and in the terminal.":
+        "Dica: rode `using QRCoders` antes de Perth.kanban() para ter um QR code aqui e no terminal.",
+      "Tip: run `using QRCoders` before Perth.run() to get a QR code here and in the terminal.":
+        "Dica: rode `using QRCoders` antes de Perth.run() para ter um QR code aqui e no terminal.",
+      "The machine running Perth stopped transmitting this board.":
+        "A máquina que roda o Perth parou de transmitir este quadro.",
+      "The machine running Perth stopped transmitting these projects.":
+        "A máquina que roda o Perth parou de transmitir estes projetos.",
+      "try again": "tentar de novo",
+      "could not load share info":
+        "não foi possível carregar os dados de compartilhamento",
+      "not sharing": "sem transmissão",
       "Rename machines…": "Renomear máquinas…",
       "Auto-archive…": "Auto-arquivar…",
       "Delete selected card": "Excluir card selecionado",
@@ -281,6 +312,36 @@ window.PerthI18n = (function () {
       "Archived cards…": "Tarjetas archivadas…",
       "Activity…": "Actividad…",
       "Share / QR…": "Compartir / QR…",
+      // transmitir (share): diálogo de compartilhamento e avisos
+      "Transmit to your network": "Transmitir a tu red",
+      "Transmitting — click to stop": "Transmitiendo — clic para parar",
+      "Share this board": "Compartir este tablero",
+      "Share this project": "Compartir este proyecto",
+      "Transmitting to your network": "Transmitiendo a tu red",
+      "Localhost only": "Solo en esta máquina",
+      "Start transmitting": "Transmitir",
+      "Stop transmitting": "Dejar de transmitir",
+      "Transmission on": "Transmisión activada",
+      "Transmission off": "Transmisión desactivada",
+      "Nobody else can reach this board yet — start transmitting to hand out a link.":
+        "Nadie más llega a este tablero todavía — transmite para poder pasar un enlace.",
+      "Nobody else can reach this server yet — start transmitting to hand out a link.":
+        "Nadie más llega a este servidor todavía — transmite para poder pasar un enlace.",
+      "Localhost only — the machine running Perth turns transmission on.":
+        "Solo en esta máquina — la máquina que ejecuta Perth activa la transmisión.",
+      "Scan with a phone on the same Wi-Fi to open":
+        "Escanea con un teléfono en la misma Wi-Fi para abrir",
+      "Tip: run `using QRCoders` before Perth.kanban() to get a QR code here and in the terminal.":
+        "Consejo: ejecuta `using QRCoders` antes de Perth.kanban() para ver un código QR aquí y en la terminal.",
+      "Tip: run `using QRCoders` before Perth.run() to get a QR code here and in the terminal.":
+        "Consejo: ejecuta `using QRCoders` antes de Perth.run() para ver un código QR aquí y en la terminal.",
+      "The machine running Perth stopped transmitting this board.":
+        "La máquina que ejecuta Perth dejó de transmitir este tablero.",
+      "The machine running Perth stopped transmitting these projects.":
+        "La máquina que ejecuta Perth dejó de transmitir estos proyectos.",
+      "try again": "intentar de nuevo",
+      "could not load share info": "no se pudo cargar la información de compartir",
+      "not sharing": "sin transmisión",
       "Rename machines…": "Renombrar máquinas…",
       "Auto-archive…": "Autoarchivar…",
       "Delete selected card": "Eliminar tarjeta seleccionada",
@@ -439,6 +500,36 @@ window.PerthI18n = (function () {
       "Archived cards…": "Cartes archivées…",
       "Activity…": "Activité…",
       "Share / QR…": "Partager / QR…",
+      // transmitir (share): diálogo de compartilhamento e avisos
+      "Transmit to your network": "Diffuser sur votre réseau",
+      "Transmitting — click to stop": "Diffusion en cours — cliquez pour arrêter",
+      "Share this board": "Partager ce tableau",
+      "Share this project": "Partager ce projet",
+      "Transmitting to your network": "Diffusion sur votre réseau",
+      "Localhost only": "Cette machine uniquement",
+      "Start transmitting": "Diffuser",
+      "Stop transmitting": "Arrêter la diffusion",
+      "Transmission on": "Diffusion activée",
+      "Transmission off": "Diffusion désactivée",
+      "Nobody else can reach this board yet — start transmitting to hand out a link.":
+        "Personne d'autre n'atteint ce tableau — lancez la diffusion pour partager un lien.",
+      "Nobody else can reach this server yet — start transmitting to hand out a link.":
+        "Personne d'autre n'atteint ce serveur — lancez la diffusion pour partager un lien.",
+      "Localhost only — the machine running Perth turns transmission on.":
+        "Cette machine uniquement — la machine qui exécute Perth active la diffusion.",
+      "Scan with a phone on the same Wi-Fi to open":
+        "Scannez avec un téléphone sur le même Wi-Fi pour ouvrir",
+      "Tip: run `using QRCoders` before Perth.kanban() to get a QR code here and in the terminal.":
+        "Astuce : lancez `using QRCoders` avant Perth.kanban() pour afficher un QR code ici et dans le terminal.",
+      "Tip: run `using QRCoders` before Perth.run() to get a QR code here and in the terminal.":
+        "Astuce : lancez `using QRCoders` avant Perth.run() pour afficher un QR code ici et dans le terminal.",
+      "The machine running Perth stopped transmitting this board.":
+        "La machine qui exécute Perth a arrêté de diffuser ce tableau.",
+      "The machine running Perth stopped transmitting these projects.":
+        "La machine qui exécute Perth a arrêté de diffuser ces projets.",
+      "try again": "réessayer",
+      "could not load share info": "impossible de charger les infos de partage",
+      "not sharing": "pas de diffusion",
       "Rename machines…": "Renommer les machines…",
       "Auto-archive…": "Archivage auto…",
       "Delete selected card": "Supprimer la carte sélectionnée",
@@ -597,6 +688,35 @@ window.PerthI18n = (function () {
       "Archived cards…": "已归档卡片…",
       "Activity…": "动态…",
       "Share / QR…": "分享 / 二维码…",
+      // transmitir (share): diálogo de compartilhamento e avisos
+      "Transmit to your network": "向局域网广播",
+      "Transmitting — click to stop": "正在广播 — 点击停止",
+      "Share this board": "分享此看板",
+      "Share this project": "分享此项目",
+      "Transmitting to your network": "正在向局域网广播",
+      "Localhost only": "仅本机",
+      "Start transmitting": "开始广播",
+      "Stop transmitting": "停止广播",
+      "Transmission on": "广播已开启",
+      "Transmission off": "广播已关闭",
+      "Nobody else can reach this board yet — start transmitting to hand out a link.":
+        "目前其他人无法访问此看板 — 开始广播后即可分享链接。",
+      "Nobody else can reach this server yet — start transmitting to hand out a link.":
+        "目前其他人无法访问此服务器 — 开始广播后即可分享链接。",
+      "Localhost only — the machine running Perth turns transmission on.":
+        "仅本机 — 由运行 Perth 的机器开启广播。",
+      "Scan with a phone on the same Wi-Fi to open": "用同一 Wi-Fi 下的手机扫码打开",
+      "Tip: run `using QRCoders` before Perth.kanban() to get a QR code here and in the terminal.":
+        "提示：在 Perth.kanban() 之前运行 `using QRCoders`，即可在这里和终端显示二维码。",
+      "Tip: run `using QRCoders` before Perth.run() to get a QR code here and in the terminal.":
+        "提示：在 Perth.run() 之前运行 `using QRCoders`，即可在这里和终端显示二维码。",
+      "The machine running Perth stopped transmitting this board.":
+        "运行 Perth 的机器已停止广播此看板。",
+      "The machine running Perth stopped transmitting these projects.":
+        "运行 Perth 的机器已停止广播这些项目。",
+      "try again": "重试",
+      "could not load share info": "无法加载分享信息",
+      "not sharing": "未广播",
       "Rename machines…": "重命名设备…",
       "Auto-archive…": "自动归档…",
       "Delete selected card": "删除所选卡片",

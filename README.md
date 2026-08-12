@@ -122,15 +122,34 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 
 ### Sharing the Gantt on the network
 
-By default `Perth.run()` binds to `localhost` only — the REPL and the
-browser on the same machine. Pass `share = true` and every machine on
-the local network can open the same project:
+By default `Perth.run()` is reachable from this machine only — the REPL
+and the browser on the same machine. Pass `share = true` and every
+machine on the local network can open the same project:
 
 ```julia
-Perth.run()                # localhost only
-Perth.run(share = true)    # binds 0.0.0.0, prints the LAN links (+ QR
-                            # code in the terminal if `using QRCoders`)
+Perth.run()                # this machine only
+Perth.run(share = true)    # prints the LAN links (+ QR code in the
+                            # terminal if `using QRCoders`)
 ```
+
+Sharing is a **live switch**, not a startup-only decision — turn it on
+and off with the server running, from the REPL, from the broadcast
+button in the menubar (green and pulsing while transmitting), or from
+*File → Share / QR…*, which also shows the links and the QR code:
+
+```julia
+Perth.share!()             # start transmitting to the network
+Perth.share!(false)        # stop; remote browsers drop immediately
+```
+
+A bind address can't change once the socket is open, so the socket binds
+`0.0.0.0` either way and every connection is checked against the current
+setting: with sharing off, requests from other machines get a 403 and
+machines already connected are disconnected the moment you switch it
+off. Only the machine running the server may flip the switch (the UI
+hides it elsewhere, and the endpoint refuses it). Passing `host`
+explicitly pins the reach in the socket instead and disables the live
+switch.
 
 Unlike the kanban — which is WebSocket-authoritative end to end — the
 Gantt keeps its normal model, the REST API plus polling of `/api/rev`;
@@ -138,10 +157,10 @@ Gantt keeps its normal model, the REST API plus polling of `/api/rev`;
 connected machine shows up as a labelled cursor with its name and IP,
 exactly like `Perth.kanban(share = true)`, and edits push an instant
 "rev" notice so other machines reload the moment something changes
-instead of waiting for the next poll. `host` overrides the bind address
-explicitly; `key = "…"` requires that access key from every non-host
-machine (embedded automatically in the LAN links Perth prints, so
-nobody has to type it) — both on the WebSocket and on the REST API.
+instead of waiting for the next poll. `key = "…"` requires that access
+key from every non-host machine (embedded automatically in the LAN links
+Perth prints, so nobody has to type it) — both on the WebSocket and on
+the REST API.
 
 **Security:** without `key`, anyone on the network who knows the port
 can open and edit every project — same caveat as the kanban. Never
@@ -154,9 +173,15 @@ board. It does not touch the Gantt data model — the board is its own
 entity, persisted as `kanban.json` in the Perth data directory.
 
 ```
-Perth.kanban()                # localhost only, like Perth.run()
-Perth.kanban(share = true)    # binds 0.0.0.0 and prints the LAN links
+Perth.kanban()                # this machine only, like Perth.run()
+Perth.kanban(share = true)    # prints the LAN links
+Perth.kanban_share!(false)    # stop transmitting, board still running
 ```
+
+Like the Gantt, sharing flips live — from the REPL with
+`kanban_share!`, from the broadcast button in the menubar, or under
+*Board → Share / QR…*, where the same dialog that shows the links and
+the QR code carries the switch.
 
 With `share = true`, every machine on the local network opens the same
 URL and edits the same board in real time over a WebSocket: dragging a
@@ -225,9 +250,12 @@ network who knows the port can *connect* to the board. The permission
 matrix (above) restricts what a connected machine can then *do*, but it
 is not a login: it doesn't gate the connection itself, and identity is
 just an IP address (spoofable on an untrusted LAN). Treat it as
-reducing blast radius, not as authentication. The Gantt server is
-unaffected and still binds to localhost only. Never expose either port
-to the internet.
+reducing blast radius, not as authentication.
+
+Both servers listen on `0.0.0.0` so that sharing can be switched on and
+off live, so the port is visible to a network scan even while sharing is
+off — it just answers 403 to everyone but this machine. Never expose
+either port to the internet.
 
 ### Resetting the board
 

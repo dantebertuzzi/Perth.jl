@@ -1481,6 +1481,185 @@ async function showActivity() {
   showOverlay("Activity", body);
 }
 
+/* ------------------------------------------------------------------ */
+/* Transmitir (share): mesmo diálogo do kanban — links da rede, QR e a  */
+/* chave de ligar/desligar a transmissão sem parar o servidor           */
+/* ------------------------------------------------------------------ */
+
+function qrSvg(rows) {
+  const n = rows.length;
+  const pad = 3;                       // quiet zone (a matriz vem sem borda)
+  const size = n + pad * 2;
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+  svg.setAttribute("width", "220");
+  svg.setAttribute("height", "220");
+  svg.setAttribute("shape-rendering", "crispEdges");
+  const bg = document.createElementNS(NS, "rect");
+  bg.setAttribute("width", size);
+  bg.setAttribute("height", size);
+  bg.setAttribute("fill", "#fff");     // QR sempre preto-no-branco, tema à parte
+  svg.append(bg);
+  const d = [];
+  rows.forEach((row, i) => {
+    [...row].forEach((ch, j) => {
+      if (ch === "1") d.push(`M${j + pad} ${i + pad}h1v1h-1z`);
+    });
+  });
+  const p = document.createElementNS(NS, "path");
+  p.setAttribute("d", d.join(""));
+  p.setAttribute("fill", "#000");
+  svg.append(p);
+  return svg;
+}
+
+// O corpo do diálogo é recarregado do servidor: ao abrir, ao alternar a
+// transmissão aqui e quando ela é alternada em outro lugar (REPL ou outra
+// aba — chega como mensagem "share" pelo WS, ver onShare)
+let shareBody = null;
+
+function showShare() {
+  shareBody = document.createElement("div");
+  const note = document.createElement("div");
+  note.className = "empty-note";
+  note.textContent = "loading…";
+  shareBody.append(note);
+  showOverlay("Share this project", shareBody);
+  refreshShare();
+}
+
+// Botão de transmitir da menubar: reflete o estado do servidor e alterna
+// direto, sem passar pelo diálogo. Escondido para quem não pode alternar —
+// máquina remota, ou servidor preso a um `host` fixo (can_share = false).
+function renderShareBtn(info) {
+  const btn = $("#share-toggle");
+  if (!btn) return;
+  const usable = !!(info && info.can_share && info.host);
+  btn.hidden = !usable;
+  if (!usable) return;
+  btn.classList.toggle("broadcasting", !!info.shared);
+  btn.setAttribute("aria-pressed", info.shared ? "true" : "false");
+  const label = T(info.shared ? "Transmitting — click to stop"
+                              : "Transmit to your network");
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+}
+
+function refreshShareBtn() {
+  api("/api/share").then(renderShareBtn).catch(() => {});
+}
+
+async function toggleShare() {
+  const btn = $("#share-toggle");
+  try {
+    const next = await api("/api/share", {
+      method: "POST",
+      body: JSON.stringify({ on: !btn?.classList.contains("broadcasting") }),
+    });
+    renderShareBtn(next);
+    if (shareBody && shareBody.isConnected) renderShare(shareBody, next);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function refreshShare() {
+  refreshShareBtn();
+  const body = shareBody;
+  if (!body || !body.isConnected) return;
+  api("/api/share")
+    .then((info) => renderShare(body, info))
+    .catch(() => { body.textContent = T("could not load share info"); });
+}
+
+function renderShare(body, info) {
+  body.textContent = "";
+
+  // Chave da transmissão: só o host manda, e só quando o servidor subiu
+  // sem `host` fixo (aí o alcance está no socket e não dá para alternar)
+  if (info.can_share && info.host) {
+    const row = document.createElement("div");
+    row.className = "share-toggle";
+    const label = document.createElement("span");
+    label.textContent = T(info.shared ? "Transmitting to your network"
+                                      : "Localhost only");
+    const btn = document.createElement("button");
+    btn.className = info.shared ? "danger" : "primary";
+    btn.textContent = T(info.shared ? "Stop transmitting" : "Start transmitting");
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const next = await api("/api/share", {
+          method: "POST", body: JSON.stringify({ on: !info.shared }),
+        });
+        renderShare(body, next);
+        renderShareBtn(next);          // o botão da menubar acompanha
+      } catch (err) {
+        btn.disabled = false;
+        alert(err.message);
+      }
+    });
+    row.append(label, btn);
+    body.append(row);
+  }
+
+  for (const u of info.urls) {
+    const row = document.createElement("div");
+    row.className = "share-url";
+    const code = document.createElement("code");
+    code.textContent = u;
+    const btn = document.createElement("button");
+    btn.textContent = "copy";
+    btn.addEventListener("click", () => {
+      navigator.clipboard?.writeText(u);
+      btn.textContent = "copied!";
+      setTimeout(() => (btn.textContent = "copy"), 1400);
+    });
+    row.append(code, btn);
+    body.append(row);
+  }
+
+  const hint = document.createElement("div");
+  hint.className = "alias-hint";
+  if (!info.shared) {
+    hint.textContent = info.can_share && info.host
+      ? T("Nobody else can reach this server yet — start transmitting to hand out a link.")
+      : T("Localhost only — the machine running Perth turns transmission on.");
+    body.append(hint);
+  } else if (info.qr) {
+    const wrap = document.createElement("div");
+    wrap.className = "qr-wrap";
+    wrap.append(qrSvg(info.qr));
+    body.append(wrap);
+    hint.textContent = T("Scan with a phone on the same Wi-Fi to open") + " " +
+      info.target + ".";
+    body.append(hint);
+  } else {
+    hint.textContent = T("Tip: run `using QRCoders` before Perth.run() to get a QR code here and in the terminal.");
+    body.append(hint);
+  }
+}
+
+// Transmissão desligada pelo host: sem retry automático (o servidor recusa
+// a conexão), mas com um botão para tentar de novo quando religarem
+function showShareOff() {
+  const body = document.createElement("div");
+  const p = document.createElement("div");
+  p.className = "empty-note";
+  p.textContent = T("The machine running Perth stopped transmitting these projects.");
+  const btn = document.createElement("button");
+  btn.className = "primary";
+  btn.textContent = T("try again");
+  btn.addEventListener("click", () => {
+    document.getElementById("perth-overlay")?.remove();
+    window.PerthPresence?.reconnect();
+    poll();
+  });
+  body.append(p, btn);
+  showOverlay("Transmission off", body);
+}
+
 async function showSCurve() {
   if (!state.current) return;
   const body = document.createElement("div");
@@ -1840,6 +2019,8 @@ const ACTIONS = {
   "zoom-month": () => setZoom("month"),
   "goto-today": scrollToToday,
   "activity": showActivity,
+  "share": showShare,
+  "share-toggle": toggleShare,
   "scurve": showSCurve,
   "export-csv": () => state.current &&
     window.open(withKey(`/api/projects/${state.current.id}/export.csv`)),
@@ -2211,6 +2392,7 @@ el.chatInput?.addEventListener("keydown", (e) => {
       : `startup error: ${err.message}`;
   }
   setInterval(pollFallback, POLL_MS);
+  refreshShareBtn();   // estado inicial do botão de transmitir da menubar
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => null);
@@ -2299,6 +2481,9 @@ el.chatInput?.addEventListener("keydown", (e) => {
       onRev: () => poll(),
       onChat: handleChatEntry,
       onTyping: handleTyping,
+      // a transmissão mudou: o diálogo de Share, se aberto, se redesenha
+      onShare: () => refreshShare(),
+      onDenied: (reason) => { if (reason === "share_off") showShareOff(); },
     });
     // cursores são ancorados a elementos: reancorar em scroll/resize
     tlBody?.addEventListener("scroll", PerthPresence.refreshCursors,

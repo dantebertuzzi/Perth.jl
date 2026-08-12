@@ -446,7 +446,7 @@ kbd {
 .modal-head button { margin-left: auto; color: var(--muted); padding: 2px 8px; }
 .modal-head button:hover { color: var(--ink); }
 .modal-body { padding: 8px 14px 14px; overflow-y: auto; }
-.empty-note { color: var(--muted); padding: 12px 0; }
+/* .empty-note / .alias-hint: ver frontend/shared/ui.css (gantt também usa) */
 
 .arch-item {
   display: flex;
@@ -472,7 +472,6 @@ kbd {
 .alias-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
 .alias-ip { width: 150px; flex: none; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .alias-row input { flex: 1; }
-.alias-hint { font-size: 10.5px; color: var(--muted); margin-top: 10px; }
 
 /* ---------- matriz de permissões (Board -> Permissions…) ---------- */
 
@@ -585,32 +584,7 @@ kbd {
 .log-text { flex: 1; overflow-wrap: anywhere; }
 .log-who { font-weight: 700; color: var(--logc, var(--purple)); }
 
-/* ---------- compartilhar / QR ---------- */
-
-.share-url {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 0;
-}
-.share-url code {
-  flex: 1;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.share-url button {
-  font-size: 11px;
-  padding: 2px 9px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--muted);
-  flex: none;
-}
-.share-url button:hover { color: var(--ink); border-color: var(--muted); background: transparent; }
-.qr-wrap { display: flex; justify-content: center; padding: 12px 0 4px; }
-.qr-wrap svg { border-radius: 6px; }
+/* compartilhar / QR: CSS movida pra shared/ui.css (gantt também usa agora) */
 
 /* ---------- toasts (notificações) ---------- */
 

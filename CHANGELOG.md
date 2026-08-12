@@ -5,6 +5,43 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **Live sharing switch** (gantt and kanban): sharing to the local
+  network now turns on and off with the server running — no
+  `Perth.stop()` / `Perth.kanban_stop()` in between. From the REPL,
+  `Perth.share!(on)` and `kanban_share!(on)`; in the UI, the
+  *Share / QR…* dialog carries the switch next to the links and the QR
+  code (kanban: *Board* menu; gantt: *File* menu, where the dialog is
+  new — the gantt had no share dialog at all before).
+- A broadcast button in both menubars flips it in one click without
+  opening the dialog: lit green and pulsing while transmitting, dim
+  otherwise. It is hidden for anyone who cannot flip the switch — a
+  remote machine, or a server pinned to an explicit `host`.
+- Gantt: `GET /api/share` and `POST /api/share` (`{"on": true|false}`),
+  mirroring the kanban's. Both are answered before the router, where the
+  connection's real peer IP is known, so the host check can't be faked
+  with a header.
+
+### Changed
+- Both servers now bind `0.0.0.0` regardless of `share`, and every
+  connection is checked against the current sharing state instead: a
+  bind address can't change once the socket is open, so the gate had to
+  move from the socket to the handler for the switch to exist. With
+  sharing off, other machines get a 403 (previously the port was not
+  reachable at all) — the port is therefore visible to a network scan
+  while sharing is off. Passing `host` explicitly still pins the reach
+  in the socket and disables the switch.
+- Turning sharing off disconnects remote machines immediately instead of
+  waiting for them to leave: the connection gate only stops *new*
+  connections, so live WebSockets are closed with a `denied` message
+  carrying `reason: "share_off"`, and the UI offers a "try again" button
+  instead of retrying forever.
+- The share dialog CSS (`.share-url`, `.qr-wrap`) and the modal note
+  styles (`.empty-note`, `.alias-hint`) moved from the kanban stylesheet
+  to `frontend/shared/ui.css`, now that the gantt uses them too.
+
 ## [0.4.0] - 2026-08-08
 
 ### Added

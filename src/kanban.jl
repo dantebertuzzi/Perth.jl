@@ -1,7 +1,7 @@
 # Board kanban colaborativo — Perth.kanban().
 #
-# Ao contrário do servidor Gantt (localhost, polling de revisão), o kanban é
-# um servidor próprio, opcionalmente exposto à rede local (share = true),
+# Ao contrário do servidor Gantt (polling de revisão), o kanban é um
+# servidor próprio, opcionalmente exposto à rede local (share = true),
 # com sincronização por WebSocket: cada mudança é aplicada sob lock e o
 # board completo vai em broadcast para todos os navegadores — em LAN isso
 # custa nada e elimina qualquer lógica de reconciliação (última escrita
@@ -41,7 +41,8 @@ end
 const KANBAN = Ref{Union{KanbanState,Nothing}}(nothing)
 const KANBAN_SERVER = Ref{Union{HTTP.Server,Nothing}}(nothing)
 const KANBAN_PORT = Ref{Int}(0)
-const KANBAN_SHARED = Ref{Bool}(false)
+const KANBAN_SHARED = Ref{Bool}(false)        # transmitindo agora (mutável em runtime)
+const KANBAN_CAN_SHARE = Ref{Bool}(false)     # socket em 0.0.0.0: dá para alternar
 const KANBAN_KEY = Ref{String}("")            # chave de acesso do share ("" = aberto)
 const KANBAN_TIMER = Ref{Union{Timer,Nothing}}(nothing)
 const _HB_TICKS = Ref{Int}(0)
@@ -208,7 +209,12 @@ _kaliases(st) = get!(st.board, "aliases", Dict{String,Any}())::Dict{String,Any}
 _kanban_now() = Dates.format(Dates.now(), dateformat"yyyy-mm-dd HH:MM")
 
 # Só a máquina do servidor (loopback) é "host": pode renomear usuários por IP
+# e ligar/desligar a transmissão
 _kanban_is_host(ip::AbstractString) = _presence_is_host(ip)
+
+# Porteiro da transmissão: o host entra sempre; as demais máquinas, só
+# enquanto a transmissão estiver ligada (ver kanban_share!)
+_kanban_share_ok(ip::AbstractString) = KANBAN_SHARED[] || _kanban_is_host(ip)
 
 _kfindcol(st, id) = findfirst(c -> c["id"] == id, _kcols(st))
 
@@ -1155,34 +1161,118 @@ function _kanban_boards_info()
     _json((; boards = kanban_boards(), current = _kanban_state().name))
 end
 
-function _kanban_share_info()
+function _kanban_urls()
     urls = ["http://localhost:$(KANBAN_PORT[])" * _key_suffix()]
-    if KANBAN_SHARED[]
-        lan = try
-            filter(a -> a isa Sockets.IPv4, Sockets.getipaddrs())
-        catch
-            Sockets.IPv4[]
-        end
-        for a in lan
-            push!(urls, "http://$(a):$(KANBAN_PORT[])" * _key_suffix())
-        end
+    KANBAN_SHARED[] || return urls
+    for a in _lan_ipv4()
+        push!(urls, "http://$(a):$(KANBAN_PORT[])" * _key_suffix())
     end
+    return urls
+end
+
+function _kanban_share_payload(ip::AbstractString = "")
+    urls = _kanban_urls()
     target = length(urls) > 1 ? urls[2] : urls[1]
-    m = _qr_matrix(target)
-    qr = m === nothing ? nothing :
-        [join(x ? "1" : "0" for x in view(m, i, :)) for i in axes(m, 1)]
-    return _json((; urls, shared = KANBAN_SHARED[], target, qr))
+    return (; urls, target, qr = _qr_rows(target),
+            shared = KANBAN_SHARED[], can_share = KANBAN_CAN_SHARE[],
+            keyed = !isempty(KANBAN_KEY[]), host = _kanban_is_host(ip))
+end
+
+function _kanban_share_toggle(req::HTTP.Request, ip::AbstractString)
+    _kanban_is_host(ip) ||
+        return _error("only the machine running Perth can change this"; status = 403)
+    on = try
+        Bool(get(JSON3.read(String(req.body)), "on", !KANBAN_SHARED[]))
+    catch
+        !KANBAN_SHARED[]
+    end
+    try
+        kanban_share!(on; actor = ip)
+    catch err
+        err isa ArgumentError && return _error(err.msg; status = 409)
+        rethrow()
+    end
+    return _json(_kanban_share_payload(ip))
+end
+
+# Derruba as conexões de máquinas remotas, preservando as do host — irmã de
+# _hub_drop_remote! (presence.jl) para o dicionário de clientes do kanban
+function _kanban_drop_remote!()
+    st = _kanban_state()
+    gone = lock(st.lock) do
+        out = KanbanClient[]
+        for (id, c) in collect(st.clients)
+            _kanban_is_host(c.ip) && continue
+            delete!(st.clients, id)
+            push!(out, c)
+        end
+        out
+    end
+    for c in gone
+        _presence_deny(c.ws, "share_off")
+        _kanban_broadcast(JSON3.write(Dict("type" => "leave", "id" => c.id)))
+    end
+    return length(gone)
+end
+
+"""
+    kanban_share!(on = true) -> Bool
+
+Turn network sharing on or off on the running kanban server, live — no
+restart, no [`Perth.kanban_stop`](@ref). With sharing on, other machines
+on the local network can open the same board (see [`Perth.kanban`](@ref));
+with it off, only this machine can, and remote browsers already connected
+are disconnected immediately.
+
+The same switch is in the UI (Board → Share / QR…), available only from
+the machine running the server. Sharing can only be toggled when the
+server was started without an explicit `host`.
+"""
+function kanban_share!(on::Bool = true; actor::AbstractString = "repl")
+    KANBAN_SERVER[] === nothing &&
+        throw(ArgumentError("Perth kanban is not running — Perth.kanban() first"))
+    KANBAN_CAN_SHARE[] || throw(ArgumentError(
+        "this board is bound to a fixed address — restart without `host` to allow toggling"))
+    KANBAN_SHARED[] == on && return on
+    KANBAN_SHARED[] = on
+    on || _kanban_drop_remote!()   # o porteiro só barra conexões novas
+    st = _kanban_state()
+    entry = Dict{String,Any}(
+        "at" => _kanban_now(), "ip" => String(actor), "type" => "share",
+        "text" => on ? "turned sharing on" : "turned sharing off",
+        "notify" => false)
+    lock(st.lock) do
+        push!(st.log, entry)
+        length(st.log) > _KANBAN_LOG_CAP && popfirst!(st.log)
+    end
+    _kanban_log_append(st.logfile, entry)
+    _kanban_broadcast(JSON3.write((; type = "share", shared = on, log = entry)))
+    if on
+        for u in _kanban_urls()[2:end]
+            @info "Perth kanban: sharing on — $u"
+        end
+    else
+        @info "Perth kanban: sharing off — localhost only."
+    end
+    return on
 end
 
 function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
     uri = HTTP.URI(req.target)
     path = uri.path
+    # porteiro da transmissão: com o share desligado a porta existe (para o
+    # botão poder religá-la) mas só atende a máquina do servidor
+    _kanban_share_ok(ip) ||
+        return _error("this board is not being shared to the network"; status = 403)
     if startswith(path, "/api/")
         # endpoints de dados respeitam a chave; o host (loopback) é isento
         authed = isempty(KANBAN_KEY[]) || _kanban_is_host(ip) ||
                  get(HTTP.URIs.queryparams(uri), "key", "") == KANBAN_KEY[]
         authed || return _error("access key required"; status = 403)
-        path == "/api/share" && return _kanban_share_info()
+        if path == "/api/share"
+            return req.method == "POST" ? _kanban_share_toggle(req, ip) :
+                   _json(_kanban_share_payload(ip))
+        end
         path == "/api/boards" && return _kanban_boards_info()
         if path == "/api/apps"
             return _json((; app = "kanban", kanban = KANBAN_PORT[],
@@ -1225,6 +1315,8 @@ function _kanban_handler(http::HTTP.Stream)
         end
         keyok = isempty(KANBAN_KEY[]) || _kanban_is_host(ip) ||
                 get(qp, "key", "") == KANBAN_KEY[]
+        _kanban_share_ok(ip) ||
+            return HTTP.WebSockets.upgrade(ws -> _presence_deny(ws, "share_off"), http)
         HTTP.WebSockets.upgrade(ws -> _kanban_ws(ws, ip, keyok), http)
     else
         HTTP.streamhandler(req -> _kanban_static(req, ip))(http)
@@ -1252,12 +1344,18 @@ end
 Start the collaborative kanban board and (optionally) open it in your
 browser. Returns the URL. Stop it with [`Perth.kanban_stop`](@ref).
 
-By default the server binds to `localhost` only, like `Perth.run`. Pass
-`share = true` to bind to `0.0.0.0` and let other machines on the local
-network open the same board: every change (dragging a card, editing,
-renaming a column) is broadcast live over a WebSocket, and each connected
-machine shows up as a labelled cursor with its name and IP address —
-pair-programming style. `host` overrides the bind address explicitly.
+By default only this machine can open the board, like `Perth.run`. Pass
+`share = true` to let other machines on the local network open the same
+board: every change (dragging a card, editing, renaming a column) is
+broadcast live over a WebSocket, and each connected machine shows up as a
+labelled cursor with its name and IP address — pair-programming style.
+
+Sharing is a live switch, not a startup-only decision: turn it on and off
+with the board running via [`kanban_share!`](@ref) or the UI (Board →
+Share / QR…). To that end the socket binds to `0.0.0.0` and every
+connection is checked against the current setting — with sharing off,
+requests from other machines are refused with 403. Pass `host` to bind a
+fixed address instead (which disables the live switch).
 
 The board is a single shared entity, persisted as `kanban.json` in the
 Perth data directory (`data_dir` overrides it). The REPL operates on the
@@ -1296,12 +1394,17 @@ function kanban(name::AbstractString = "board";
     end
     _kanban_state()   # garante board carregado antes de aceitar conexões
 
-    bindhost = something(host, share ? "0.0.0.0" : "127.0.0.1")
+    # bind sempre em 0.0.0.0: o filtro de quem entra é o porteiro
+    # (_kanban_share_ok), não o socket — é o que permite ligar/desligar a
+    # transmissão sem derrubar o board. `host` explícito fixa o alcance no
+    # socket e desabilita o botão.
+    bindhost = something(host, "0.0.0.0")
     addr = parse(Sockets.IPAddr, String(bindhost))
     server, chosen = _kanban_listen(_kanban_handler, addr, port)
     KANBAN_SERVER[] = server
     KANBAN_PORT[] = chosen
-    KANBAN_SHARED[] = addr == Sockets.IPv4(0)
+    KANBAN_CAN_SHARE[] = addr == Sockets.IPv4(0)
+    KANBAN_SHARED[] = KANBAN_CAN_SHARE[] ? share : !_kanban_is_host(string(addr))
 
     # Heartbeat: mantém intermediários acordados e permite ao cliente
     # detectar conexão morta; o mesmo timer roda o auto-arquivamento (1x/h)
@@ -1318,12 +1421,8 @@ function kanban(name::AbstractString = "board";
     url = "http://localhost:$(chosen)" * _key_suffix()
     printstyled("\n  Perth kanban "; color = :magenta, bold = true)
     println("board \"$(_kanban_state().name)\" running at $url")
-    if addr == Sockets.IPv4(0)   # 0.0.0.0: mostra os endereços da rede local
-        lan = try
-            filter(a -> a isa Sockets.IPv4, Sockets.getipaddrs())
-        catch
-            Sockets.IPv4[]
-        end
+    if KANBAN_SHARED[]   # transmitindo: mostra os endereços da rede local
+        lan = _lan_ipv4()
         for a in lan
             println("  on your network:  http://$(a):$(chosen)$(_key_suffix())  ← share this link")
         end
@@ -1341,7 +1440,10 @@ function kanban(name::AbstractString = "board";
         else
             println("  Access requires the key (already embedded in the links above).")
         end
+        println("  Perth.kanban_share!(false) stops sharing without stopping the board.")
         println("  Do not expose this port to the internet.")
+    elseif KANBAN_CAN_SHARE[]
+        println("  Localhost only — Perth.kanban_share!() (or Board → Share / QR…) opens it to your network.")
     end
     println("  Board at $(_kanban_state().file) — Perth.kanban_stop() to shut down.\n")
     open_browser && _open_browser(url)
@@ -1373,6 +1475,8 @@ function kanban_stop()
         KANBAN_TIMER[] = nothing
     end
     KANBAN_KEY[] = ""
+    KANBAN_SHARED[] = false
+    KANBAN_CAN_SHARE[] = false
     close(KANBAN_SERVER[])
     KANBAN_SERVER[] = nothing
     @info "Perth kanban stopped."

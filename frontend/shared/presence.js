@@ -13,6 +13,8 @@
  *     captureAnchor(e) -> anchor | null   // ponto -> âncora (específico do app)
  *     resolveAnchor(a) -> {x,y} | null    // âncora -> ponto  (específico do app)
  *     onRev(rev)                          // servidor avisou mudança de dados
+ *     onShare(shared)                     // host ligou/desligou a transmissão
+ *     onDenied(reason)                    // "key" | "share_off": conexão recusada
  *   });
  *
  * O protocolo (init/join/leave/peer/presence/hello/hb) é o mesmo do kanban,
@@ -137,9 +139,16 @@ window.PerthPresence = (function () {
       case "rev":      // dados mudaram no servidor: o app decide como recarregar
         st.opts.onRev && st.opts.onRev(msg.rev);
         break;
+      case "share":    // transmissão ligada/desligada pelo host
+        st.opts.onShare && st.opts.onShare(!!msg.shared);
+        break;
       case "denied":
-        setConn(false, "access denied");
+        // reason: "key" (falta a chave) | "share_off" (host parou de
+        // transmitir). Nos dois casos o retry automático é cancelado — o
+        // servidor vai recusar de novo; o app oferece um botão de repetir.
+        setConn(false, msg.reason === "share_off" ? "not sharing" : "access denied");
         try { st.ws.onclose = null; st.ws.close(); } catch { /* já fechado */ }
+        st.opts.onDenied && st.opts.onDenied(msg.reason || "key");
         break;
       case "hb":
         break;   // lastMsgAt já registrado acima
@@ -307,6 +316,13 @@ window.PerthPresence = (function () {
     },
     me: () => st.me,
     peers: () => [...st.peers.values()],
+    // religa depois de uma recusa (em "denied" o retry automático é
+    // cancelado de propósito) — ver o botão "try again" do app
+    reconnect: () => {
+      try { st.ws && (st.ws.onclose = null, st.ws.close()); } catch { /* já fechado */ }
+      st.retry = 0;
+      openWS();
+    },
     // reancorar cursores em scroll/resize do app
     refreshCursors: renderCursors,
     keyQS,

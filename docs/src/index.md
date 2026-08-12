@@ -15,6 +15,9 @@ Perth.kanban(share = true)  # Kanban shared on your LAN, with a QR code
 - **REPL-first**: the browser and the REPL edit the same data, live.
 - **Multiplayer**: `share = true` (Gantt and Kanban) shows every connected
   machine as a labelled cursor with its name and IP, pair-programming style.
+  Sharing switches on and off live — [`Perth.share!`](@ref),
+  [`kanban_share!`](@ref) or the *Share / QR…* dialog — without restarting
+  the server.
 - **Real scheduling**: CPM, critical path, slack, dependency lag and
   SS/FF link types, business-day calendars via BusinessDays.jl.
 - **Gantt ↔ Kanban bridge**: [`kanban_from_project!`](@ref) turns a project

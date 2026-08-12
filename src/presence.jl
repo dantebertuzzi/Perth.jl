@@ -81,6 +81,47 @@ end
 _peer_payload(c::PresenceClient) =
     Dict("id" => c.id, "ip" => c.ip, "name" => c.name, "color" => c.color)
 
+# Endereços IPv4 da máquina na rede local — os links que o host passa para
+# quem vai entrar. Usado pelo gantt e pelo kanban (banner, /api/share, QR).
+_lan_ipv4() = try
+    filter(a -> a isa Sockets.IPv4, Sockets.getipaddrs())
+catch
+    Sockets.IPv4[]
+end
+
+# Recusa educada: o cliente recebe o motivo e para de tentar reconectar
+# (sem isso o navegador entra em loop de retry). `reason` distingue falta
+# de chave de transmissão desligada — a UI mostra mensagens diferentes.
+function _presence_deny(ws::HTTP.WebSockets.WebSocket, reason::AbstractString)
+    try
+        HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "denied",
+                                                  "reason" => String(reason))))
+        HTTP.WebSockets.close(ws)
+    catch
+    end
+    return nothing
+end
+
+# Derruba as conexões de máquinas remotas, preservando as do host. Chamado
+# ao desligar a transmissão: o porteiro de conexão só vale para conexões
+# novas, então quem já estava dentro precisa ser desconectado na mão.
+function _hub_drop_remote!(hub::PresenceHub)
+    gone = lock(hub.lock) do
+        out = PresenceClient[]
+        for (id, c) in collect(hub.clients)
+            _presence_is_host(c.ip) && continue
+            delete!(hub.clients, id)
+            push!(out, c)
+        end
+        out
+    end
+    for c in gone
+        _presence_deny(c.ws, "share_off")
+        _hub_broadcast(hub, JSON3.write(Dict("type" => "leave", "id" => c.id)))
+    end
+    return length(gone)
+end
+
 function _hub_broadcast(hub::PresenceHub, msg::String; except::Int = -1)
     lock(hub.lock) do
         for (id, c) in collect(hub.clients)
@@ -129,14 +170,7 @@ end
 # encerra educadamente (mesmo comportamento do kanban).
 function _presence_ws(hub::PresenceHub, ws::HTTP.WebSockets.WebSocket,
                       ip::String, keyok::Bool = true; extra_init = (;))
-    if !keyok
-        try
-            HTTP.WebSockets.send(ws, "{\"type\":\"denied\"}")
-            HTTP.WebSockets.close(ws)
-        catch
-        end
-        return nothing
-    end
+    keyok || return _presence_deny(ws, "key")
     me = lock(hub.lock) do
         hub.nextid += 1
         c = PresenceClient(hub.nextid, ws, ip, ip,
@@ -197,6 +231,14 @@ _plain(x) = x
 # usuário carrega QRCoders; sem ela, retorna nothing e a feature degrada
 # com uma dica — mesmo padrão das extensões BusinessDays/Makie do Perth.
 _qr_matrix(text) = nothing
+
+# Matriz -> linhas de "0"/"1" para o JSON de /api/share; o frontend redesenha
+# como SVG. `nothing` (sem QRCoders carregado) atravessa como nothing.
+function _qr_rows(text::AbstractString)
+    m = _qr_matrix(text)
+    m === nothing && return nothing
+    return [join(x ? "1" : "0" for x in view(m, i, :)) for i in axes(m, 1)]
+end
 
 # Meio-blocos: duas linhas da matriz por linha de terminal
 function _print_qr(io::IO, m; pad::Int = 2)

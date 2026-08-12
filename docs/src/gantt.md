@@ -3,6 +3,7 @@
 ```@docs
 Perth.run
 Perth.stop
+Perth.share!
 create_project
 add_task!
 update_task!

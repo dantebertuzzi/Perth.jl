@@ -3,6 +3,7 @@
 ```@docs
 Perth.kanban
 Perth.kanban_stop
+kanban_share!
 kanban_add_card!
 kanban_move_card!
 kanban_remove_card!

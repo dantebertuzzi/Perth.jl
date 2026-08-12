@@ -2,21 +2,101 @@
 # de forma não bloqueante, para manter o REPL vivo — a graça é editar o
 # projeto pelo REPL com a página aberta ao lado.
 #
-# share = true replica o modelo do kanban: bind em 0.0.0.0, canal de
-# presença por WebSocket em /ws (cursores etiquetados com nome/IP de cada
-# máquina da rede) e chave de acesso opcional. As mudanças de dados
-# continuam fluindo pela API REST + polling de /api/rev; o WS acrescenta
-# um aviso "rev" instantâneo para os clientes recarregarem na hora.
+# share = true replica o modelo do kanban: canal de presença por WebSocket
+# em /ws (cursores etiquetados com nome/IP de cada máquina da rede) e chave
+# de acesso opcional. As mudanças de dados continuam fluindo pela API REST +
+# polling de /api/rev; o WS acrescenta um aviso "rev" instantâneo para os
+# clientes recarregarem na hora.
+#
+# A transmissão liga e desliga com o servidor no ar (botão da UI ou
+# Perth.share!): endereço de bind não muda depois do socket aberto, então o
+# socket sobe sempre em 0.0.0.0 e quem decide se máquinas de fora entram é
+# GANTT_SHARED[], consultado a cada conexão. Com a transmissão desligada, só
+# o loopback passa do porteiro — de fora a porta responde 403.
 
 const SERVER = Ref{Union{HTTP.Server,Nothing}}(nothing)
 const PORT = Ref{Int}(0)
 const GANTT_HUB = PresenceHub()
-const GANTT_SHARED = Ref{Bool}(false)
+const GANTT_SHARED = Ref{Bool}(false)         # transmitindo agora (mutável em runtime)
+const GANTT_CAN_SHARE = Ref{Bool}(false)      # socket em 0.0.0.0: dá para alternar
 const GANTT_KEY = Ref{String}("")             # chave de acesso do share ("" = aberto)
 const GANTT_TIMER = Ref{Union{Timer,Nothing}}(nothing)
 
 _gantt_key_suffix() = isempty(GANTT_KEY[]) ? "" :
     "?key=" * HTTP.URIs.escapeuri(GANTT_KEY[])
+
+# Porteiro da transmissão: a máquina do servidor entra sempre; as demais,
+# só enquanto a transmissão estiver ligada
+_gantt_share_ok(ip::AbstractString) = GANTT_SHARED[] || _presence_is_host(ip)
+
+function _gantt_urls()
+    urls = ["http://localhost:$(PORT[])" * _gantt_key_suffix()]
+    GANTT_SHARED[] || return urls
+    for a in _lan_ipv4()
+        push!(urls, "http://$(a):$(PORT[])" * _gantt_key_suffix())
+    end
+    return urls
+end
+
+# Payload de /api/share — o mesmo formato do kanban, para o frontend
+# compartilhar o desenho do diálogo
+function _gantt_share_payload(ip::AbstractString = "")
+    urls = _gantt_urls()
+    target = length(urls) > 1 ? urls[2] : urls[1]
+    return (; urls, target, qr = _qr_rows(target),
+            shared = GANTT_SHARED[], can_share = GANTT_CAN_SHARE[],
+            keyed = !isempty(GANTT_KEY[]), host = _presence_is_host(ip))
+end
+
+"""
+    Perth.share!(on = true) -> Bool
+
+Turn network sharing on or off on the running gantt server, live — no
+restart, no [`Perth.stop`](@ref). With sharing on, other machines on the
+local network can open the same projects (see [`Perth.run`](@ref)); with
+it off, only this machine can, and remote browsers already connected are
+disconnected immediately.
+
+The same switch is in the UI (File → Share / QR…), available only from
+the machine running the server. Sharing can only be toggled when the
+server was started without an explicit `host` — see [`Perth.run`](@ref).
+"""
+function share!(on::Bool = true; actor::AbstractString = "repl")
+    SERVER[] === nothing && throw(ArgumentError("Perth is not running — Perth.run() first"))
+    GANTT_CAN_SHARE[] || throw(ArgumentError(
+        "this server is bound to a fixed address — restart without `host` to allow toggling"))
+    GANTT_SHARED[] == on && return on
+    GANTT_SHARED[] = on
+    on || _hub_drop_remote!(GANTT_HUB)   # o porteiro só barra conexões novas
+    _with_state(st -> _log_activity!(st, actor, "share",
+        on ? "turned network sharing on" : "turned network sharing off"))
+    _hub_broadcast(GANTT_HUB, JSON3.write((; type = "share", shared = on)))
+    if on
+        for u in _gantt_urls()[2:end]
+            @info "Perth: sharing on — $u"
+        end
+    else
+        @info "Perth: sharing off — localhost only."
+    end
+    return on
+end
+
+function _gantt_share_toggle(req::HTTP.Request, ip::AbstractString)
+    _presence_is_host(ip) ||
+        return _error("only the machine running Perth can change this"; status = 403)
+    on = try
+        Bool(get(JSON3.read(String(req.body)), "on", !GANTT_SHARED[]))
+    catch
+        !GANTT_SHARED[]
+    end
+    try
+        share!(on; actor = ip)
+    catch err
+        err isa ArgumentError && return _error(err.msg; status = 409)
+        rethrow()
+    end
+    return _json(_gantt_share_payload(ip))
+end
 
 """
     Perth.run(; port = 8123, open_browser = true, data_dir = nothing,
@@ -26,12 +106,18 @@ Start the Perth server and (optionally) open the app in your browser.
 Returns the URL. The server does not block the REPL; stop it with
 [`Perth.stop`](@ref).
 
-By default the server binds to `localhost` only. Pass `share = true` to
-bind to `0.0.0.0` and let other machines on the local network open the
-same projects: every connected machine shows up as a labelled cursor
-with its name and IP address — exactly like `Perth.kanban(share = true)`.
-`host` overrides the bind address explicitly; `key` requires an access
-key from non-host machines.
+By default only this machine can open the app. Pass `share = true` to let
+other machines on the local network open the same projects: every
+connected machine shows up as a labelled cursor with its name and IP
+address — exactly like `Perth.kanban(share = true)`. `key` requires an
+access key from those machines.
+
+Sharing is a live switch, not a startup-only decision: turn it on and off
+with the server running via [`Perth.share!`](@ref) or the UI (File →
+Share / QR…). To that end the socket binds to `0.0.0.0` and every
+connection is checked against the current setting — with sharing off,
+requests from other machines are refused with 403. Pass `host` to bind a
+fixed address instead (which disables the live switch).
 
 If `port` is busy, the next free port is used (up to 20 attempts).
 `data_dir` overrides the project storage directory
@@ -57,7 +143,10 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
     banner && splash(; version = string(pkgversion(@__MODULE__)))
 
     GANTT_KEY[] = String(key)
-    bindhost = something(host, share ? "0.0.0.0" : "127.0.0.1")
+    # bind sempre em 0.0.0.0 (ver comentário do topo): o filtro de quem
+    # entra é o porteiro, não o socket — é o que permite ligar/desligar a
+    # transmissão sem derrubar o servidor
+    bindhost = something(host, "0.0.0.0")
     addr = parse(Sockets.IPAddr, String(bindhost))
 
     nproj = _step(stdout, "Loading projects") do
@@ -78,7 +167,10 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
     end
     SERVER[] = server
     PORT[] = chosen
-    GANTT_SHARED[] = addr == Sockets.IPv4(0)
+    # `host` explícito fixa o alcance no socket: o que vale é o endereço
+    # pedido, e o botão de transmitir fica indisponível
+    GANTT_CAN_SHARE[] = addr == Sockets.IPv4(0)
+    GANTT_SHARED[] = GANTT_CAN_SHARE[] ? share : !_presence_is_host(string(addr))
 
     _step(stdout, "Wiring live updates") do
         # Mudança de dados (REPL, API, outra máquina) -> aviso "rev" imediato
@@ -103,12 +195,7 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
     qr    = nothing
 
     if GANTT_SHARED[]
-        lan = try
-            filter(a -> a isa Sockets.IPv4, Sockets.getipaddrs())
-        catch
-            Sockets.IPv4[]
-        end
-        for a in lan
+        for a in _lan_ipv4()
             push!(net, "http://$(a):$(chosen)$(_gantt_key_suffix())")
         end
         if !isempty(net)
@@ -122,7 +209,10 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
         push!(notes, isempty(GANTT_KEY[]) ?
             "Anyone on the network can edit the projects — pass key = \"…\" to require an access key." :
             "Access requires the key (already embedded in the links above).")
+        push!(notes, "Perth.share!(false) stops sharing without stopping the server.")
         push!(notes, "Do not expose this port to the internet.")
+    elseif GANTT_CAN_SHARE[]
+        push!(notes, "Localhost only — Perth.share!() (or File → Share / QR…) opens it to your network.")
     end
 
     _ready(; url = url,
@@ -149,7 +239,12 @@ function _gantt_handler(router)
         end
         keyok = isempty(GANTT_KEY[]) || _presence_is_host(ip) ||
                 get(qp, "key", "") == GANTT_KEY[]
+        # porteiro da transmissão, antes de tudo: com o share desligado a
+        # porta existe (para o botão poder religá-la) mas só atende o host
+        share_ok = _gantt_share_ok(ip)
         if HTTP.WebSockets.isupgrade(http.message)
+            share_ok || return HTTP.WebSockets.upgrade(
+                ws -> _presence_deny(ws, "share_off"), http)
             HTTP.WebSockets.upgrade(ws -> _presence_ws(GANTT_HUB, ws, ip, keyok;
                                                        extra_init = (; rev = _state().rev)),
                                     http)
@@ -157,8 +252,17 @@ function _gantt_handler(router)
             # o router não vê o stream: propaga o IP p/ o log de atividades
             HTTP.setheader(http.message, "X-Perth-Peer" => ip)
             path = HTTP.URI(http.message.target).path
-            if startswith(path, "/api/") && !keyok
+            if !share_ok
+                HTTP.streamhandler(_ -> _error("this Perth server is not sharing to the network";
+                                               status = 403))(http)
+            elseif startswith(path, "/api/") && !keyok
                 HTTP.streamhandler(_ -> _error("access key required"; status = 403))(http)
+            elseif path == "/api/share"
+                # fica fora do router de propósito: o toggle é do host, e só
+                # aqui o IP real da conexão é conhecido (header é do cliente)
+                HTTP.streamhandler(http.message.method == "POST" ?
+                    req -> _gantt_share_toggle(req, ip) :
+                    _ -> _json(_gantt_share_payload(ip)))(http)
             else
                 HTTP.streamhandler(router)(http)
             end
@@ -210,6 +314,8 @@ function stop()
     end
     _ON_REV[] = nothing
     GANTT_KEY[] = ""
+    GANTT_SHARED[] = false
+    GANTT_CAN_SHARE[] = false
     close(SERVER[])
     SERVER[] = nothing
     @info "Perth stopped."

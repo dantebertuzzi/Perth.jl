@@ -149,7 +149,22 @@ function handleMessage(msg) {
       break;   // heartbeat: só atualiza lastMsgAt (já feito no onmessage)
     case "denied": {
       state.denied = true;
-      showKeyGate();
+      if (msg.reason === "share_off") showShareOff();
+      else showKeyGate();
+      break;
+    }
+    case "share": {
+      // a transmissão foi ligada/desligada (aqui, no REPL ou em outra aba
+      // do host): só o host continua conectado, então isto é informativo
+      if (msg.log) {
+        state.log.push(msg.log);
+        state.log.length > 500 && state.log.shift();
+        if (state.openModal === "activity") showActivity();
+      }
+      showToast(window.PerthI18n
+        ? PerthI18n.t(msg.shared ? "Transmission on" : "Transmission off")
+        : (msg.shared ? "Transmission on" : "Transmission off"), "toast-info");
+      refreshShare();
       break;
     }
     case "init": {
@@ -158,7 +173,8 @@ function handleMessage(msg) {
       state.me = msg.you;
       state.boardName = msg.board_name || "board";
       $("#board-name").textContent = state.boardName;
-      if (state.openModal === "boards" || state.openModal === "keygate") closeModal();
+      if (state.openModal === "boards" || state.openModal === "keygate" ||
+          state.openModal === "shareoff") closeModal();
       state.peers.clear();
       for (const p of msg.peers)
         if (p.id !== msg.you.id) state.peers.set(p.id, { ...p, presence: null });
@@ -168,6 +184,7 @@ function handleMessage(msg) {
       acceptBoard(msg.board);
       renderPeers();
       renderStatus();
+      refreshShareBtn();
       $("#aliases-item").hidden = !msg.you.host;
       $("#permissions-item").hidden = !msg.you.host;
       $("#reset-item").hidden = !msg.you.host;
@@ -2281,52 +2298,152 @@ function qrSvg(rows) {
   return svg;
 }
 
+// O corpo do diálogo é recarregado do servidor: ao abrir, ao alternar a
+// transmissão aqui e quando ela é alternada em outro lugar (REPL ou outra
+// aba — chega como mensagem "share" pelo WS, ver handleMessage)
+let shareBody = null;
+
 function showShare() {
   const body = document.createElement("div");
   const note = document.createElement("div");
   note.className = "empty-note";
   note.textContent = "loading…";
   body.append(note);
-  showModal("Share this board", body, "share");
-  fetch("/api/share")
+  shareBody = body;
+  showModal(window.PerthI18n ? PerthI18n.t("Share this board") : "Share this board",
+            body, "share");
+  refreshShare();
+}
+
+// Botão de transmitir da menubar: reflete o estado do servidor e alterna
+// direto, sem passar pelo diálogo. Escondido para quem não pode alternar —
+// máquina remota, ou servidor preso a um `host` fixo (can_share = false).
+function renderShareBtn(info) {
+  const btn = $("#share-toggle");
+  if (!btn) return;
+  const usable = !!(info && info.can_share && info.host);
+  btn.hidden = !usable;
+  if (!usable) return;
+  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
+  btn.classList.toggle("broadcasting", !!info.shared);
+  btn.setAttribute("aria-pressed", info.shared ? "true" : "false");
+  const label = T(info.shared ? "Transmitting — click to stop"
+                              : "Transmit to your network");
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+}
+
+function refreshShareBtn() {
+  fetch(`/api/share${keyQS()}`)
     .then((r) => r.json())
-    .then((info) => {
-      body.textContent = "";
-      for (const u of info.urls) {
-        const row = document.createElement("div");
-        row.className = "share-url";
-        const code = document.createElement("code");
-        code.textContent = u;
-        const btn = document.createElement("button");
-        btn.textContent = "copy";
-        btn.addEventListener("click", () => {
-          navigator.clipboard?.writeText(u);
-          btn.textContent = "copied!";
-          setTimeout(() => (btn.textContent = "copy"), 1400);
-        });
-        row.append(code, btn);
-        body.append(row);
-      }
-      const hint = document.createElement("div");
-      hint.className = "alias-hint";
-      if (!info.shared) {
-        hint.textContent = "Localhost only — start with Perth.kanban(share = true) to open the board to your network.";
-        body.append(hint);
-      } else if (info.qr) {
-        const wrap = document.createElement("div");
-        wrap.className = "qr-wrap";
-        wrap.append(qrSvg(info.qr));
-        body.append(wrap);
-        hint.textContent = "Scan with a phone on the same Wi-Fi to open " + info.target + ".";
-        body.append(hint);
-      } else {
-        hint.textContent = "Tip: run `using QRCoders` before Perth.kanban() to get a QR code here and in the terminal.";
-        body.append(hint);
-      }
+    .then(renderShareBtn)
+    .catch(() => {});
+}
+
+function toggleShare() {
+  const btn = $("#share-toggle");
+  fetch(`/api/share${keyQS()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ on: !btn?.classList.contains("broadcasting") }),
+  })
+    .then((r) => r.json())
+    .then((next) => {
+      if (next.error) throw new Error(next.error);
+      renderShareBtn(next);
+      if (state.openModal === "share" && shareBody) renderShare(shareBody, next);
     })
+    .catch((err) => showToast(err.message));
+}
+
+function refreshShare() {
+  refreshShareBtn();
+  const body = shareBody;
+  if (!body || state.openModal !== "share") return;
+  fetch(`/api/share${keyQS()}`)
+    .then((r) => r.json())
+    .then((info) => renderShare(body, info))
     .catch(() => {
+      body.textContent = "";
+      const note = document.createElement("div");
+      note.className = "empty-note";
       note.textContent = "could not load share info";
+      body.append(note);
     });
+}
+
+function renderShare(body, info) {
+  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
+  body.textContent = "";
+
+  // Chave da transmissão: só o host manda, e só quando o servidor subiu
+  // sem `host` fixo (aí o alcance está no socket e não dá para alternar)
+  if (info.can_share && info.host) {
+    const row = document.createElement("div");
+    row.className = "share-toggle";
+    const label = document.createElement("span");
+    label.textContent = T(info.shared ? "Transmitting to your network"
+                                      : "Localhost only");
+    const btn = document.createElement("button");
+    btn.className = info.shared ? "danger" : "primary";
+    btn.textContent = T(info.shared ? "Stop transmitting" : "Start transmitting");
+    btn.addEventListener("click", () => {
+      btn.disabled = true;
+      fetch(`/api/share${keyQS()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ on: !info.shared }),
+      })
+        .then((r) => r.json())
+        .then((next) => {
+          if (next.error) throw new Error(next.error);
+          renderShare(body, next);
+          renderShareBtn(next);        // o botão da menubar acompanha
+        })
+        .catch((err) => {
+          btn.disabled = false;
+          showToast(err.message);
+        });
+    });
+    row.append(label, btn);
+    body.append(row);
+  }
+
+  for (const u of info.urls) {
+    const row = document.createElement("div");
+    row.className = "share-url";
+    const code = document.createElement("code");
+    code.textContent = u;
+    const btn = document.createElement("button");
+    btn.textContent = "copy";
+    btn.addEventListener("click", () => {
+      navigator.clipboard?.writeText(u);
+      btn.textContent = "copied!";
+      setTimeout(() => (btn.textContent = "copy"), 1400);
+    });
+    row.append(code, btn);
+    body.append(row);
+  }
+
+  const hint = document.createElement("div");
+  hint.className = "alias-hint";
+  if (!info.shared) {
+    hint.textContent = info.can_share && info.host
+      ? T("Nobody else can reach this board yet — start transmitting to hand out a link.")
+      : T("Localhost only — the machine running Perth turns transmission on.");
+    body.append(hint);
+  } else if (info.qr) {
+    const wrap = document.createElement("div");
+    wrap.className = "qr-wrap";
+    wrap.append(qrSvg(info.qr));
+    body.append(wrap);
+    hint.textContent = T("Scan with a phone on the same Wi-Fi to open") + " " +
+      info.target + ".";
+    body.append(hint);
+  } else {
+    hint.textContent = T("Tip: run `using QRCoders` before Perth.kanban() to get a QR code here and in the terminal.");
+    body.append(hint);
+  }
 }
 
 function showKeyGate() {
@@ -2357,6 +2474,26 @@ function showKeyGate() {
   body.append(p, input, btn);
   showModal("Access key", body, "keygate");
   setTimeout(() => input.focus(), 0);
+}
+
+// Transmissão desligada pelo host: sem retry automático (o servidor recusa
+// a conexão), mas com um botão para tentar de novo quando religarem
+function showShareOff() {
+  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
+  const body = document.createElement("div");
+  const p = document.createElement("div");
+  p.className = "empty-note";
+  p.textContent = T("The machine running Perth stopped transmitting this board.");
+  const btn = document.createElement("button");
+  btn.className = "keygate-btn";
+  btn.textContent = T("try again");
+  btn.addEventListener("click", () => {
+    state.denied = false;
+    closeModal();
+    connect();
+  });
+  body.append(p, btn);
+  showModal(T("Transmission off"), body, "shareoff");
 }
 
 function showBoards() {
@@ -2606,6 +2743,9 @@ function doAction(action) {
       break;
     case "share":
       showShare();
+      break;
+    case "share-toggle":
+      toggleShare();
       break;
     case "boards":
       showBoards();
