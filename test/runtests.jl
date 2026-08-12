@@ -496,6 +496,24 @@ end
                       milestone = true)
         ana = filter(r -> r.assignee == "Ana", workload(p))
         @test only(filter(r -> m.id in r.task_ids, ana)).date == Date(2026, 3, 30)
+
+        # endpoint: mesma carga, densificada na janela do projeto. Despacha
+        # pelo router de verdade, senão o teste não pega esquecer o register!
+        router = Perth._build_router()
+        resp = router(HTTP.Request("GET", "/api/projects/$(p.id)/workload"))
+        @test resp.status == 200
+        pl = JSON3.read(String(resp.body))
+        @test pl.start == "2026-03-02"
+        @test pl.days == 29                       # 02/03 até o marco em 30/03
+        dan = only(filter(e -> e.assignee == "Dante", pl.people))
+        @test length(dan.load) == pl.days
+        @test dan.load[3] == 2                    # 04/03: A e B juntas
+        @test dan.load[1] == 1 && dan.load[10] == 0
+        @test dan.peak == 2 && dan.over_days == 3 && dan.busy_days == 12
+        @test Set(t.name for t in dan.tasks) == Set(["A", "B", "C"])
+        # tarefa sem responsável vira uma faixa própria, sob a chave ""
+        @test only(filter(e -> e.assignee == "", pl.people)).busy_days == 3
+        @test router(HTTP.Request("GET", "/api/projects/naoexiste/workload")).status == 404
         delete_project(p.id)
 
         # calendário de dias úteis: é o caso que obriga o cálculo a viver no

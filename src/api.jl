@@ -415,6 +415,22 @@ function _get_scurve(req::HTTP.Request)
     return _json(_scurve(p))
 end
 
+# Carga por responsável, densificada na janela de dias do projeto (a mesma
+# que o gantt desenha), pro painel indexar por deslocamento. O 409 é o
+# mesmo caso do CPM: projeto com calendário de dias úteis e BusinessDays
+# não carregado no servidor.
+function _get_workload(req::HTTP.Request)
+    id = HTTP.getparams(req)["id"]
+    p = _with_state(st -> get(st.projects, id, nothing))
+    p === nothing && return _error("not found"; status = 404)
+    try
+        return _json(_workload_payload(p))
+    catch err
+        err isa ErrorException && return _error(err.msg; status = 409)
+        rethrow()
+    end
+end
+
 # Arquivos estáticos do frontend
 # ---------------------------------------------------------------------------
 
@@ -467,6 +483,7 @@ function _build_router()
     HTTP.register!(router, "GET",    "/api/projects/{id}/export.csv", _handled(_export_csv))
     HTTP.register!(router, "GET",    "/api/projects/{id}/chart",  _handled(_export_chart))
     HTTP.register!(router, "GET",    "/api/projects/{id}/scurve", _handled(_get_scurve))
+    HTTP.register!(router, "GET",    "/api/projects/{id}/workload", _handled(_get_workload))
     HTTP.register!(router, "GET",    "/api/fs/complete",          _handled(_fs_complete))
     HTTP.register!(router, "GET",    "/api/fs/list",              _handled(_fs_list))
     HTTP.register!(router, "PUT",    "/api/projects/{id}/path",   _handled(_put_path))
