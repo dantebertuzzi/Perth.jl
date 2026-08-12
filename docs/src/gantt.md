@@ -4,6 +4,9 @@
 Perth.run
 Perth.stop
 Perth.share!
+Perth.background!
+Perth.background
+Perth.background_clear!
 create_project
 add_task!
 update_task!

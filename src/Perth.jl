@@ -77,5 +77,6 @@ include("api.jl")
 include("presence.jl")
 include("server.jl")
 include("kanban.jl")
+include("background.jl")
 
 end # module

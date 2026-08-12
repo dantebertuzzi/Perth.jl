@@ -153,6 +153,9 @@ function handleMessage(msg) {
       else showKeyGate();
       break;
     }
+    case "background":   // o REPL trocou a imagem de fundo: aplica sem reload
+      applyBackground(msg);
+      break;
     case "share": {
       // a transmissão foi ligada/desligada (aqui, no REPL ou em outra aba
       // do host): só o host continua conectado, então isto é informativo
@@ -2859,7 +2862,37 @@ hideCursorsToggle.addEventListener("change", () => {
   applyHideCursors();
 });
 
+/* ============================== fundo da UI (Perth.background!)
+ *
+ * A imagem é setting do servidor e vale para os dois apps; esconder é
+ * preferência local deste navegador, como os cursores acima. */
+let bgInfo = null;
+const hideBgToggle = $("#hide-bg-toggle");
+hideBgToggle.checked = localStorage.getItem("perth-kanban-hide-background") === "on";
+
+function applyBackground(info) {
+  bgInfo = info;
+  const root = document.documentElement;
+  const on = !!(info && info.set) && !hideBgToggle.checked;
+  root.classList.toggle("has-bg", on);
+  root.style.setProperty("--perth-bg", on ? `url("${encodeURI(info.url)}")` : "none");
+  root.style.setProperty("--perth-bg-opacity", on ? String(info.opacity ?? 0.18) : "0");
+}
+
+function refreshBackground() {
+  fetch(`/api/background${keyQS()}`)
+    .then((r) => r.json())
+    .then(applyBackground)
+    .catch(() => {});
+}
+
+hideBgToggle.addEventListener("change", () => {
+  localStorage.setItem("perth-kanban-hide-background", hideBgToggle.checked ? "on" : "off");
+  applyBackground(bgInfo);
+});
+
 /* ==================================================== boot */
 
+refreshBackground();
 connect();
 render();

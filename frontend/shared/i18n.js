@@ -119,6 +119,9 @@ window.PerthI18n = (function () {
       "Archived cards…": "Cards arquivados…",
       "Activity…": "Atividade…",
       "Share / QR…": "Compartilhar / QR…",
+      // fundo da UI (Perth.background!)
+      "Hide background": "Esconder o fundo",
+      "hide background image": "esconder a imagem de fundo",
       // transmitir (share): diálogo de compartilhamento e avisos
       "Transmit to your network": "Transmitir para a sua rede",
       "Transmitting — click to stop": "Transmitindo — clique para parar",
@@ -312,6 +315,9 @@ window.PerthI18n = (function () {
       "Archived cards…": "Tarjetas archivadas…",
       "Activity…": "Actividad…",
       "Share / QR…": "Compartir / QR…",
+      // fundo da UI (Perth.background!)
+      "Hide background": "Ocultar el fondo",
+      "hide background image": "ocultar la imagen de fondo",
       // transmitir (share): diálogo de compartilhamento e avisos
       "Transmit to your network": "Transmitir a tu red",
       "Transmitting — click to stop": "Transmitiendo — clic para parar",
@@ -500,6 +506,9 @@ window.PerthI18n = (function () {
       "Archived cards…": "Cartes archivées…",
       "Activity…": "Activité…",
       "Share / QR…": "Partager / QR…",
+      // fundo da UI (Perth.background!)
+      "Hide background": "Masquer le fond",
+      "hide background image": "masquer l'image de fond",
       // transmitir (share): diálogo de compartilhamento e avisos
       "Transmit to your network": "Diffuser sur votre réseau",
       "Transmitting — click to stop": "Diffusion en cours — cliquez pour arrêter",
@@ -688,6 +697,9 @@ window.PerthI18n = (function () {
       "Archived cards…": "已归档卡片…",
       "Activity…": "动态…",
       "Share / QR…": "分享 / 二维码…",
+      // fundo da UI (Perth.background!)
+      "Hide background": "隐藏背景",
+      "hide background image": "隐藏背景图片",
       // transmitir (share): diálogo de compartilhamento e avisos
       "Transmit to your network": "向局域网广播",
       "Transmitting — click to stop": "正在广播 — 点击停止",

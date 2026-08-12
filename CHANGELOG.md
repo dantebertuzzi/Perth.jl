@@ -8,6 +8,18 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Background image**: `Perth.background!("~/foto.jpg")` puts a local
+  image behind the UI on both apps and every connected browser, live —
+  `opacity` (default 0.18) controls how strongly it shows through, and
+  `Perth.background_clear!()` drops it. The path lives in `settings.json`
+  in the data directory; the file is served at `/background` with a
+  version in the URL so a replaced image is not served from cache. There
+  is deliberately no upload endpoint: the servers listen on `0.0.0.0`, so
+  an upload would be a write surface on the LAN, whereas pointing at a
+  path grants nothing that the REPL does not already have. Images are
+  validated by content (PNG/JPEG/GIF/WebP, 12 MB cap), not by extension.
+  Each browser can hide it locally from the settings panel, alongside
+  *Hide other cursors*.
 - **Live sharing switch** (gantt and kanban): sharing to the local
   network now turns on and off with the server running — no
   `Perth.stop()` / `Perth.kanban_stop()` in between. From the REPL,

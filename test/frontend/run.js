@@ -671,6 +671,101 @@ console.log("gantt · transmitir (share)");
   close();
 }
 
+/* ------------------------------------------------------------------ *
+ * Fundo da UI (Perth.background!): a imagem vem do servidor, e esconder
+ * é preferência local do navegador. O que se testa aqui é a camada que
+ * o app monta a partir do payload — e que esconder não some com ela do
+ * servidor, só de quem escondeu.
+ * ------------------------------------------------------------------ */
+
+const bgPayload = `{ set: true, url: "/background?v=abc123", opacity: 0.3, name: "foto.jpg" }`;
+
+console.log("kanban · fundo da UI");
+{
+  const { runIn, close } = loadKanbanApp();
+
+  let r = runIn(`applyBackground(${bgPayload});
+    const root = document.documentElement;
+    return { has: root.classList.contains("has-bg"),
+             img: root.style.getPropertyValue("--perth-bg"),
+             op: root.style.getPropertyValue("--perth-bg-opacity") };`);
+  check(r.has === true, "kanban: fundo ativo marca has-bg no root");
+  check(/background\?v=abc123/.test(r.img), "kanban: e aponta a URL versionada do servidor");
+  check(r.op === "0.3", "kanban: opacidade vem do servidor");
+
+  r = runIn(`applyBackground({ set: false });
+    return { has: document.documentElement.classList.contains("has-bg"),
+             op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
+  check(r.has === false && r.op === "0", "kanban: sem imagem no servidor, camada apagada");
+
+  // esconder localmente: a camada some aqui, o setting do servidor não muda
+  r = runIn(`applyBackground(${bgPayload});
+    const t = document.getElementById("hide-bg-toggle");
+    t.checked = true;
+    t.dispatchEvent(new Event("change"));
+    return { has: document.documentElement.classList.contains("has-bg"),
+             guardado: localStorage.getItem("perth-kanban-hide-background"),
+             servidor: bgInfo.set };`);
+  check(r.has === false, "kanban: esconder tira a camada deste navegador");
+  check(r.guardado === "on", "kanban: e a preferência persiste no localStorage");
+  check(r.servidor === true, "kanban: sem mexer no que o servidor manda");
+
+  r = runIn(`const t = document.getElementById("hide-bg-toggle");
+    t.checked = false;
+    t.dispatchEvent(new Event("change"));
+    return document.documentElement.classList.contains("has-bg");`);
+  check(r === true, "kanban: desmarcar traz o fundo de volta sem recarregar");
+
+  // mensagem do WS (REPL trocou a imagem) aplica na hora
+  r = runIn(`handleMessage({ type: "background", set: true,
+                             url: "/background?v=zzz999", opacity: 0.5 });
+    return { img: document.documentElement.style.getPropertyValue("--perth-bg"),
+             op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
+  check(/v=zzz999/.test(r.img), "kanban: msg \"background\" do servidor troca a imagem ao vivo");
+  check(r.op === "0.5", "kanban: e acompanha a nova opacidade");
+
+  close();
+}
+
+console.log("gantt · fundo da UI");
+{
+  const { runIn, simulate, close } = loadGanttApp();
+  // init() só conecta o PerthPresence depois do catch do fetch rejeitado
+  // (ver loadGanttApp): sem esta volta, simulate() não tem socket
+  await new Promise((r) => setTimeout(r, 50));
+
+  let r = runIn(`applyBackground(${bgPayload});
+    const root = document.documentElement;
+    return { has: root.classList.contains("has-bg"),
+             img: root.style.getPropertyValue("--perth-bg"),
+             op: root.style.getPropertyValue("--perth-bg-opacity") };`);
+  check(r.has === true, "gantt: fundo ativo marca has-bg no root");
+  check(/background\?v=abc123/.test(r.img), "gantt: e aponta a URL versionada do servidor");
+  check(r.op === "0.3", "gantt: opacidade vem do servidor");
+
+  // o toggle do painel de configurações usa o mesmo `ui` persistido do resto
+  r = runIn(`document.getElementById("set-hide-bg").click();
+    return { has: document.documentElement.classList.contains("has-bg"),
+             pressed: document.getElementById("set-hide-bg").getAttribute("aria-pressed"),
+             guardado: JSON.parse(localStorage.getItem("perth-ui")).hideBackground };`);
+  check(r.has === false, "gantt: esconder tira a camada deste navegador");
+  check(r.pressed === "true", "gantt: o toggle reflete o estado");
+  check(r.guardado === true, "gantt: e a preferência entra no perth-ui");
+
+  r = runIn(`document.getElementById("set-hide-bg").click();
+    return document.documentElement.classList.contains("has-bg");`);
+  check(r === true, "gantt: desmarcar traz o fundo de volta sem recarregar");
+
+  simulate({ type: "background", set: true, url: "/background?v=zzz999", opacity: 0.5 });
+  await tick();
+  r = runIn(`return { img: document.documentElement.style.getPropertyValue("--perth-bg"),
+                      op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
+  check(/v=zzz999/.test(r.img), "gantt: msg \"background\" do servidor troca a imagem ao vivo");
+  check(r.op === "0.5", "gantt: e acompanha a nova opacidade");
+
+  close();
+}
+
 })().then(() => {
   console.log(failures ? `\n${failures} falha(s)` : "\nTodos os testes passaram.");
   process.exit(failures ? 1 : 0);

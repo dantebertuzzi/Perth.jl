@@ -491,3 +491,35 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   .icon-btn.broadcasting svg { animation: none; }
 }
+
+/* ---------- fundo da UI (Perth.background!) ---------- */
+
+/* Camada fixa atrás do conteúdo. A cor do papel continua pintada no body,
+   então a opacidade da imagem funciona como véu: painéis, cards e barras
+   seguem opacos e legíveis, e a foto preenche o espaço em volta deles. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--perth-bg, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: var(--perth-bg-opacity, 0);
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before { transition: none; }
+}
+
+/* O fundo do body é pintado DEPOIS da camada z-index:-1 (ordem de pintura do
+   CSS: fundo do contexto, filhos negativos, fundos dos descendentes em
+   fluxo), então um body opaco tapa a imagem. Com fundo ativo quem pinta o
+   papel é o html — que segue sendo o véu por trás da foto. */
+html.has-bg body { background: transparent; }
+
+/* Com fundo ativo, a grande superfície opaca de cada app abre espaço para
+   ele: a área do gráfico no gantt (o board do kanban já é transparente). */
+html.has-bg .tl-body { background: transparent; }

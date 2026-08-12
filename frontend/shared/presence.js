@@ -14,6 +14,7 @@
  *     resolveAnchor(a) -> {x,y} | null    // âncora -> ponto  (específico do app)
  *     onRev(rev)                          // servidor avisou mudança de dados
  *     onShare(shared)                     // host ligou/desligou a transmissão
+ *     onBackground(info)                  // REPL trocou a imagem de fundo
  *     onDenied(reason)                    // "key" | "share_off": conexão recusada
  *   });
  *
@@ -141,6 +142,9 @@ window.PerthPresence = (function () {
         break;
       case "share":    // transmissão ligada/desligada pelo host
         st.opts.onShare && st.opts.onShare(!!msg.shared);
+        break;
+      case "background":   // Perth.background! trocou a imagem de fundo
+        st.opts.onBackground && st.opts.onBackground(msg);
         break;
       case "denied":
         // reason: "key" (falta a chave) | "share_off" (host parou de

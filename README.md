@@ -166,6 +166,35 @@ the REST API.
 can open and edit every project — same caveat as the kanban. Never
 expose the port to the internet.
 
+### A background image
+
+A local image can sit behind the UI — both apps, every connected
+browser:
+
+```julia
+Perth.background!("~/Imagens/escritorio.jpg")
+Perth.background!(opacity = 0.35)   # quanto da imagem aparece (0–1)
+Perth.background_clear!()
+```
+
+The file is read from the machine running the server and served at
+`/background`; replacing it on disk changes the background on the next
+reload, and `background!` itself lands live on open browsers. It stays in
+`settings.json` in the data directory, next to the other preferences.
+
+There is no upload endpoint on purpose. Both servers listen on `0.0.0.0`
+so sharing can be toggled live, and an upload would be a *write* surface
+on a LAN-reachable port; pointing at a path grants nothing new, since
+whoever has the REPL already has the disk. The file is validated by
+content (PNG, JPEG, GIF or WebP, up to 12 MB), not by extension, so a
+mistyped path doesn't become a file published to the network.
+
+The default opacity is deliberately low: panels, cards and bars keep
+their solid surfaces and the image fills the space around them. Each
+browser can hide it locally from the settings panel (*Hide background*) —
+a rendering preference, like *Hide other cursors*, not a way to keep the
+image private.
+
 ## Kanban: a shared board for the office
 
 `Perth.kanban()` starts a second, independent app: a collaborative kanban

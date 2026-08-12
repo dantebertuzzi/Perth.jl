@@ -711,6 +711,136 @@ end
         end
     end
 
+    @testset "imagem de fundo da UI" begin
+        bgtmp = mktempdir()
+        Perth._init_state!(bgtmp)
+
+        # PNG 1x1 de verdade: o sniff olha os bytes, não a extensão
+        png = UInt8[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+                    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                    0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89]
+        img = joinpath(bgtmp, "fundo.png")
+        write(img, png)
+
+        # sem fundo apontado: nada aplicado e a rota devolve 404
+        @test Perth.background() === nothing
+        @test Perth._bg_payload().set == false
+        @test Perth._bg_response().status == 404
+
+        @test Perth.background!(img) == img
+        @test Perth.background() == img
+        info = Perth._bg_payload()
+        @test info.set == true
+        @test info.name == "fundo.png"
+        @test startswith(info.url, "/background?v=")
+        @test info.opacity == Perth._BG_DEFAULT_OPACITY
+
+        resp = Perth._bg_response()
+        @test resp.status == 200
+        @test HTTP.header(resp, "Content-Type") == "image/png"
+        @test resp.body == png
+
+        # a versão na URL muda quando a imagem muda — senão o navegador (e o
+        # service worker, que é network-first) serviria a foto antiga
+        v1 = Perth._bg_payload().url
+        sleep(0.01)
+        write(img, vcat(png, UInt8[0x00]))
+        @test Perth._bg_payload().url != v1
+
+        # opacidade: ajustável sozinha e presa a [0, 1]
+        @test Perth.background!(opacity = 0.42) == 0.42
+        @test Perth._bg_payload().opacity == 0.42
+        @test Perth.background() == img            # imagem intacta
+        @test Perth.background!(opacity = 3.5) == 1.0
+        @test Perth.background!(opacity = -1) == 0.0
+
+        # persistência: vive no settings.json, junto das outras preferências
+        Perth.background!(img; opacity = 0.3)
+        @test isfile(joinpath(bgtmp, "settings.json"))
+        Perth._init_state!(bgtmp)                  # recarrega do disco
+        @test Perth.background() == img
+        @test Perth._bg_payload().opacity == 0.3
+
+        # validação: o que não for imagem de verdade não vira fundo servido
+        # para a rede, por mais que a extensão diga o contrário
+        fake = joinpath(bgtmp, "cavalo-de-troia.png")
+        write(fake, "isto é texto, não uma imagem")
+        @test_throws ArgumentError Perth.background!(fake)
+        @test_throws ArgumentError Perth.background!(joinpath(bgtmp, "nao-existe.png"))
+        @test Perth.background() == img            # o fundo válido continua
+
+        # formatos aceitos (por assinatura) e recusados
+        @test Perth._bg_sniff(png) == "image/png"
+        @test Perth._bg_sniff(vcat(UInt8[0xFF, 0xD8, 0xFF], zeros(UInt8, 12))) == "image/jpeg"
+        @test Perth._bg_sniff(vcat(Vector{UInt8}("GIF89a"), zeros(UInt8, 12))) == "image/gif"
+        @test Perth._bg_sniff(vcat(Vector{UInt8}("RIFF"), zeros(UInt8, 4),
+                                   Vector{UInt8}("WEBP"), zeros(UInt8, 4))) == "image/webp"
+        @test Perth._bg_sniff(Vector{UInt8}("<svg xmlns=\"http://www.w3.org/2000/svg\">")) === nothing
+        @test Perth._bg_sniff(UInt8[1, 2, 3]) === nothing
+
+        # imagem apagada do disco depois de apontada: degrada para "sem
+        # fundo" em vez de quebrar a página
+        rm(img)
+        @test Perth.background() === nothing
+        @test Perth._bg_payload().set == false
+        @test Perth._bg_response().status == 404
+
+        Perth.background_clear!()
+        @test Perth.background() === nothing
+        @test !haskey(Perth._state().settings, Perth._BG_KEY)
+
+        # a rota do kanban serve os mesmos bytes (setting único, data dir
+        # compartilhado) e não depende da whitelist de estáticos
+        write(img, png)
+        Perth.background!(img)
+        kresp = Perth._kanban_static(HTTP.Request("GET", "/background"), "127.0.0.1")
+        @test kresp.status == 200
+        @test kresp.body == png
+        kinfo = JSON3.read(Perth._kanban_static(
+            HTTP.Request("GET", "/api/background"), "127.0.0.1").body)
+        @test kinfo["set"] == true
+
+        # e a rota do gantt idem, pelo router de verdade
+        groute = Perth._build_router()(HTTP.Request("GET", "/background"))
+        @test groute.status == 200
+        @test groute.body == png
+
+        # trocar a imagem avisa os navegadores conectados pelo WS — é o que
+        # faz o fundo mudar sem reload (o payload é o mesmo de /api/background)
+        Perth.background_clear!()
+        dummy = Perth._quiet() do
+            HTTP.listen!(http -> nothing, "127.0.0.1", 0; verbose = false)
+        end
+        Perth.SERVER[] = dummy                 # _bg_broadcast só fala com servidor no ar
+        ipref = Ref("192.168.0.88")
+        server, port = _presence_test_server(Perth.GANTT_HUB, ipref)
+        try
+            got = Ref{Any}(nothing)
+            t = @async HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)    # init
+                got[] = JSON3.read(HTTP.WebSockets.receive(ws))
+            end
+            @test _await_clients(Perth.GANTT_HUB, 1) == 1
+            Perth.background!(img; opacity = 0.25)
+            wait(t)
+            @test got[]["type"] == "background"
+            @test got[]["set"] == true
+            @test got[]["opacity"] == 0.25
+            @test startswith(got[]["url"], "/background?v=")
+        finally
+            Perth._quiet(() -> close(server))
+            Perth._quiet(() -> close(dummy))
+            Perth.SERVER[] = nothing
+            lock(Perth.GANTT_HUB.lock) do
+                empty!(Perth.GANTT_HUB.clients)
+            end
+        end
+
+        Perth.background_clear!()
+        Perth._init_state!(tmp)   # devolve o estado global do resto da suíte
+    end
+
     @testset "QR code (extensão QRCoders)" begin
         # QRCoders importado no topo do arquivo ativa PerthQRCodersExt de
         # verdade — _qr_matrix não é mais o stub `nothing` do pacote base

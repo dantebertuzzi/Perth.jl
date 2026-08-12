@@ -209,7 +209,7 @@ const el = {
 /* Configurações de interface (painel estilo VitePress na menubar)      */
 /* ------------------------------------------------------------------ */
 
-const UI_DEFAULTS = { density: "cozy", tableWidth: 380, weekends: true, labels: true, baseline: true, hideCursors: false };
+const UI_DEFAULTS = { density: "cozy", tableWidth: 380, weekends: true, labels: true, baseline: true, hideCursors: false, hideBackground: false };
 let ui = { ...UI_DEFAULTS };
 try {
   ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem("perth-ui") || "{}") };
@@ -228,6 +228,30 @@ function applyUI() {
   $("#set-baseline").setAttribute("aria-pressed", String(ui.baseline));
   $("#set-hide-cursors").setAttribute("aria-pressed", String(ui.hideCursors));
   document.documentElement.classList.toggle("hide-remote-cursors", ui.hideCursors);
+  $("#set-hide-bg").setAttribute("aria-pressed", String(ui.hideBackground));
+  applyBackground(bgInfo);
+}
+
+/* ------------------------------------------------------------------ */
+/* Fundo da UI: a imagem é setting do servidor (Perth.background!), mas  */
+/* cada navegador pode escondê-la — preferência de renderização, como o  */
+/* "hide other cursors", não um opt-out de compartilhamento.            */
+/* ------------------------------------------------------------------ */
+
+let bgInfo = null;
+
+function applyBackground(info) {
+  bgInfo = info;
+  const root = document.documentElement;
+  const on = !!(info && info.set) && !ui.hideBackground;
+  root.classList.toggle("has-bg", on);
+  root.style.setProperty("--perth-bg", on ? `url("${encodeURI(info.url)}")` : "none");
+  root.style.setProperty("--perth-bg-opacity",
+                         on ? String(info.opacity ?? 0.18) : "0");
+}
+
+function refreshBackground() {
+  api("/api/background").then(applyBackground).catch(() => {});
 }
 
 function saveUI() {
@@ -2187,6 +2211,11 @@ $("#set-hide-cursors").addEventListener("click", () => {
   applyUI();
   saveUI();
 });
+$("#set-hide-bg").addEventListener("click", () => {
+  ui.hideBackground = !ui.hideBackground;
+  applyUI();
+  saveUI();
+});
 
 /* Salva pendências ao fechar a aba */
 window.addEventListener("beforeunload", () => {
@@ -2393,6 +2422,7 @@ el.chatInput?.addEventListener("keydown", (e) => {
   }
   setInterval(pollFallback, POLL_MS);
   refreshShareBtn();   // estado inicial do botão de transmitir da menubar
+  refreshBackground(); // fundo da UI, se o REPL tiver apontado uma imagem
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => null);
@@ -2483,6 +2513,8 @@ el.chatInput?.addEventListener("keydown", (e) => {
       onTyping: handleTyping,
       // a transmissão mudou: o diálogo de Share, se aberto, se redesenha
       onShare: () => refreshShare(),
+      // o REPL trocou a imagem de fundo: aplica sem reload
+      onBackground: applyBackground,
       onDenied: (reason) => { if (reason === "share_off") showShareOff(); },
     });
     // cursores são ancorados a elementos: reancorar em scroll/resize

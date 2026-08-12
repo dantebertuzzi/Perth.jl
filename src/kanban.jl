@@ -1273,6 +1273,7 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
             return req.method == "POST" ? _kanban_share_toggle(req, ip) :
                    _json(_kanban_share_payload(ip))
         end
+        path == "/api/background" && return _json(_bg_payload())
         path == "/api/boards" && return _kanban_boards_info()
         if path == "/api/apps"
             return _json((; app = "kanban", kanban = KANBAN_PORT[],
@@ -1290,6 +1291,9 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
         end
         return _error("not found"; status = 404)
     end
+    # Fundo da UI: bytes vêm de fora do frontend (caminho apontado pelo
+    # REPL), então não passa pela whitelist de arquivos estáticos
+    path == "/background" && return _bg_response()
     entry = get(_KANBAN_FILES, path, nothing)
     entry === nothing && return _error("not found"; status = 404)
     name, origin = entry

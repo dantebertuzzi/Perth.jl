@@ -456,6 +456,10 @@ function _build_router()
     HTTP.register!(router, "GET", "/manifest.webmanifest", _static("manifest.webmanifest"))
     HTTP.register!(router, "GET", "/sw.js", _static(joinpath("shared", "sw.js")))
 
+    # Fundo da UI: só leitura — quem aponta a imagem é o REPL (background.jl)
+    HTTP.register!(router, "GET",    "/background",               _handled(_ -> _bg_response()))
+    HTTP.register!(router, "GET",    "/api/background",           _handled(_ -> _json(_bg_payload())))
+
     HTTP.register!(router, "GET",    "/api/rev",                  _handled(_get_rev))
     HTTP.register!(router, "GET",    "/api/activity",             _handled(_get_activity))
     HTTP.register!(router, "GET",    "/api/apps",                 _handled(_get_apps))
