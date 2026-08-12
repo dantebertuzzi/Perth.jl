@@ -5,7 +5,7 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
-## [Unreleased]
+## [0.5.0] - 2026-08-11
 
 ### Added
 - **Background image**: `Perth.background!("~/foto.jpg")` puts a local
@@ -53,6 +53,13 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 - The share dialog CSS (`.share-url`, `.qr-wrap`) and the modal note
   styles (`.empty-note`, `.alias-hint`) moved from the kanban stylesheet
   to `frontend/shared/ui.css`, now that the gantt uses them too.
+
+### Fixed
+- `?Perth.run` showed nothing: a blank line between the docstring and the
+  function left it unattached, which also broke the documentation build
+  (`@docs` could not find it, and every `Perth.run` cross-reference on the
+  page dangled). `GanttTask`, `Project` and `slippage` were referenced by
+  the docs without being listed anywhere, and are now in the reference.
 
 ## [0.4.0] - 2026-08-08
 
