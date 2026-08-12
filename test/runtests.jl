@@ -52,8 +52,10 @@ function _presence_test_server(hub::Perth.PresenceHub, ipref::Ref{String}; keyok
 end
 
 # Registro de cliente no hub é assíncrono (o handshake do WS roda em outra
-# tarefa): espera o hub chegar ao tamanho esperado em vez de cravar um sleep
-function _await_clients(hub::Perth.PresenceHub, n::Int; timeout = 5.0)
+# tarefa): espera o hub chegar ao tamanho esperado em vez de cravar um sleep.
+# Teto generoso porque runner de CI sob carga demora — quem manda no tempo do
+# teste é a condição, não o relógio.
+function _await_clients(hub::Perth.PresenceHub, n::Int; timeout = 30.0)
     deadline = time() + timeout
     while length(hub.clients) != n && time() < deadline
         sleep(0.05)
@@ -683,22 +685,26 @@ end
                 msg = JSON3.read(HTTP.WebSockets.receive(ws))
                 reason[] = (msg["type"], get(msg, "reason", nothing))
             end
-            _await_clients(hub, 1)
-            @test length(hub.clients) == 1
+            @test _await_clients(hub, 1) == 1
             @test Perth._hub_drop_remote!(hub) == 1
             wait(t)
             @test reason[] == ("denied", "share_off")
             @test isempty(hub.clients)
 
-            # a conexão do host sobrevive ao desligamento
+            # a conexão do host sobrevive ao desligamento. O cliente fica
+            # parado no take! até o teste liberar: com um sleep, uma pausa do
+            # scheduler podia derrubá-lo antes da verificação (foi o que
+            # deixou este bloco instável no CI)
             ipref[] = "127.0.0.1"
+            release = Channel{Bool}(1)
             alive = @async HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
                 HTTP.WebSockets.receive(ws)          # init
-                sleep(0.6)
+                take!(release)
             end
-            _await_clients(hub, 1)
+            @test _await_clients(hub, 1) == 1
             @test Perth._hub_drop_remote!(hub) == 0
             @test length(hub.clients) == 1
+            put!(release, true)
             wait(alive)
         finally
             Perth._quiet(() -> close(server))
