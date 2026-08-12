@@ -128,7 +128,6 @@ If `port` is busy, the next free port is used (up to 20 attempts).
     knows the port can edit the projects. Never expose the port to the
     internet.
 """
-
 function run(; port::Integer = 8123, open_browser::Bool = true,
              data_dir::Union{Nothing,AbstractString} = nothing,
              share::Bool = false,

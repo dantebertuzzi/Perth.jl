@@ -1,6 +1,8 @@
 # Gantt
 
 ```@docs
+GanttTask
+Project
 Perth.run
 Perth.stop
 Perth.share!
@@ -14,6 +16,9 @@ schedule!
 critical_path
 slack
 set_baseline!
+clear_baseline!
+has_baseline
+slippage
 set_calendar!
 set_parent!
 tasktable
