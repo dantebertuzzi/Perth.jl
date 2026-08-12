@@ -207,6 +207,125 @@ function overallocations(p::Project)
     return out
 end
 
+# ---------------------------------------------------------------------------
+# Carga diária por responsável.
+#
+# Diferente de overallocations (que responde "quais tarefas colidem?"), aqui
+# a pergunta é "quanto cada pessoa tem em cada dia?" — a matéria-prima do
+# painel de recursos. O cálculo é ciente do calendário: uma tarefa de 2 dias
+# úteis começando na sexta carrega sexta e segunda, e não o fim de semana no
+# meio. É por isso que ele vive aqui, e não no navegador: só o motor conhece
+# os feriados.
+# ---------------------------------------------------------------------------
+
+# Dias de trabalho efetivamente ocupados pela tarefa. São _effdur(t) dias,
+# espalhados pelos dias corridos entre o início (snapado) e o fim do
+# calendário. O teto de 3660 é a mesma sanidade de _dur_between: uma tarefa
+# de década não trava o servidor.
+function _task_days(cal::AbstractCalendar, t::GanttTask)
+    s = _snap(cal, t.start)
+    t.milestone && return [s]
+    fin = _end_of(cal, s, _effdur(t))
+    days = Date[]
+    d = s
+    while d <= fin && length(days) < 3660
+        _workday(cal, d) && push!(days, d)
+        d += Dates.Day(1)
+    end
+    return days
+end
+
+# Linhas cruas da carga. `unassigned = true` inclui as tarefas-folha sem
+# responsável sob a chave "" — o painel as mostra como uma faixa própria,
+# mas a API pública (workload) fica só com gente de verdade.
+function _workload_rows(p::Project; unassigned::Bool = false)
+    cal = _cal(p)
+    leaves = [t for t in p.tasks
+              if !_has_children(p, t.id) &&
+                 (unassigned || !isempty(strip(t.assignee)))]
+    ids = Dict{Tuple{String,Date},Vector{String}}()
+    eff = Dict{Tuple{String,Date},Float64}()
+    for t in leaves
+        who = String(strip(t.assignee))
+        days = _task_days(cal, t)
+        isempty(days) && continue
+        # Mesmo peso da curva-S: custo quando informado, senão pessoa-dias.
+        # As duas análises contam a mesma história sobre a mesma tarefa.
+        per = (t.cost > 0 ? t.cost : Float64(_effdur(t))) / length(days)
+        for d in days
+            k = (who, d)
+            push!(get!(ids, k, String[]), t.id)
+            eff[k] = get(eff, k, 0.0) + per
+        end
+    end
+    keys_sorted = sort!(collect(keys(ids)); by = k -> (lowercase(k[1]), k[2]))
+    return [(assignee = k[1], date = k[2], tasks = length(ids[k]),
+             effort = eff[k], task_ids = ids[k]) for k in keys_sorted]
+end
+
+"""
+    workload(p::Project) -> Vector{NamedTuple}
+
+Daily load per person: one Tables.jl-compatible row for each
+(`assignee`, `date`) pair that has work on it, with `tasks` (how many
+run that day), `effort` (the day's share of the tasks' weight — `cost`
+when set, otherwise person-days, as in the S-curve) and `task_ids`.
+Rows are sorted by person, then date.
+
+Only *leaf* tasks with an assignee count — summaries are containers,
+not work — and only working days: under a business-day calendar
+(`set_calendar!`) a holiday carries no load. Days with no work produce
+no row, so the result stays small on long projects.
+
+`tasks ≥ 2` is the same overlap [`overallocations`](@ref) reports as a
+pair, seen day by day instead of pair by pair.
+"""
+workload(p::Project) = _workload_rows(p)
+
+# Payload do painel de recursos: a mesma carga, densificada numa janela
+# contígua de dias (a do projeto inteiro, que é a que o gantt desenha),
+# para o SVG indexar por deslocamento em vez de procurar data por data.
+function _workload_payload(p::Project)
+    empty = (; start = nothing, days = 0, calendar = p.calendar,
+              people = NamedTuple[])
+    isempty(p.tasks) && return empty
+    d0, d1 = span(p)
+    ndays = Dates.value(d1 - d0) + 1
+    ndays > 3660 && return (; error = "span too large")   # sanidade: 10 anos
+
+    rows = _workload_rows(p; unassigned = true)
+    isempty(rows) && return empty
+    at(d) = Dates.value(d - d0) + 1
+
+    # Uma entrada por pessoa, na ordem alfabética que _workload_rows já deu
+    people = NamedTuple[]
+    for who in unique(r.assignee for r in rows)
+        mine = [r for r in rows if r.assignee == who]
+        load = zeros(Int, ndays)
+        effort = zeros(Float64, ndays)
+        for r in mine
+            i = at(r.date)
+            1 <= i <= ndays || continue
+            load[i] = r.tasks
+            effort[i] = r.effort
+        end
+        seen = String[]
+        for r in mine, id in r.task_ids
+            id in seen || push!(seen, id)
+        end
+        ts = NamedTuple[]
+        for id in seen
+            t = p.tasks[findfirst(t -> t.id == id, p.tasks)]
+            push!(ts, (id = t.id, name = t.name,
+                       from = _snap(_cal(p), t.start), to = end_date(p, t)))
+        end
+        push!(people, (assignee = who, load = load, effort = effort,
+                       peak = maximum(load), busy_days = count(>(0), load),
+                       over_days = count(>(1), load),
+                       total_effort = sum(effort), tasks = ts))
+    end
+    return (; start = d0, days = ndays, calendar = p.calendar, people = people)
+end
 
 # ---------------------------------------------------------------------------
 # Curva S: custo/trabalho planejado acumulado ao longo do tempo.

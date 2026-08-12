@@ -63,6 +63,12 @@ _day_after(::CalendarDays, d::Date) = d + Dates.Day(1)
 _day_before(::CalendarDays, d::Date) = d - Dates.Day(1)
 _gap(::CalendarDays, a::Date, b::Date) = Dates.value(b - a)       # folga entre datas
 
+# O dia é de trabalho neste calendário? _snap devolve o próximo dia válido,
+# então um dia que já é válido é ponto fixo dela. Vale para as duas
+# implementações sem a extensão precisar definir nada: em dias corridos
+# _snap é a identidade e todo dia trabalha.
+_workday(cal::AbstractCalendar, d::Date) = _snap(cal, d) == d
+
 # Desloca uma data n dias válidos no calendário (n pode ser negativo).
 # Definida aqui, após _day_after/_day_before, e usada pelo CPM com lag.
 function _shift(cal::AbstractCalendar, d::Date, n::Int)

@@ -449,6 +449,68 @@ end
         delete_project(p.id)
     end
 
+    @testset "carga diária por responsável (workload)" begin
+        # Datas no passado por construção (hoje > 2026-03): nada aqui depende
+        # da data de hoje, mas a lição do 0.5.1 vale como higiene
+        p = create_project("Carga")
+        pai = add_task!(p, "Grupo"; start = Date(2026, 3, 2), duration = 1)
+        a = add_task!(p, "A"; start = Date(2026, 3, 2), duration = 5,
+                      assignee = "Dante", parent = pai.id)      # 02–06/03
+        b = add_task!(p, "B"; start = Date(2026, 3, 4), duration = 5,
+                      assignee = "Dante")                       # 04–08/03
+        add_task!(p, "C"; start = Date(2026, 3, 20), duration = 5,
+                  assignee = "Dante", cost = 10.0)              # disjunta, com custo
+        add_task!(p, "D"; start = Date(2026, 3, 4), duration = 2,
+                  assignee = "Ana")
+        add_task!(p, "Sem dono"; start = Date(2026, 3, 4), duration = 3)
+
+        w = workload(p)
+        dante = filter(r -> r.assignee == "Dante", w)
+        @test [r.date for r in dante] ==
+              vcat(collect(Date(2026, 3, 2):Day(1):Date(2026, 3, 8)),
+                   collect(Date(2026, 3, 20):Day(1):Date(2026, 3, 24)))
+        # os dias com 2 tarefas são exatamente a interseção que overallocations
+        # devolve como um par — a mesma verdade, dia a dia em vez de par a par
+        ov = only(filter(r -> r.assignee == "Dante", overallocations(p)))
+        @test [r.date for r in dante if r.tasks == 2] ==
+              collect(ov.from:Day(1):ov.to)
+        @test Set(only(filter(r -> r.date == Date(2026, 3, 4), dante)).task_ids) ==
+              Set([a.id, b.id])
+
+        # resumo é contêiner, não trabalho: "Grupo" cobre o período e não entra
+        @test all(r -> !(pai.id in r.task_ids), w)
+        # sem responsável não vira linha
+        @test Set(r.assignee for r in w) == Set(["Dante", "Ana"])
+        # ordenação: pessoa, depois data
+        @test issorted(w; by = r -> (lowercase(r.assignee), r.date))
+
+        # esforço: pessoa-dias por padrão (1/dia), custo quando informado
+        @test only(filter(r -> r.date == Date(2026, 3, 2), dante)).effort ≈ 1.0
+        @test only(filter(r -> r.date == Date(2026, 3, 4), dante)).effort ≈ 2.0
+        @test only(filter(r -> r.date == Date(2026, 3, 20), dante)).effort ≈ 2.0
+        # o peso de cada tarefa é conservado ao ser espalhado pelos dias
+        @test sum(r.effort for r in w) ≈ 5 + 5 + 10 + 2
+
+        # marco ocupa só o próprio dia
+        m = add_task!(p, "Entrega"; start = Date(2026, 3, 30), assignee = "Ana",
+                      milestone = true)
+        ana = filter(r -> r.assignee == "Ana", workload(p))
+        @test only(filter(r -> m.id in r.task_ids, ana)).date == Date(2026, 3, 30)
+        delete_project(p.id)
+
+        # calendário de dias úteis: é o caso que obriga o cálculo a viver no
+        # motor. Sex 06/03 + 2 dias úteis carrega sexta e SEGUNDA — o fim de
+        # semana no meio do intervalo não carrega ninguém
+        pb = create_project("CargaBD")
+        set_calendar!(pb, "Brazil")
+        add_task!(pb, "Vistoria"; start = Date(2026, 3, 6), duration = 2,
+                  assignee = "Ana")
+        wb = workload(pb)
+        @test [r.date for r in wb] == [Date(2026, 3, 6), Date(2026, 3, 9)]
+        @test all(r -> r.tasks == 1 && r.effort ≈ 1.0, wb)
+        delete_project(pb.id)
+    end
+
     @testset "duplicar subárvore WBS" begin
         p = create_project("DupWBS")
         pai = add_task!(p, "Bloco"; start = Date(2026, 12, 1), duration = 1)
