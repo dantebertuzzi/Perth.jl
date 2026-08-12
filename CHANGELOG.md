@@ -5,6 +5,24 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.5.1] - 2026-08-11
+
+### Fixed
+- The project finish date no longer depends on the current date.
+  `maximum(ef; init = Dates.today())` looks like "use today when there
+  are no tasks", but `init` seeds the reduction, so the finish came out
+  as `max(today, last task finish)`. Any project that had already ended
+  reported a finish of today, slack the size of the elapsed time, and an
+  empty critical path — a project from 2020 showed 2400 days of float and
+  no critical chain. `critical_path`, `slack`, `project_finish`,
+  `GET /api/projects/{id}/cpm` and the critical-path highlight in the
+  gantt (`C`) were all affected.
+- Tests: the CPM and calendar cases pinned dates in 2026-08 that were in
+  the future when written, which is why the bug above went unnoticed
+  until the calendar caught up with them; the regression added for it
+  uses dates in the past by construction. The splash test also expected
+  `~/.perth` where Windows abbreviates to `~\.perth`.
+
 ## [0.5.0] - 2026-08-11
 
 ### Added
