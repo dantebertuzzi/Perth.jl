@@ -37,14 +37,15 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   with a header.
 
 ### Changed
-- Both servers now bind `0.0.0.0` regardless of `share`, and every
-  connection is checked against the current sharing state instead: a
-  bind address can't change once the socket is open, so the gate had to
-  move from the socket to the handler for the switch to exist. With
-  sharing off, other machines get a 403 (previously the port was not
-  reachable at all) — the port is therefore visible to a network scan
-  while sharing is off. Passing `host` explicitly still pins the reach
-  in the socket and disables the switch.
+- **Breaking** — both servers now bind `0.0.0.0` regardless of
+  `share`, and every connection is checked against the current sharing
+  state instead: a bind address can't change once the socket is open,
+  so the gate had to move from the socket to the handler for the
+  switch to exist. With sharing off, other machines get a 403
+  (previously the port was not reachable at all) — the port is
+  therefore visible to a network scan while sharing is off. Passing
+  `host` explicitly still pins the reach in the socket and disables
+  the switch, which is the way to keep the old socket-level behaviour.
 - Turning sharing off disconnects remote machines immediately instead of
   waiting for them to leave: the connection gate only stops *new*
   connections, so live WebSockets are closed with a `denied` message
