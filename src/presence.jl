@@ -40,6 +40,20 @@ const _PRESENCE_NCOLORS = 8
 # Só a máquina do servidor (loopback) é "host"
 _presence_is_host(ip::AbstractString) = ip in ("127.0.0.1", "::1")
 
+# Rotas que a chave de acesso protege, no gantt e no kanban: os dados
+# (/api/*) e /background — a imagem de fundo é o único conteúdo servido de
+# fora do frontend (caminho apontado pelo REPL), então não pode andar junto
+# com os estáticos públicos. O resto (HTML/JS/CSS) é shell vazio: sem chave
+# não carrega projeto nenhum, e é o que permite a UI pedir a chave.
+_key_protected(path::AbstractString) =
+    startswith(path, "/api/") || path == "/background"
+
+# Quem pode passar pela chave: todo mundo se não há chave configurada, a
+# máquina do servidor sempre, e quem repetir a chave na query (é assim que
+# o link do share a carrega). `qp` são os queryparams já decodificados.
+_keyok(ip::AbstractString, qp, key::AbstractString) =
+    isempty(key) || _presence_is_host(ip) || get(qp, "key", "") == key
+
 # Cor estável por máquina: derivada do hash do IP (mesma cor após F5 e
 # entre sessões), com anticolisão — se a cor "natural" já pertence a outro
 # IP nesta sessão, avança para a próxima livre. Chamar sob o lock do dono

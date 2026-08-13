@@ -28,7 +28,11 @@ window.PerthPresence = (function () {
   const PALETTE = ["#9558b2", "#389826", "#4063d8", "#b58900",
                    "#cb3c33", "#2aa198", "#d33682", "#6c71c4"];
 
-  const KEY = new URLSearchParams(location.search).get("key") || "";
+  // Chave de acesso do share: link (?key=…) ou sessão — o app pode trocá-la
+  // em runtime pelo diálogo da chave (setKey + reconnect)
+  const KEY_STORE = "perth-key";
+  let KEY = new URLSearchParams(location.search).get("key") ||
+            sessionStorage.getItem(KEY_STORE) || "";
   const keyQS = (sep = "?") => (KEY ? `${sep}key=${encodeURIComponent(KEY)}` : "");
 
   const st = {
@@ -330,6 +334,11 @@ window.PerthPresence = (function () {
     // reancorar cursores em scroll/resize do app
     refreshCursors: renderCursors,
     keyQS,
+    // chave digitada no diálogo de acesso: vale para o próximo openWS()
+    setKey(value) {
+      KEY = value || "";
+      sessionStorage.setItem(KEY_STORE, KEY);
+    },
     // WS conectado agora: quem usa "rev" como push (ver onRev) pode
     // dispensar polling redundante enquanto isto for true
     isLive: () => st.live,

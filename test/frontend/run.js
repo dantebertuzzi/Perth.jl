@@ -78,7 +78,9 @@ function loadKanbanApp() {
 }
 
 // Mesma técnica de loadKanbanApp(), pro app do gantt.
-function loadGanttApp() {
+// `opts.fetch` troca o stub de rede (ver o bloco da chave de acesso, que
+// precisa de um 403 de verdade em vez da rejeição padrão).
+function loadGanttApp(opts = {}) {
   const html = read("frontend/index.html")
     .replace(/<script src="\/shared\/presence.js"><\/script>/, "")
     .replace(/<script src="\/app.js"><\/script>/, "");
@@ -99,7 +101,7 @@ function loadGanttApp() {
   // rejeita na hora (não trava pra sempre): o init() do gantt só chama
   // PerthPresence.connect() DEPOIS do try/catch de fetchRev()/loadProjects
   // — sem rejeitar, esse await nunca resolve e o WS nunca chega a abrir
-  w.fetch = () => Promise.reject(new Error("fetch disabled in test"));
+  w.fetch = opts.fetch || (() => Promise.reject(new Error("fetch disabled in test")));
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   w.structuredClone = structuredClone;
   w.console.error = () => {};   // init() loga o fetch rejeitado de propósito acima; ruído esperado
@@ -411,6 +413,61 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
     return seq;`);
   check(JSON.stringify(r) === JSON.stringify(["v2", "v1", "v0", "v1", "v2", "v3"]),
         "múltiplos ciclos de undo/redo sem conflito: sem degradar (sem aliasing entre snapshots)");
+  close();
+}
+
+console.log("gantt · chave de acesso");
+{
+  // Servidor com Perth.run(key = "…") e navegador sem a chave: a API
+  // responde 403 "access key required" e a UI tem que PEDIR a chave, não
+  // morrer com um erro na barra de status.
+  const calls = [];
+  const fetch403 = (url) => {
+    calls.push(url);
+    if (!/[?&]key=s3cr3t\b/.test(url)) {
+      return Promise.resolve({
+        ok: false, status: 403,
+        json: () => Promise.resolve({ error: "access key required" }),
+      });
+    }
+    return Promise.resolve({
+      ok: true, status: 200,
+      json: () => Promise.resolve(url.startsWith("/api/rev") ? { rev: 7 } : []),
+    });
+  };
+  const { w, runIn, close } = loadGanttApp({ fetch: fetch403 });
+  await new Promise((r) => setTimeout(r, 50));   // deixa o init() assentar
+
+  const $ = (s) => w.document.querySelector(s);
+  check($(".keygate-input") !== null, "403 sem chave abre o diálogo da chave");
+  check(w.document.getElementById("perth-overlay") !== null, "diálogo é um overlay");
+
+  // a recusa do WS chega logo depois do 403 da API: um diálogo só
+  w.__ws.onmessage({ data: JSON.stringify({ type: "denied", reason: "key" }) });
+  check(w.document.querySelectorAll(".keygate-input").length === 1,
+        "recusa do WS não empilha um segundo diálogo");
+
+  $(".keygate-input").value = "s3cr3t";
+  $(".keygate-btn").click();
+  await new Promise((r) => setTimeout(r, 50));
+
+  check(w.sessionStorage.getItem("perth-key") === "s3cr3t",
+        "a chave digitada fica na sessão (sobrevive a reload sem ?key=)");
+  check($(".keygate-input") === null, "diálogo fecha depois da chave certa");
+  check(calls.some((u) => u === "/api/rev?key=s3cr3t") &&
+        calls.some((u) => u === "/api/projects?key=s3cr3t"),
+        "a carga inicial é refeita já com a chave");
+  check(/[?&]key=s3cr3t\b/.test(w.__ws.url),
+        "o WS reconecta com a chave (PerthPresence.setKey)");
+
+  // /background também é rota de dados: a URL da imagem (que já vem com
+  // ?v=…) leva a chave em & — senão o fundo some para quem não é o host
+  const bg = runIn(`
+    applyBackground({ set: true, url: "/background?v=abc", opacity: 0.2 });
+    return document.documentElement.style.getPropertyValue("--perth-bg");
+  `);
+  check(bg.includes("/background?v=abc&key=s3cr3t"),
+        "a URL do fundo leva a chave");
   close();
 }
 

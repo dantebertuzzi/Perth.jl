@@ -103,9 +103,10 @@ than by file extension, up to 12 MB.
 
 !!! note
     Every machine that can open Perth can see this image — it is served
-    over the same port. Each browser can hide it locally (settings panel
-    → *Hide background*), which is a rendering preference, not a way to
-    keep the image private.
+    over the same port, behind the same access key as the rest of the
+    data. Each browser can hide it locally (settings panel → *Hide
+    background*), which is a rendering preference, not a way to keep the
+    image private.
 
 ```julia
 Perth.background!("~/Imagens/escritorio.jpg")

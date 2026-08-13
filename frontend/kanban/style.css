@@ -754,28 +754,8 @@ a.card-link:hover { border-bottom-color: var(--blue); }
 }
 .boards-row button:hover { color: var(--ink); border-color: var(--purple); background: transparent; }
 
-.keygate-input {
-  width: 100%;
-  margin-top: 12px;
-  font-size: 13px;
-  padding: 7px 10px;
-  background: var(--field);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  color: var(--ink);
-}
-.keygate-input:focus { border-color: var(--purple); outline: none; }
-.keygate-btn {
-  width: 100%;
-  margin-top: 10px;
-  padding: 8px;
-  font-weight: 700;
-  color: #fff;
-  background: var(--purple);
-  border: none;
-  border-radius: 8px;
-}
-.keygate-btn:hover { filter: brightness(1.08); }
+/* .keygate-input / .keygate-btn: ver frontend/shared/ui.css (o gantt tem o
+   mesmo diálogo de chave desde que passou a pedi-la na tela) */
 
 /* ==========================================================================
    Mobile / toque

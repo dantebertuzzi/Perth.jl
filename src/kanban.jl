@@ -979,12 +979,7 @@ end
 function _kanban_ws(ws::HTTP.WebSockets.WebSocket, ip::String, keyok::Bool = true)
     if !keyok
         # sem a chave não há board: envia o motivo e encerra educadamente
-        try
-            HTTP.WebSockets.send(ws, "{\"type\":\"denied\"}")
-            HTTP.WebSockets.close(ws)
-        catch
-        end
-        return nothing
+        return _presence_deny(ws, "key")
     end
     st = _kanban_state()
     me = lock(st.lock) do
@@ -1264,11 +1259,12 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
     # botão poder religá-la) mas só atende a máquina do servidor
     _kanban_share_ok(ip) ||
         return _error("this board is not being shared to the network"; status = 403)
+    # rotas de dados respeitam a chave; o host (loopback) é isento
+    if _key_protected(path)
+        _keyok(ip, HTTP.URIs.queryparams(uri), KANBAN_KEY[]) ||
+            return _error("access key required"; status = 403)
+    end
     if startswith(path, "/api/")
-        # endpoints de dados respeitam a chave; o host (loopback) é isento
-        authed = isempty(KANBAN_KEY[]) || _kanban_is_host(ip) ||
-                 get(HTTP.URIs.queryparams(uri), "key", "") == KANBAN_KEY[]
-        authed || return _error("access key required"; status = 403)
         if path == "/api/share"
             return req.method == "POST" ? _kanban_share_toggle(req, ip) :
                    _json(_kanban_share_payload(ip))
@@ -1292,7 +1288,8 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
         return _error("not found"; status = 404)
     end
     # Fundo da UI: bytes vêm de fora do frontend (caminho apontado pelo
-    # REPL), então não passa pela whitelist de arquivos estáticos
+    # REPL), então não passa pela whitelist de arquivos estáticos — e por
+    # isso a chave o protege como um endpoint de dados (_key_protected)
     path == "/background" && return _bg_response()
     entry = get(_KANBAN_FILES, path, nothing)
     entry === nothing && return _error("not found"; status = 404)
@@ -1317,8 +1314,7 @@ function _kanban_handler(http::HTTP.Stream)
         catch
             Dict{String,String}()
         end
-        keyok = isempty(KANBAN_KEY[]) || _kanban_is_host(ip) ||
-                get(qp, "key", "") == KANBAN_KEY[]
+        keyok = _keyok(ip, qp, KANBAN_KEY[])
         _kanban_share_ok(ip) ||
             return HTTP.WebSockets.upgrade(ws -> _presence_deny(ws, "share_off"), http)
         HTTP.WebSockets.upgrade(ws -> _kanban_ws(ws, ip, keyok), http)

@@ -989,6 +989,95 @@ end
         end
     end
 
+    @testset "chave de acesso (key)" begin
+        # Numa conexão loopback o IP de origem é sempre 127.0.0.1 — e o host
+        # é isento da chave —, então um teste HTTP de ponta a ponta jamais
+        # exercitaria o portão. Por isso o veredito do gantt (_gantt_gate) e
+        # o handler estático do kanban são chamados com o IP por fora, como
+        # nos harness de WS lá de cima.
+        other = "192.168.0.60"
+        noqp = Dict{String,String}()
+        withkey = Dict("key" => "s3cr3t")
+        wrong = Dict("key" => "s3cr3T")
+
+        gantt_key, gantt_was = Perth.GANTT_KEY[], Perth.GANTT_SHARED[]
+        kanban_key, kanban_was = Perth.KANBAN_KEY[], Perth.KANBAN_SHARED[]
+        try
+            # ── quem passa pela chave ──
+            @test Perth._keyok(other, noqp, "")            # sem chave: todos
+            @test Perth._keyok("127.0.0.1", noqp, "s3cr3t")  # host: isento
+            @test Perth._keyok("::1", noqp, "s3cr3t")
+            @test Perth._keyok(other, withkey, "s3cr3t")
+            @test !Perth._keyok(other, noqp, "s3cr3t")
+            @test !Perth._keyok(other, wrong, "s3cr3t")     # comparação exata
+
+            # ── que rotas a chave protege ──
+            # Os dados e a imagem de fundo (única rota que serve bytes de
+            # fora do frontend). O shell da página fica aberto de propósito:
+            # é ele que mostra o diálogo pedindo a chave.
+            for p in ("/api/rev", "/api/projects", "/api/projects/x1",
+                      "/api/projects/x1/export", "/api/projects/x1/export.csv",
+                      "/api/projects/x1/export.ics", "/api/projects/x1/chart",
+                      "/api/projects/x1/scurve", "/api/projects/x1/workload",
+                      "/api/projects/x1/cpm", "/api/projects/x1/schedule",
+                      "/api/projects/x1/path", "/api/import", "/api/activity",
+                      "/api/apps", "/api/launch/kanban", "/api/launch/gantt",
+                      "/api/boards", "/api/share", "/api/background",
+                      "/api/fs/list", "/api/fs/complete", "/background")
+                @test Perth._key_protected(p)
+            end
+            for p in ("/", "/index.html", "/app.js", "/style.css", "/logo.png",
+                      "/favicon.svg", "/sw.js", "/manifest.webmanifest",
+                      "/shared/ui.css", "/shared/presence.js", "/shared/i18n.js")
+                @test !Perth._key_protected(p)
+            end
+
+            # ── gantt: veredito do porteiro ──
+            Perth.GANTT_SHARED[] = true
+            Perth.GANTT_KEY[] = ""
+            @test Perth._gantt_gate("/api/projects", other, noqp) === :ok
+
+            Perth.GANTT_KEY[] = "s3cr3t"
+            @test Perth._gantt_gate("/api/projects", other, noqp) === :need_key
+            @test Perth._gantt_gate("/api/projects", other, wrong) === :need_key
+            @test Perth._gantt_gate("/background", other, noqp) === :need_key
+            @test Perth._gantt_gate("/api/projects", other, withkey) === :ok
+            @test Perth._gantt_gate("/background", other, withkey) === :ok
+            # o shell da página abre sem chave (é o que permite pedi-la)
+            @test Perth._gantt_gate("/", other, noqp) === :ok
+            @test Perth._gantt_gate("/app.js", other, noqp) === :ok
+            # o host nunca precisa da chave
+            @test Perth._gantt_gate("/api/projects", "127.0.0.1", noqp) === :ok
+            # transmissão desligada vence a chave: nem com ela se entra
+            Perth.GANTT_SHARED[] = false
+            @test Perth._gantt_gate("/api/projects", other, withkey) === :not_shared
+            @test Perth._gantt_gate("/", other, withkey) === :not_shared
+            @test Perth._gantt_gate("/api/projects", "127.0.0.1", noqp) === :ok
+
+            # ── kanban: mesma regra, pelo handler HTTP de verdade ──
+            ktmp = mktempdir(); Perth._init_kanban!(ktmp)
+            Perth.KANBAN_SHARED[] = true
+            Perth.KANBAN_KEY[] = "s3cr3t"
+            status(target, ip) =
+                Perth._kanban_static(HTTP.Request("GET", target), ip).status
+            @test status("/api/boards", other) == 403
+            @test status("/api/boards?key=s3cr3T", other) == 403
+            @test status("/api/boards?key=s3cr3t", other) == 200
+            @test status("/api/boards", "127.0.0.1") == 200
+            # /background: sem chave é 403; com ela chega à rota (404 aqui,
+            # que é a resposta de "nenhum fundo apontado")
+            @test status("/background", other) == 403
+            @test status("/background?key=s3cr3t", other) == 404
+            @test status("/background", "127.0.0.1") == 404
+            # o shell da página segue aberto (diálogo da chave)
+            @test status("/", other) == 200
+            @test status("/app.js", other) == 200
+        finally
+            Perth.GANTT_KEY[], Perth.GANTT_SHARED[] = gantt_key, gantt_was
+            Perth.KANBAN_KEY[], Perth.KANBAN_SHARED[] = kanban_key, kanban_was
+        end
+    end
+
     @testset "imagem de fundo da UI" begin
         bgtmp = mktempdir()
         Perth._init_state!(bgtmp)
@@ -1559,6 +1648,9 @@ end
             HTTP.WebSockets.open("ws://127.0.0.1:$port2") do ws
                 denied = JSON3.read(HTTP.WebSockets.receive(ws))
                 @test denied["type"] == "denied"
+                # o motivo é o que separa "falta a chave" de "parou de
+                # transmitir" na UI: um pede a chave, o outro oferece retry
+                @test denied["reason"] == "key"
             end
         finally
             Perth._quiet(() -> close(server2))

@@ -19,7 +19,10 @@ It answers 409 when the project uses a business-day calendar and
 `BusinessDays` is not loaded on the server, like `/cpm`.
 
 With `Perth.run(share = true, key = "...")`, non-host machines must
-append `?key=...` to API calls and the `/ws` presence socket.
+append `?key=...` to API calls, to `/background` and to the `/ws`
+presence socket. The page itself (HTML, JS, CSS) is served without the
+key — it is an empty shell until the API answers, and it is what asks
+for the key when the link came without one.
 
 `GET /api/share` reports the current sharing state — the URLs to hand
 out, a QR matrix for the LAN link, and whether the caller is the host.
