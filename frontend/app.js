@@ -2275,6 +2275,8 @@ const ACTIONS = {
   "resources": toggleResources,
   "export-csv": () => state.current &&
     window.open(withKey(`/api/projects/${state.current.id}/export.csv`)),
+  "export-ics": () => state.current &&
+    window.open(withKey(`/api/projects/${state.current.id}/export.ics`)),
   "export-chart": exportChart,
   "auto-schedule": autoSchedule,
   "toggle-critical": toggleCritical,

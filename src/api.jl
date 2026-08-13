@@ -410,6 +410,24 @@ function _export_chart(req::HTTP.Request)
     end
 end
 
+# Marcos e prazos como .ics. O 409 é o mesmo caso do CPM: o fim planejado
+# que vai na descrição do prazo depende do calendário do projeto.
+function _export_ics(req::HTTP.Request)
+    id = HTTP.getparams(req)["id"]
+    p = _with_state(st -> get(st.projects, id, nothing))
+    p === nothing && return _error("not found"; status = 404)
+    body = try
+        icalendar(p)
+    catch err
+        err isa ErrorException && return _error(err.msg; status = 409)
+        rethrow()
+    end
+    fname = replace(p.name, r"[^\w-]" => "_") * ".ics"
+    return HTTP.Response(200, ["Content-Type" => "text/calendar; charset=utf-8",
+        "Content-Disposition" => "attachment; filename=\"$(fname)\""],
+        body)
+end
+
 function _get_scurve(req::HTTP.Request)
     id = HTTP.getparams(req)["id"]
     p = _with_state(st -> get(st.projects, id, nothing))
@@ -483,6 +501,7 @@ function _build_router()
     HTTP.register!(router, "GET",    "/api/apps",                 _handled(_get_apps))
     HTTP.register!(router, "POST",   "/api/launch/kanban",        _handled(_launch_kanban))
     HTTP.register!(router, "GET",    "/api/projects/{id}/export.csv", _handled(_export_csv))
+    HTTP.register!(router, "GET",    "/api/projects/{id}/export.ics", _handled(_export_ics))
     HTTP.register!(router, "GET",    "/api/projects/{id}/chart",  _handled(_export_chart))
     HTTP.register!(router, "GET",    "/api/projects/{id}/scurve", _handled(_get_scurve))
     HTTP.register!(router, "GET",    "/api/projects/{id}/workload", _handled(_get_workload))

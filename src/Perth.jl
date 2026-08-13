@@ -36,7 +36,7 @@ export GanttTask, Project,
     deadline_slip,
     set_parent!, subtasks, is_summary, ordered_tasks,
     set_baseline!, clear_baseline!, has_baseline, slippage,
-    tasktable, add_tasks!, overallocations, workload,
+    tasktable, add_tasks!, overallocations, workload, icalendar,
     ganttplot, save_chart,
     kanban_columns, kanban_cards,
     kanban_add_card!, kanban_move_card!, kanban_remove_card!,
@@ -69,6 +69,7 @@ function save_chart end
 include("types.jl")
 include("storage.jl")
 include("juliafile.jl")
+include("icalendar.jl")
 include("schedule.jl")
 include("wbs.jl")
 include("insights.jl")

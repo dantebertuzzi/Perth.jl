@@ -5,8 +5,10 @@ frontend is just another client. `GET /api/rev` returns a monotonic
 revision for cheap change polling; project CRUD lives under
 `/api/projects`. Analytics endpoints: `/api/activity`,
 `/api/projects/{id}/scurve`, `/api/projects/{id}/workload`,
-`/api/projects/{id}/export.csv` and
-`/api/projects/{id}/chart?fmt=png|pdf|svg` (needs a Makie backend).
+`/api/projects/{id}/export.csv`, `/api/projects/{id}/export.ics`
+(milestones and deadlines as an iCalendar document — see
+[`icalendar`](@ref)) and `/api/projects/{id}/chart?fmt=png|pdf|svg`
+(needs a Makie backend).
 
 `/api/projects/{id}/workload` is [`workload`](@ref) shaped for drawing:
 a contiguous day window (`start`, `days`) and, per person, a dense

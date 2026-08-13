@@ -54,6 +54,19 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   loads Friday and Monday, and the weekend in between loads no one. The
   frontend can't know that — it ignores holidays and only patches bar
   widths with the CPM's `early_finish`.
+- **iCalendar export**: `icalendar(p)` (and *File → Export calendar
+  (.ics)*, `GET /api/projects/{id}/export.ics`) turns the project's
+  commitments into an `.ics` document — one all-day event per milestone
+  and one per deadline, with the planned finish and how late it is in
+  the description. Ordinary tasks are left out deliberately: a two-week
+  bar is noise in a calendar. No new dependency — the format is text,
+  and what it actually demands is handled: CRLF everywhere, folding at
+  75 *octets* without splitting a UTF-8 character (task names go up to
+  2000 of them), TEXT escaping, and the exclusive `DTEND` that all-day
+  events need or they vanish in several clients. UIDs are stable per
+  (task, kind, project) and `SEQUENCE` grows with the project's
+  `updated_at`, so re-importing updates events instead of duplicating
+  them; events are `TRANSP:TRANSPARENT` and never mark a day busy.
 - Docs: `overallocations` was documented nowhere; it and `workload` are
   now in the Gantt reference.
 

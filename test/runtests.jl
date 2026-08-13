@@ -290,6 +290,96 @@ end
         delete_project(p.id)
     end
 
+    @testset "exportação iCalendar (.ics)" begin
+        p = create_project("Fachada, Bloco B")     # vírgula: escape de TEXT
+        pai = add_task!(p, "Etapa"; start = Date(2026, 3, 2), duration = 1)
+        t = add_task!(p, "Compra do vidro"; start = Date(2026, 3, 2), duration = 6,
+                      assignee = "Bruno", progress = 40, parent = pai.id,
+                      deadline = Date(2026, 3, 4))          # termina 07/03: 3 dias
+        m = add_task!(p, "Vistoria; final"; start = Date(2026, 3, 20),
+                      milestone = true, assignee = "Ana",
+                      notes = "levar\ntrena")
+        add_task!(p, "Sem compromisso"; start = Date(2026, 3, 2), duration = 3)
+
+        ics = icalendar(p)
+        lines = split(ics, "\r\n")
+        @test lines[1] == "BEGIN:VCALENDAR"
+        @test lines[end - 1] == "END:VCALENDAR" && lines[end] == ""
+        @test count(==("BEGIN:VEVENT"), lines) == 2      # 1 marco + 1 prazo
+        @test count(==("END:VEVENT"), lines) == 2
+        # o resumo "Etapa" é contêiner, e tarefa sem marco/prazo não vira evento
+        @test !occursin("Etapa", ics) && !occursin("Sem compromisso", ics)
+
+        # CRLF em toda linha, inclusive a última (RFC 5545 §3.1)
+        @test endswith(ics, "\r\n")
+        @test !occursin(r"(?<!\r)\n", ics)
+
+        # DTEND de dia inteiro é EXCLUSIVO: um dia termina no dia seguinte
+        @test occursin("DTSTART;VALUE=DATE:20260320", ics)
+        @test occursin("DTEND;VALUE=DATE:20260321", ics)
+        @test occursin("DTSTART;VALUE=DATE:20260304", ics)   # prazo
+        @test occursin("DTEND;VALUE=DATE:20260305", ics)
+
+        # escape de TEXT: vírgula do projeto, ponto-e-vírgula do marco,
+        # quebra de linha das notas
+        @test occursin("X-WR-CALNAME:Fachada\\, Bloco B", ics)
+        @test occursin("SUMMARY:Vistoria\\; final", ics)
+        @test occursin("levar\\ntrena", ics)
+        @test occursin("SUMMARY:Deadline: Compra do vidro", ics)
+        @test occursin("Planned finish: 2026-03-07 (3 days late)", ics)
+
+        # UID estável: reexportar não duplica o evento no cliente
+        uids = [l for l in lines if startswith(l, "UID:")]
+        @test length(uids) == 2 && allunique(uids)
+        @test uids == [l for l in split(icalendar(p), "\r\n") if startswith(l, "UID:")]
+        @test any(u -> occursin("$(m.id)-milestone@$(p.id)", u), uids)
+        @test any(u -> occursin("$(t.id)-deadline@$(p.id)", u), uids)
+
+        # SEQUENCE cresce quando o projeto muda, senão o cliente ignora a
+        # reimportação como se fosse o mesmo evento de antes
+        seq1 = only(unique(l for l in lines if startswith(l, "SEQUENCE:")))
+        update_task!(p, m.id; start = Date(2026, 3, 21))
+        seq2 = only(unique(l for l in split(icalendar(p), "\r\n")
+                           if startswith(l, "SEQUENCE:")))
+        @test parse(Int, seq2[10:end]) >= parse(Int, seq1[10:end])
+
+        # dobra em 75 OCTETOS, com continuação começando por espaço, sem
+        # partir caractere multibyte no meio
+        long = create_project("Longo")
+        add_task!(long, "Ação " * repeat("ãé ", 40) * "final";
+                  start = Date(2026, 3, 2), milestone = true)
+        li = split(icalendar(long), "\r\n")
+        @test all(l -> ncodeunits(l) <= 75, li)
+        @test any(l -> startswith(l, " "), li)           # houve continuação
+        # desdobrar (juntar as continuações) devolve o nome intacto
+        unfolded = replace(icalendar(long), "\r\n " => "")
+        @test occursin("SUMMARY:Ação " * repeat("ãé ", 40) * "final", unfolded)
+        delete_project(long.id)
+
+        # projeto sem marco nem prazo ainda produz um calendário válido
+        empty_p = create_project("Vazio")
+        add_task!(empty_p, "Só trabalho"; start = Date(2026, 3, 2), duration = 3)
+        eics = icalendar(empty_p)
+        @test occursin("BEGIN:VCALENDAR", eics) && occursin("END:VCALENDAR", eics)
+        @test !occursin("BEGIN:VEVENT", eics)
+        delete_project(empty_p.id)
+
+        # escrita em arquivo e endpoint
+        path = joinpath(tmp, "cal.ics")
+        @test icalendar(p, path) == path
+        @test read(path, String) == icalendar(p)
+
+        router = Perth._build_router()
+        resp = router(HTTP.Request("GET", "/api/projects/$(p.id)/export.ics"))
+        @test resp.status == 200
+        @test Dict(resp.headers)["Content-Type"] == "text/calendar; charset=utf-8"
+        @test occursin("filename=\"Fachada__Bloco_B.ics\"",
+                       Dict(resp.headers)["Content-Disposition"])
+        @test occursin("BEGIN:VCALENDAR", String(resp.body))
+        @test router(HTTP.Request("GET", "/api/projects/naoexiste/export.ics")).status == 404
+        delete_project(p.id)
+    end
+
     @testset "renderizacao nativa" begin
         p = create_project("Show")
         t1 = add_task!(p, "Base"; start = Date(2026, 8, 3), duration = 5, progress = 40)

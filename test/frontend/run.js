@@ -136,6 +136,11 @@ console.log("i18n · gantt");
         "Exportar tarefas (CSV)", "novo item Export CSV traduzido");
   check($('button[data-action="scurve"]').textContent.trim() === "Curva S…",
         "novo item S-curve traduzido");
+  check($('button[data-action="export-ics"]').textContent.trim() ===
+        "Exportar calendário (.ics)", "novo item Export .ics traduzido");
+  check($('button[data-action="export-ics"]').getAttribute("title") ===
+        "Marcos e prazos num arquivo .ics para o seu aplicativo de calendário",
+        "explicação do .ics traduzida no title");
   // este item carrega um <kbd>: só o primeiro nó de texto é traduzido
   check($('button[data-action="resources"]').childNodes[0].textContent.trim() === "Recursos",
         "novo item Resources traduzido");

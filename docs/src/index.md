@@ -28,5 +28,5 @@ Perth.kanban(share = true)  # Kanban shared on your LAN, with a QR code
   into cards; dragging a linked card to *done* completes the task, live.
 - **Analytics**: S-curve (planned vs. earned), daily load per person
   ([`workload`](@ref) and the resource panel), kanban flow metrics,
-  activity log, CSV and PNG/PDF export.
+  activity log, CSV, iCalendar ([`icalendar`](@ref)) and PNG/PDF export.
 - **Five UI languages**: English, Português, Español, Français, 中文.

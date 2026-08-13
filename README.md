@@ -94,6 +94,13 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   changing behind your back. A task's own start date has always been a
   *start-no-earlier-than* constraint: `schedule!` only ever pushes
   forward, never pulls back.
+- **Calendar export**: *File → Export calendar (.ics)* (or
+  `icalendar(p)` / `icalendar(p, "obra.ics")`) writes the project's
+  **commitments** — one all-day event per milestone and per deadline —
+  for any calendar app. Ordinary tasks stay out on purpose: a two-week
+  bar is noise in an agenda. Events don't mark the day busy, and their
+  UIDs are stable, so re-importing updates them instead of piling up
+  duplicates.
 - **Baseline tracking**: *Edit → Set baseline* snapshots the plan;
   ghost bars show it under the current bars and slipped tasks get a red
   `+Nd` badge. `set_baseline!(p)` / `slippage(p)` from the REPL.

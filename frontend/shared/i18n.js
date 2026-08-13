@@ -184,6 +184,9 @@ window.PerthI18n = (function () {
       "access denied": "acesso negado",
       "Activity…": "Atividade…",
       "Export tasks (CSV)": "Exportar tarefas (CSV)",
+      "Export calendar (.ics)": "Exportar calendário (.ics)",
+      "Milestones and deadlines as an .ics file for your calendar app":
+        "Marcos e prazos num arquivo .ics para o seu aplicativo de calendário",
       "Export chart (PNG)": "Exportar gráfico (PNG)",
       "S-curve…": "Curva S…",
       "Metrics…": "Métricas…",
@@ -400,6 +403,9 @@ window.PerthI18n = (function () {
       "access denied": "acceso denegado",
       "Activity…": "Actividad…",
       "Export tasks (CSV)": "Exportar tareas (CSV)",
+      "Export calendar (.ics)": "Exportar calendario (.ics)",
+      "Milestones and deadlines as an .ics file for your calendar app":
+        "Hitos y fechas límite en un archivo .ics para tu aplicación de calendario",
       "Export chart (PNG)": "Exportar gráfico (PNG)",
       "S-curve…": "Curva S…",
       "Metrics…": "Métricas…",
@@ -613,6 +619,9 @@ window.PerthI18n = (function () {
       "access denied": "accès refusé",
       "Activity…": "Activité…",
       "Export tasks (CSV)": "Exporter les tâches (CSV)",
+      "Export calendar (.ics)": "Exporter le calendrier (.ics)",
+      "Milestones and deadlines as an .ics file for your calendar app":
+        "Jalons et échéances dans un fichier .ics pour votre application de calendrier",
       "Export chart (PNG)": "Exporter le diagramme (PNG)",
       "S-curve…": "Courbe en S…",
       "Metrics…": "Métriques…",
@@ -825,6 +834,9 @@ window.PerthI18n = (function () {
       "access denied": "拒绝访问",
       "Activity…": "动态…",
       "Export tasks (CSV)": "导出任务 (CSV)",
+      "Export calendar (.ics)": "导出日历 (.ics)",
+      "Milestones and deadlines as an .ics file for your calendar app":
+        "将里程碑与截止期限导出为 .ics 文件，供日历应用使用",
       "Export chart (PNG)": "导出图表 (PNG)",
       "S-curve…": "S 曲线…",
       "Metrics…": "指标…",

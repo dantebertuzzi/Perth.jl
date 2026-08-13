@@ -23,6 +23,7 @@ slippage
 set_calendar!
 set_parent!
 tasktable
+icalendar
 overallocations
 workload
 ganttplot
