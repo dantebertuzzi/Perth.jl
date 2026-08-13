@@ -28,6 +28,8 @@
   --row-h: 34px;
   --head-h: 46px;
   --table-w: 380px;
+  --res-row: 26px;        /* altura da faixa de um responsável */
+  --res-h: 152px;         /* altura do painel de recursos docado */
 
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace,
@@ -425,6 +427,76 @@ body.presenting .task-table { display: none; }
 .dep { fill: none; stroke: var(--muted); stroke-width: 1.3; }
 .dep-head { fill: var(--muted); }
 .milestone { cursor: grab; }
+
+/* ---------- painel de recursos (carga por responsável) ---------- */
+
+/* A coluna de nomes usa a MESMA largura da tabela de tarefas: é isso que
+   faz cada faixa começar exatamente sob a coluna de barras do gantt. */
+.res-pane {
+  display: flex;
+  height: var(--res-h);
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+.res-names {
+  width: var(--table-w);
+  min-width: 260px;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+.res-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: .12em;
+}
+.res-head .res-close { margin-left: auto; width: 20px; height: 20px; font-size: 12px; }
+.res-list { flex: 1; overflow: hidden; }
+.res-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--res-row);
+  padding: 0 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line-soft);
+}
+.res-row:hover { background: var(--line-soft); }
+.res-row.on { background: var(--sel); box-shadow: inset 2px 0 0 var(--purple); }
+.res-row.unassigned .res-who { color: var(--muted); font-style: italic; }
+.res-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res-stat {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.res-over { color: var(--red); }
+.res-empty {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.res-body { flex: 1; overflow: auto; background: var(--paper); }
+#res-chart { display: block; }
+
+/* Faixas: 1 tarefa é trabalho, 2 é aperto, 3+ é impossível */
+.res-cell { cursor: pointer; }
+.res-cell.l1 { fill: var(--green); opacity: .40; }
+.res-cell.l2 { fill: var(--amber); opacity: .60; }
+.res-cell.l3 { fill: var(--red);   opacity: .70; }
+.res-cell:hover { opacity: .9; }
+.res-cell.on { stroke: var(--purple); stroke-width: 1.2; }
+
+/* Apresentação: o painel é chrome de trabalho, sai junto com a toolbar */
+body.presenting .res-pane { display: none; }
 
 /* ---------- status bar ---------- */
 

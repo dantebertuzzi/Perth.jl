@@ -44,6 +44,8 @@ const state = {
   highlight: null,      // {kind: "assignee"|"status"|"type", value} ou null
   wbs: null,            // {kids: Map, depth: Map, summary: Set} — computado a cada render
   overalloc: { pairs: [], ids: new Set() },
+  resources: null,      // carga por responsável vinda do servidor (workload)
+  resOpen: false,       // painel de recursos docado sob o gantt
   undoStack: [],       // snapshots para Ctrl+Z
   redoStack: [],       // snapshots para Ctrl+Y / Ctrl+Shift+Z
   presenting: false,   // modo apresentação: menubar/toolbar/tabela escondidos + fullscreen
@@ -198,6 +200,10 @@ const el = {
   fbHint: $("#fb-hint"),
   fbChoose: $("#fb-choose"),
   highlightSelect: $("#highlight-select"),
+  resPane: $("#res-pane"),
+  resNames: $("#res-names"),
+  resBody: $("#res-body"),
+  resChart: $("#res-chart"),
   chatPanel: $("#chat-panel"),
   chatLog: $("#chat-log"),
   chatBadge: $("#chat-badge"),
@@ -394,7 +400,7 @@ async function openProject(id) {
   state.selected = null;
   el.projectSelect.value = id;
   localStorage.setItem("perth-last-project", id);
-  await fetchCPM();
+  await fetchAnalytics();
   renderAll();
   renderFilebox();
   hideWelcome();
@@ -415,6 +421,26 @@ async function fetchCPM() {
   } catch {
     /* ex.: calendário de dias úteis sem BusinessDays no servidor */
   }
+}
+
+/* Carga por responsável (workload). Só o motor sabe quais dias do
+   intervalo são úteis — o navegador desconhece feriados —, por isso as
+   faixas do painel de recursos vêm prontas do servidor. */
+async function fetchWorkload() {
+  state.resources = null;
+  if (!state.current || !state.current.tasks.length) return;
+  try {
+    state.resources = await api(`/api/projects/${state.current.id}/workload`);
+  } catch {
+    /* mesmo caso do CPM acima */
+  }
+}
+
+// CPM sempre; a carga só com o painel aberto — ninguém paga por um
+// payload que não está olhando
+async function fetchAnalytics() {
+  await fetchCPM();
+  if (state.resOpen) await fetchWorkload();
 }
 
 /* Salvamento: debounce do PUT do projeto inteiro */
@@ -445,10 +471,11 @@ async function saveNow() {
     });
     state.dirty = false;
     state.knownRev = await fetchRev();
-    await fetchCPM();
+    await fetchAnalytics();
     renderTable();
     renderChart();
     renderStatus();
+    renderResources();
     const t = new Date();
     const hh = String(t.getHours()).padStart(2, "0");
     const mm = String(t.getMinutes()).padStart(2, "0");
@@ -724,6 +751,7 @@ function renderAll() {
   renderTable();
   renderChart();
   renderStatus();
+  renderResources();
 }
 
 /* Pares de tarefas-folha do mesmo responsável com datas sobrepostas.
@@ -1320,6 +1348,15 @@ document.querySelector(".task-table").addEventListener("wheel", (ev) => {
 el.tlBody.addEventListener("scroll", () => {
   el.tlHead.scrollLeft = el.tlBody.scrollLeft;
   el.ttBody.scrollTop = el.tlBody.scrollTop;
+  if (state.resOpen) el.resBody.scrollLeft = el.tlBody.scrollLeft;
+});
+
+// A recíproca: rolar dentro do painel de recursos leva o gantt junto — as
+// duas escalas são a mesma, ficarem fora de fase seria mentira visual. Não
+// há laço: atribuir um scrollLeft igual ao atual não dispara evento.
+el.resBody.addEventListener("scroll", () => {
+  el.tlBody.scrollLeft = el.resBody.scrollLeft;
+  el.resNames.scrollTop = el.resBody.scrollTop;
 });
 
 function scrollToToday() {
@@ -1719,6 +1756,131 @@ async function showSCurve() {
   showOverlay("S-curve", body);
 }
 
+/* ------------------------------------------------------------------ */
+/* Painel de recursos: carga diária por responsável                     */
+/*                                                                      */
+/* Docado sob o gantt (e não num modal como a curva-S) porque o valor    */
+/* está no alinhamento: cada faixa usa a MESMA escala de tempo das       */
+/* barras acima, e clicar numa pessoa destaca as tarefas dela lá em      */
+/* cima. As faixas vêm prontas do servidor: dia útil é assunto do        */
+/* calendário do projeto, que só o motor conhece.                        */
+/* ------------------------------------------------------------------ */
+
+// Altura da faixa de cada pessoa. Espelha --res-row do CSS: a coluna de
+// nomes é HTML e as faixas são SVG, e elas só ficam na mesma linha se os
+// dois valores forem iguais.
+const RES_ROW = 26;
+
+// Gente em ordem alfabética (o servidor já ordena); "sem responsável" por
+// último — é lacuna de planejamento, não pessoa
+function resPeople() {
+  const ppl = state.resources?.people ?? [];
+  return [...ppl.filter((e) => e.assignee), ...ppl.filter((e) => !e.assignee)];
+}
+
+const resLabel = (e) => e.assignee || T("(unassigned)");
+
+// O destaque que a faixa liga é o mesmo do seletor da toolbar: pessoa vira
+// highlight de assignee, "sem responsável" vira o status que já existia
+const resFilter = (e) => e.assignee
+  ? { kind: "assignee", value: e.assignee }
+  : { kind: "status", value: "unassigned" };
+
+function resIsOn(e) {
+  const h = state.highlight, w = resFilter(e);
+  return !!h && h.kind === w.kind && h.value === w.value;
+}
+
+function toggleResPerson(e) {
+  state.highlight = resIsOn(e) ? null : resFilter(e);
+  renderHighlightSelect();
+  renderTable();
+  renderChart();
+  renderResources();
+}
+
+async function toggleResources() {
+  state.resOpen = !state.resOpen;
+  el.resPane.hidden = !state.resOpen;
+  if (!state.resOpen) return;
+  await fetchWorkload();
+  renderResources();
+  el.resBody.scrollLeft = el.tlBody.scrollLeft;   // entra alinhado com o gantt
+}
+
+function renderResources() {
+  if (!state.resOpen) return;
+  el.resNames.innerHTML = "";
+  el.resChart.innerHTML = "";
+  const d = state.resources;
+  const people = resPeople();
+  if (!d || !d.start || !people.length) {
+    const note = document.createElement("div");
+    note.className = "res-empty";
+    note.textContent = T("no one assigned yet");
+    el.resNames.append(note);
+    el.resChart.setAttribute("width", 0);
+    el.resChart.setAttribute("height", 0);
+    return;
+  }
+
+  const ppd = PPD[state.zoom];
+  const start = parseDate(d.start);
+  el.resChart.setAttribute("width", state.range.days * ppd);
+  el.resChart.setAttribute("height", people.length * RES_ROW);
+
+  people.forEach((e, r) => {
+    const row = document.createElement("div");
+    row.className = "res-row" + (resIsOn(e) ? " on" : "") +
+      (e.assignee ? "" : " unassigned");
+    row.innerHTML =
+      `<span class="res-who">${escapeHTML(resLabel(e))}</span>` +
+      `<span class="res-stat">${e.busy_days}d` +
+      (e.over_days ? ` · <b class="res-over">${e.over_days}</b>` : "") +
+      `</span>`;
+    row.title = `${resLabel(e)} · ${e.busy_days} ${T("busy days")} · ` +
+      `${T("peak")} ${e.peak} · ${e.total_effort.toFixed(1)} ${T("person-days")}`;
+    row.addEventListener("click", () => toggleResPerson(e));
+    el.resNames.append(row);
+
+    el.resChart.appendChild(svg("line", {
+      class: "row-line", x1: 0, y1: (r + 1) * RES_ROW,
+      x2: state.range.days * ppd, y2: (r + 1) * RES_ROW,
+    }));
+
+    // Dias vizinhos com a mesma carga viram um bloco só: menos nós no DOM
+    // e, no zoom mês, uma barra contínua em vez de uma fileira de costuras
+    for (let i = 0; i < e.load.length; ) {
+      const v = e.load[i];
+      if (!v) { i++; continue; }
+      let j = i;
+      while (j + 1 < e.load.length && e.load[j + 1] === v) j++;
+      const from = addDays(start, i), to = addDays(start, j);
+      const cell = svg("rect", {
+        class: `res-cell l${Math.min(v, 3)}` + (resIsOn(e) ? " on" : ""),
+        x: xOf(from), y: r * RES_ROW + 3,
+        width: Math.max((j - i + 1) * ppd, 2), height: RES_ROW - 7, rx: 3,
+      });
+      cell.appendChild(svgTitle(resTitle(e, from, to, v)));
+      cell.addEventListener("click", () => toggleResPerson(e));
+      el.resChart.appendChild(cell);
+      i = j + 1;
+    }
+  });
+}
+
+// Tooltip do bloco: quem, quando, quantas tarefas e quais — as que
+// interceptam o trecho, já que a carga é igual em todo ele
+function resTitle(e, from, to, v) {
+  const when = fmtISO(from) === fmtISO(to)
+    ? fmtISO(from) : `${fmtISO(from)} → ${fmtISO(to)}`;
+  const names = (e.tasks || [])
+    .filter((t) => t.from <= fmtISO(to) && t.to >= fmtISO(from))
+    .map((t) => "· " + t.name);
+  return `${resLabel(e)} · ${when} · ${v} ${v > 1 ? T("tasks") : T("task")}\n` +
+    names.join("\n");
+}
+
 async function exportChart() {
   if (!state.current) return;
   try {
@@ -1977,7 +2139,7 @@ async function autoSchedule() {
     _closeUndoEntry();   // já persistido no servidor: não passa por markDirty()
     noteBase();
     state.knownRev = await fetchRev();
-    await fetchCPM();
+    await fetchAnalytics();
     renderAll();
   } catch (err) {
     alert(`Auto-schedule failed: ${err.message}`);
@@ -2046,6 +2208,7 @@ const ACTIONS = {
   "share": showShare,
   "share-toggle": toggleShare,
   "scurve": showSCurve,
+  "resources": toggleResources,
   "export-csv": () => state.current &&
     window.open(withKey(`/api/projects/${state.current.id}/export.csv`)),
   "export-chart": exportChart,
@@ -2058,7 +2221,7 @@ const ACTIONS = {
     "N — new task\nEnter / double-click — edit task\nDel — delete selected task\n" +
     "Ctrl+D — duplicate selected task\n" +
     "Ctrl+Z — undo\nCtrl+Shift+Z / Ctrl+Y — redo\n" +
-    "S — auto-schedule\nC — toggle critical path\nD — toggle dark mode\n" +
+    "S — auto-schedule\nC — toggle critical path\nR — resource load\nD — toggle dark mode\n" +
     "P — presentation mode\n" +
     "1 / 2 / 3 — zoom day / week / month\nT — go to today\nEsc — close / deselect / exit presentation"),
   "about": () => alert(
@@ -2157,6 +2320,7 @@ document.addEventListener("keydown", (ev) => {
     case "t": case "T": scrollToToday(); break;
     case "s": case "S": autoSchedule(); break;
     case "c": case "C": toggleCritical(); break;
+    case "r": case "R": toggleResources(); break;
     case "d": case "D": toggleTheme(); break;
     case "p": case "P": togglePresentation(); break;
     case "1": setZoom("day"); break;

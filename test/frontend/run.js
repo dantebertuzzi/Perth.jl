@@ -136,6 +136,11 @@ console.log("i18n · gantt");
         "Exportar tarefas (CSV)", "novo item Export CSV traduzido");
   check($('button[data-action="scurve"]').textContent.trim() === "Curva S…",
         "novo item S-curve traduzido");
+  // este item carrega um <kbd>: só o primeiro nó de texto é traduzido
+  check($('button[data-action="resources"]').childNodes[0].textContent.trim() === "Recursos",
+        "novo item Resources traduzido");
+  check($(".res-head span").textContent.trim() === "recursos",
+        "cabeçalho do painel de recursos traduzido");
   w.PerthI18n.set("en");
   w.PerthI18n.set("zh");
   check($('.menu[data-menu="help"] .menu-title').textContent.trim() === "帮助",
@@ -762,6 +767,96 @@ console.log("gantt · fundo da UI");
                       op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
   check(/v=zzz999/.test(r.img), "gantt: msg \"background\" do servidor troca a imagem ao vivo");
   check(r.op === "0.5", "gantt: e acompanha a nova opacidade");
+
+  close();
+}
+
+console.log("gantt · painel de recursos");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // Payload como o /api/projects/{id}/workload devolve: janela contígua de
+  // dias + um vetor de carga por pessoa. O teste alimenta o render direto,
+  // sem rede, e olha o DOM que sai.
+  const seed = `
+    const mk = (id, name, start, duration, assignee) => ({
+      id, name, start, duration, assignee, progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "",
+      baseline_start: null, baseline_duration: 0, cost: 0 });
+    state.current = { id: "p1", name: "P", tasks: [
+      mk("t1", "A", "2026-03-02", 5, "Ana"),
+      mk("t2", "B", "2026-03-04", 3, "Ana"),
+      mk("t3", "C", "2026-03-02", 2, "") ] };
+    state.resOpen = true;
+    document.getElementById("res-pane").hidden = false;
+    state.resources = { start: "2026-03-02", days: 6, calendar: "", people: [
+      { assignee: "", load: [1, 1, 0, 0, 0, 0], effort: [1, 1, 0, 0, 0, 0],
+        peak: 1, busy_days: 2, over_days: 0, total_effort: 2,
+        tasks: [{ id: "t3", name: "C", from: "2026-03-02", to: "2026-03-03" }] },
+      { assignee: "Ana", load: [1, 1, 2, 2, 1, 0], effort: [1, 1, 2, 2, 1, 0],
+        peak: 2, busy_days: 5, over_days: 2, total_effort: 7,
+        tasks: [{ id: "t1", name: "A", from: "2026-03-02", to: "2026-03-06" },
+                { id: "t2", name: "B", from: "2026-03-04", to: "2026-03-06" }] } ] };
+    renderAll();`;
+
+  let r = runIn(`${seed}
+    const rows = [...document.querySelectorAll("#res-names .res-row")];
+    const cells = [...document.querySelectorAll("#res-chart .res-cell")];
+    return {
+      names: rows.map((x) => x.querySelector(".res-who").textContent),
+      stats: rows.map((x) => x.querySelector(".res-stat").textContent),
+      tiers: cells.map((c) => c.getAttribute("class")),
+      xs: cells.map((c) => Number(c.getAttribute("x"))),
+      ws: cells.map((c) => Number(c.getAttribute("width"))),
+      tip: cells[cells.length - 2].querySelector("title").textContent,
+      chartW: Number(document.getElementById("res-chart").getAttribute("width")),
+      ppd: PPD[state.zoom], days: state.range.days };`);
+
+  check(r.names.join("|") === "Ana|(unassigned)",
+        "gantt: pessoas em ordem, sem responsável por último");
+  check(r.stats[0].startsWith("5d") && r.stats[0].includes("2"),
+        "gantt: dias ocupados e dias em excesso na coluna de nomes");
+  // Ana = [1,1,2,2,1,0] → três blocos (1, 2, 1); "sem responsável" = um só
+  check(r.tiers.join("|") === "res-cell l1|res-cell l2|res-cell l1|res-cell l1",
+        "gantt: dias vizinhos de carga igual viram um bloco, com a faixa certa");
+  check(r.ws[0] === 2 * r.ppd && r.ws[1] === 2 * r.ppd && r.ws[2] === r.ppd,
+        "gantt: largura do bloco = dias corridos × pixels por dia");
+  check(r.xs[1] - r.xs[0] === 2 * r.ppd, "gantt: blocos na escala de tempo do gantt");
+  check(r.chartW === r.days * r.ppd,
+        "gantt: SVG tem a MESMA largura da timeline (colunas alinhadas)");
+  check(/Ana/.test(r.tip) && /A/.test(r.tip) && /B/.test(r.tip),
+        "gantt: tooltip nomeia as tarefas que se cruzam no bloco");
+
+  // Clicar na pessoa é o motivo de o painel ser docado: destaca as tarefas
+  // dela no gantt acima, reusando o mesmo highlight do seletor da toolbar
+  r = runIn(`document.querySelectorAll("#res-names .res-row")[0].click();
+    return { hl: state.highlight,
+             sel: document.getElementById("highlight-select").value,
+             dim: [...document.querySelectorAll(".tt-row")]
+                    .map((x) => x.dataset.id + ":" + x.className.includes("dim")),
+             on: document.querySelectorAll("#res-names .res-row.on").length };`);
+  check(r.hl && r.hl.kind === "assignee" && r.hl.value === "Ana",
+        "gantt: clicar na faixa destaca as tarefas da pessoa");
+  check(r.sel === "assignee:Ana", "gantt: e o seletor da toolbar acompanha");
+  // t1/t2 são da Ana, t3 não tem dono (a ordem das linhas é a da tabela)
+  check(r.dim.sort().join(",") === "t1:false,t2:false,t3:true",
+        "gantt: só as tarefas dela ficam acesas");
+  check(r.on === 1, "gantt: a faixa clicada fica marcada");
+
+  r = runIn(`document.querySelectorAll("#res-names .res-row")[0].click();
+    return { hl: state.highlight, on: document.querySelectorAll(".res-row.on").length };`);
+  check(r.hl === null && r.on === 0, "gantt: clicar de novo desliga o destaque");
+
+  // "sem responsável" reusa o status que já existia no seletor
+  r = runIn(`document.querySelectorAll("#res-names .res-row")[1].click();
+    return state.highlight;`);
+  check(r && r.kind === "status" && r.value === "unassigned",
+        "gantt: faixa sem responsável destaca as tarefas sem dono");
+
+  // R fecha o painel; fechado, nada é renderizado
+  r = runIn(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true }));
+    return { open: state.resOpen, hidden: document.getElementById("res-pane").hidden };`);
+  check(r.open === false && r.hidden === true, "gantt: R fecha o painel");
 
   close();
 }

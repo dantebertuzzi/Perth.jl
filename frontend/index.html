@@ -78,6 +78,7 @@
           <hr>
           <button data-action="toggle-critical">Critical path <kbd>C</kbd></button>
           <button data-action="scurve">S-curve…</button>
+          <button data-action="resources">Resources <kbd>R</kbd></button>
           <button data-action="goto-today">Go to today <kbd>T</kbd></button>
           <hr>
           <button data-action="toggle-theme">Dark mode <kbd>D</kbd></button>
@@ -243,6 +244,21 @@
       </div>
     </section>
   </main>
+
+  <!-- Recursos: carga diária por responsável, docada sob o gantt e alinhada
+       com a MESMA escala de tempo (por isso não é um modal como a curva-S) -->
+  <section class="res-pane" id="res-pane" hidden>
+    <aside class="res-names">
+      <div class="res-head">
+        <span>resources</span>
+        <button class="icon-btn res-close" data-action="resources" title="Close (R)" aria-label="Close">✕</button>
+      </div>
+      <div class="res-list" id="res-names"></div>
+    </aside>
+    <div class="res-body" id="res-body">
+      <svg id="res-chart" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </section>
 
   <!-- Status bar -->
   <footer class="statusbar">

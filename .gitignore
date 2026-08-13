@@ -10,3 +10,6 @@ Manifest.toml
 
 # Scratch local
 /dev_splash.jl
+# Node (testes de frontend com jsdom; o CI usa npm install --no-save)
+/test/frontend/node_modules/
+/test/frontend/package-lock.json
