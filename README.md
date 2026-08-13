@@ -82,6 +82,18 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   whose start, span and progress roll up from its subtasks. The CPM
   engine schedules leaves only — summaries are containers, not work.
   Duplicating or deleting a summary handles the whole subtree.
+- **Deadlines and pinned dates**: a task's **deadline** is a
+  *commitment*, not a plan — it never moves the task, it caps its late
+  finish, so busting one turns the slack of that task **and of
+  everything feeding it** negative, measuring the delay in days. A red
+  flag marks it on the chart (grey while the plan still fits), and
+  `deadline_slip(p)` lists what is late. **Pin start date** is the other
+  half: *auto-schedule* pushes every other task around it and leaves a
+  contract date where it is — the pin turns amber when the engine wants
+  to move it, which is how the conflict shows instead of the date
+  changing behind your back. A task's own start date has always been a
+  *start-no-earlier-than* constraint: `schedule!` only ever pushes
+  forward, never pulls back.
 - **Baseline tracking**: *Edit → Set baseline* snapshots the plan;
   ghost bars show it under the current bars and slipped tasks get a red
   `+Nd` badge. `set_baseline!(p)` / `slippage(p)` from the REPL.

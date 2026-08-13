@@ -15,6 +15,7 @@ update_task!
 schedule!
 critical_path
 slack
+deadline_slip
 set_baseline!
 clear_baseline!
 has_baseline

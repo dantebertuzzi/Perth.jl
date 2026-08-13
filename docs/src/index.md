@@ -20,6 +20,10 @@ Perth.kanban(share = true)  # Kanban shared on your LAN, with a QR code
   the server.
 - **Real scheduling**: CPM, critical path, slack, dependency lag and
   SS/FF link types, business-day calendars via BusinessDays.jl.
+- **Commitments vs. plan**: a task's `deadline` never moves it — busting
+  one turns the slack of that task and of everything feeding it negative
+  ([`deadline_slip`](@ref)); a `pinned` start is left alone by
+  [`schedule!`](@ref).
 - **Gantt ↔ Kanban bridge**: [`kanban_from_project!`](@ref) turns a project
   into cards; dragging a linked card to *done* completes the task, live.
 - **Analytics**: S-curve (planned vs. earned), daily load per person

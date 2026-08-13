@@ -8,6 +8,30 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Deadlines**: `GanttTask` gains `deadline` — a *commitment*, not a
+  plan. It never moves the task; it caps the late finish in the CPM
+  backward pass, so busting one turns the slack of that task **and of
+  every task feeding it** negative, by exactly the number of days it is
+  late. That is what the CPM alone could not say: it told you whether a
+  task was critical, never whether it broke a promise. A deadline later
+  than the project finish is inert — the late finish is already capped
+  by the project end for every task. `deadline_slip(p)` lists what is
+  late (calendar days, like `slippage`); the UI puts a flag on the day
+  and counts the misses in the status bar.
+- **Pinned start dates**: `pinned` marks a start as contractual and
+  `schedule!` leaves it alone while pushing everything else. The engine
+  still computes where the task *would* go, so a pin the plan can no
+  longer honour shows up as `slack`'s `early_start` being later than
+  the task's `start` (amber pin on the chart) instead of the date
+  moving silently. Deliberately not a change to the forward pass —
+  that would open the door to the full SNET/SNLT/MSO/ALAP set.
+- A task's own start date has always acted as *start-no-earlier-than*
+  (`schedule!` only pushes forward); that is now documented rather than
+  being folklore in a comment.
+- Both fields travel through `.perth.jl`, `tasktable`, `add_tasks!` and
+  the CSV export (new `deadline` and `pinned` columns, after `duration`
+  and before `progress`).
+
 - **Resource panel** (gantt): *View → Resources*, or `R`, docks a band
   per person under the chart, on the same time scale as the bars —
   green for one task that day, amber for two, red for three or more,
@@ -32,6 +56,15 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   widths with the CPM's `early_finish`.
 - Docs: `overallocations` was documented nowhere; it and `workload` are
   now in the Gantt reference.
+
+### Changed
+- **Critical is now `slack ≤ 0`**, not `slack == 0`, in
+  `critical_path`, in `slack(p)`'s `critical` column and in the gantt's
+  `C` highlight. Slack only goes negative when a deadline is already
+  missed, and those tasks are *more* critical than the zero-slack ones
+  — the old test dropped them, hiding exactly the chain that is late.
+  Projects without deadlines are unaffected: their slack is never
+  negative.
 
 ## [0.5.1] - 2026-08-11
 
