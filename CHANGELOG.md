@@ -5,6 +5,34 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **Resource panel** (gantt): *View → Resources*, or `R`, docks a band
+  per person under the chart, on the same time scale as the bars —
+  green for one task that day, amber for two, red for three or more,
+  with the day's tasks named in the tooltip. Clicking a band spotlights
+  that person's tasks in the chart above (the same highlight the
+  toolbar selector already had), and the last band is the leaf work
+  with nobody on it. Horizontal scrolling is synced both ways: the two
+  scales are the same one, so drifting apart would be a visual lie.
+- `workload(p)` returns the same thing as Tables.jl rows — one per
+  (person, day) with work on it, carrying `tasks`, `effort` (`cost`
+  when set, otherwise person-days, the same weight the S-curve uses)
+  and `task_ids`. Days with no work produce no row.
+- `GET /api/projects/{id}/workload` serves it densified over a
+  contiguous day window, per person, for the panel to draw. 409 when
+  the project uses a business-day calendar and `BusinessDays` is not
+  loaded on the server, like `/cpm`.
+
+  The load is computed in Julia rather than in the browser because only
+  the engine knows the calendar: a 2-business-day task starting Friday
+  loads Friday and Monday, and the weekend in between loads no one. The
+  frontend can't know that — it ignores holidays and only patches bar
+  widths with the CPM's `early_finish`.
+- Docs: `overallocations` was documented nowhere; it and `workload` are
+  now in the Gantt reference.
+
 ## [0.5.1] - 2026-08-11
 
 ### Fixed

@@ -88,6 +88,16 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 - **Overallocation detection**: the status bar warns when someone is
   assigned to overlapping tasks; `overallocations(p)` returns the pairs
   as Tables.jl rows.
+- **Resource panel** (*View → Resources*, or `R`): a band per person
+  docked under the chart, on the same time scale as the bars — green
+  where they have one task, amber for two, red for three or more, with
+  the tasks named in the tooltip. Click a band to spotlight that
+  person's tasks in the chart above; the last band is the work with no
+  one on it. From the REPL, `workload(p)` gives the same thing as
+  Tables.jl rows — one per person and day, with the day's tasks, the
+  effort (`cost` when set, otherwise person-days) and the task ids.
+  Under a business-day calendar a holiday carries no load, which is why
+  the bands are computed in Julia and not in the browser.
 - **Tables.jl bridge**: `tasktable(p)` → rows ready for
   `DataFrame`/`CSV.write`; `add_tasks!(p, table)` builds tasks from any
   Tables.jl source.

@@ -22,6 +22,7 @@ Perth.kanban(share = true)  # Kanban shared on your LAN, with a QR code
   SS/FF link types, business-day calendars via BusinessDays.jl.
 - **Gantt ↔ Kanban bridge**: [`kanban_from_project!`](@ref) turns a project
   into cards; dragging a linked card to *done* completes the task, live.
-- **Analytics**: S-curve (planned vs. earned), kanban flow metrics,
+- **Analytics**: S-curve (planned vs. earned), daily load per person
+  ([`workload`](@ref) and the resource panel), kanban flow metrics,
   activity log, CSV and PNG/PDF export.
 - **Five UI languages**: English, Português, Español, Français, 中文.

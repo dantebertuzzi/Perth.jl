@@ -22,6 +22,8 @@ slippage
 set_calendar!
 set_parent!
 tasktable
+overallocations
+workload
 ganttplot
 save_chart
 ```

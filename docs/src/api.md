@@ -4,8 +4,17 @@ The Gantt server exposes a small REST API (all under `/api/`); the
 frontend is just another client. `GET /api/rev` returns a monotonic
 revision for cheap change polling; project CRUD lives under
 `/api/projects`. Analytics endpoints: `/api/activity`,
-`/api/projects/{id}/scurve`, `/api/projects/{id}/export.csv` and
+`/api/projects/{id}/scurve`, `/api/projects/{id}/workload`,
+`/api/projects/{id}/export.csv` and
 `/api/projects/{id}/chart?fmt=png|pdf|svg` (needs a Makie backend).
+
+`/api/projects/{id}/workload` is [`workload`](@ref) shaped for drawing:
+a contiguous day window (`start`, `days`) and, per person, a dense
+`load` vector with the number of simultaneous tasks on each day of the
+window (plus `effort`, `peak`, `busy_days`, `over_days` and the tasks
+themselves). Leaf tasks with no assignee come back under the `""` key.
+It answers 409 when the project uses a business-day calendar and
+`BusinessDays` is not loaded on the server, like `/cpm`.
 
 With `Perth.run(share = true, key = "...")`, non-host machines must
 append `?key=...` to API calls and the `/ws` presence socket.
