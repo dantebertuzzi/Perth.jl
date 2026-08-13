@@ -318,6 +318,12 @@
         <label>Duration (days)
           <input type="number" id="f-duration" min="1" step="1">
         </label>
+        <label title="Commitment: never moves the task, but busting it turns the slack of this task and of everything feeding it negative">Deadline
+          <input type="date" id="f-deadline">
+        </label>
+        <label class="checkbox" title="Contract date: auto-schedule leaves it where it is">
+          <input type="checkbox" id="f-pinned"> Pin start date
+        </label>
         <label>Progress (%)
           <input type="number" id="f-progress" min="0" max="100" step="5">
         </label>

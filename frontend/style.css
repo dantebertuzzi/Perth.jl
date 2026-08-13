@@ -428,6 +428,14 @@ body.presenting .task-table { display: none; }
 .dep-head { fill: var(--muted); }
 .milestone { cursor: grab; }
 
+/* Prazo (compromisso) e data fixa (pin) */
+.deadline-mark { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.deadline-mark.flag { fill: var(--muted); stroke: none; }
+.deadline-mark.late { stroke: var(--red); }
+.deadline-mark.late.flag { fill: var(--red); }
+.pin-mark { fill: var(--blue); }
+.pin-mark.stuck { fill: var(--amber); }
+
 /* ---------- painel de recursos (carga por responsável) ---------- */
 
 /* A coluna de nomes usa a MESMA largura da tabela de tarefas: é isso que

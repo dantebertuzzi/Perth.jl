@@ -320,6 +320,13 @@ function slipDays(t) {
   return diffDays(baselineEnd(t), taskEnd(t));
 }
 
+/* Dias além do prazo (0 = dentro do compromisso, ou sem compromisso).
+   O prazo é do dia inteiro: terminar NO dia do prazo está em dia. */
+function deadlineSlip(t) {
+  if (!t.deadline) return 0;
+  return Math.max(0, diffDays(parseDate(t.deadline), taskEnd(t)));
+}
+
 /* Filtro de destaque: tarefas que não casam são esmaecidas (classe .dim) */
 function taskMatchesHighlight(t) {
   const h = state.highlight;
@@ -333,6 +340,8 @@ function taskMatchesHighlight(t) {
     if (h.value === "unassigned") return !(t.assignee || "").trim();
     if (h.value === "slipped")
       return !state.wbs?.summary.has(t.id) && slipDays(t) > 0;
+    if (h.value === "past-deadline") return deadlineSlip(t) > 0;
+    if (h.value === "pinned") return !!t.pinned;
     if (h.value === "overallocated") return state.overalloc.ids.has(t.id);
   }
   if (h.kind === "type") return !!t.milestone;
@@ -812,6 +821,12 @@ function renderHighlightSelect() {
   if (state.current.tasks.some((t) => t.baseline_start)) {
     gs.appendChild(opt("status:slipped", "Slipped (vs baseline)"));
   }
+  if (state.current.tasks.some((t) => t.deadline)) {
+    gs.appendChild(opt("status:past-deadline", "Past deadline"));
+  }
+  if (state.current.tasks.some((t) => t.pinned)) {
+    gs.appendChild(opt("status:pinned", "Pinned start"));
+  }
   if (state.overalloc.pairs.length) {
     gs.appendChild(opt("status:overallocated", "Overallocated"));
   }
@@ -935,6 +950,8 @@ function renderStatus() {
   if (state.overalloc.pairs.length) {
     text += ` · ⚠ ${state.overalloc.pairs.length} overallocation${state.overalloc.pairs.length > 1 ? "s" : ""}`;
   }
+  const late = ts.filter((t) => deadlineSlip(t) > 0).length;
+  if (late) text += ` · ⚠ ${late} past deadline`;
   el.statusLeft.textContent = text;
 
   // Barra de progresso do projeto: só folhas (resumos são agregados delas)
@@ -1243,6 +1260,40 @@ function renderChart() {
       }
     }
 
+    // Prazo: bandeira no fim do dia do compromisso, vermelha quando o fim
+    // previsto passa dele. O prazo nunca move a barra — só denuncia.
+    if (t.deadline) {
+      const dx = xOf(addDays(parseDate(t.deadline), 1));
+      const over = deadlineSlip(t);
+      const cls = "deadline-mark" + (over > 0 ? " late" : "") + dim;
+      chart.appendChild(svg("line", {
+        class: cls, x1: dx, y1: y - 4, x2: dx, y2: y + h + 4, "data-id": t.id,
+      }));
+      const flag = svg("polygon", {
+        class: cls + " flag", "data-id": t.id,
+        points: `${dx},${y - 4} ${dx + 8},${y - 1} ${dx},${y + 2}`,
+      });
+      flag.appendChild(svgTitle(`${T("deadline")}: ${t.deadline}` +
+        (over > 0 ? ` · +${over}d` : "")));
+      chart.appendChild(flag);
+    }
+
+    // Data fixa: o auto-schedule não move esta barra. Âmbar quando o motor
+    // já quer empurrá-la (early_start > start) — é assim que o conflito
+    // aparece, já que a data não muda sozinha
+    if (t.pinned) {
+      const cinfo = state.cpm?.byId.get(t.id);
+      const stuck = !!cinfo && cinfo.early_start > t.start;
+      const pin = svg("polygon", {
+        class: "pin-mark" + (stuck ? " stuck" : "") + dim, "data-id": t.id,
+        points: `${x},${y - 1} ${x - 5},${y - 8} ${x + 5},${y - 8}`,
+      });
+      pin.appendChild(svgTitle(stuck
+        ? `${T("pinned start")} · ${T("auto-schedule wants")} ${cinfo.early_start}`
+        : T("pinned start")));
+      chart.appendChild(pin);
+    }
+
     if (t.id === state.selected) {
       const selW = t.milestone ? h + 8 : Math.max(t.duration, 1) * ppd + 6;
       const selX = t.milestone ? x - h / 2 - 4 : x - 3;
@@ -1393,6 +1444,8 @@ function openModal(id) {
   $("#f-cost").value = t.cost || 0;
   $("#f-color").value = t.color || "";
   $("#f-milestone").checked = !!t.milestone;
+  $("#f-deadline").value = t.deadline || "";
+  $("#f-pinned").checked = !!t.pinned;
 
   // Lista de dependências possíveis (todas as outras tarefas)
   const deps = $("#f-deps");
@@ -1441,7 +1494,9 @@ function openModal(id) {
   psel.value = t.parent && !blocked.has(t.parent) ? t.parent : "";
 
   const isSum = state.wbs?.summary.has(id) ?? false;
-  for (const fid of ["f-start", "f-duration", "f-progress", "f-milestone"]) {
+  // Resumo deriva as datas dos filhos: prazo e data fixa não fazem sentido
+  for (const fid of ["f-start", "f-duration", "f-progress", "f-milestone",
+                     "f-deadline", "f-pinned"]) {
     $("#" + fid).disabled = isSum;
   }
   $("#f-summary-hint").hidden = !isSum;
@@ -1482,6 +1537,8 @@ function submitModal() {
     t.duration = Math.max(1, parseInt($("#f-duration").value, 10) || 1);
     t.progress = Math.min(100, Math.max(0, parseInt($("#f-progress").value, 10) || 0));
     t.milestone = $("#f-milestone").checked;
+    t.deadline = $("#f-deadline").value || null;
+    t.pinned = $("#f-pinned").checked;
   }
   t.color = $("#f-color").value;
   t.cost = Math.max(0, parseFloat($("#f-cost").value) || 0);

@@ -141,6 +141,11 @@ console.log("i18n · gantt");
         "novo item Resources traduzido");
   check($(".res-head span").textContent.trim() === "recursos",
         "cabeçalho do painel de recursos traduzido");
+  check($('label[title] > #f-deadline').parentElement.childNodes[0]
+          .textContent.trim() === "Prazo limite", "campo Deadline traduzido");
+  check($("#f-pinned").parentElement.getAttribute("title") ===
+        "Data contratual: o auto-schedule não a move",
+        "explicação da data fixa traduzida no title");
   w.PerthI18n.set("en");
   w.PerthI18n.set("zh");
   check($('.menu[data-menu="help"] .menu-title').textContent.trim() === "帮助",
@@ -767,6 +772,110 @@ console.log("gantt · fundo da UI");
                       op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
   check(/v=zzz999/.test(r.img), "gantt: msg \"background\" do servidor troca a imagem ao vivo");
   check(r.op === "0.5", "gantt: e acompanha a nova opacidade");
+
+  close();
+}
+
+console.log("gantt · prazo e data fixa");
+{
+  const { runIn, close } = loadGanttApp();
+
+  const seed = `
+    const mk = (id, name, start, duration, extra) => Object.assign({
+      id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false },
+      extra || {});
+    state.current = { id: "p1", name: "P", tasks: [
+      mk("t1", "No prazo", "2026-03-02", 4, { deadline: "2026-03-06" }),
+      mk("t2", "Estourada", "2026-03-02", 6, { deadline: "2026-03-04" }),
+      mk("t3", "Fixa", "2026-03-02", 3, { pinned: true }),
+      mk("t4", "Solta", "2026-03-02", 3) ] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "",
+      byId: new Map([["t3", { id: "t3", early_start: "2026-03-09",
+                              early_finish: "2026-03-11", slack_days: 0,
+                              critical: true }]]) };
+    renderAll();`;
+
+  // Marcadores são consultados por data-id, não por posição: sortTasks()
+  // reordena as linhas e o índice do vetor não é a tarefa que se pensa
+  let r = runIn(`${seed}
+    const flag = (id) => document.querySelector('#chart .deadline-mark.flag[data-id="' + id + '"]');
+    return {
+      flags: document.querySelectorAll("#chart .deadline-mark.flag").length,
+      lines: document.querySelectorAll("#chart .deadline-mark:not(.flag)").length,
+      late: ["t1", "t2"].map((id) => flag(id).getAttribute("class").includes("late")),
+      tip: flag("t2").querySelector("title").textContent,
+      // a bandeira fica no FIM do dia do prazo: t1 vence 06/03, então x cai
+      // no começo de 07/03
+      flagX: Math.round(Number(flag("t1").getAttribute("points").split(",")[0])),
+      dayX: Math.round(xOf(parseDate("2026-03-07"))),
+      status: document.getElementById("status-left").textContent };`);
+
+  check(r.flags === 2 && r.lines === 2, "gantt: uma bandeira por tarefa com prazo");
+  check(r.late.join(",") === "false,true",
+        "gantt: só a que estoura o prazo fica vermelha");
+  check(r.flagX === r.dayX, "gantt: a bandeira marca o FIM do dia do prazo");
+  // t2: começa 02/03 e dura 6 dias -> termina 07/03, três dias além de 04/03
+  check(/2026-03-04/.test(r.tip) && /\+3d/.test(r.tip),
+        "gantt: o tooltip diz o prazo e o tamanho do estouro");
+  check(/1 past deadline/.test(r.status), "gantt: a barra de status conta os estouros");
+
+  r = runIn(`
+    const pins = [...document.querySelectorAll("#chart .pin-mark")];
+    return { n: pins.length, id: pins[0].dataset.id,
+             stuck: pins[0].getAttribute("class").includes("stuck"),
+             tip: pins[0].querySelector("title").textContent };`);
+  check(r.n === 1 && r.id === "t3", "gantt: alfinete só na tarefa de data fixa");
+  check(r.stuck === true && /2026-03-09/.test(r.tip),
+        "gantt: alfinete âmbar quando o motor quer empurrar a data (early_start > start)");
+
+  // destaques novos, no mesmo mecanismo do seletor da toolbar
+  r = runIn(`state.highlight = { kind: "status", value: "past-deadline" };
+    renderTable();
+    return [...document.querySelectorAll(".tt-row")]
+             .map((x) => x.dataset.id + ":" + !x.className.includes("dim")).sort();`);
+  check(r.join(",") === "t1:false,t2:true,t3:false,t4:false",
+        "gantt: destaque 'past deadline' acende só a estourada");
+
+  r = runIn(`state.highlight = { kind: "status", value: "pinned" };
+    renderTable();
+    const opts = [...document.getElementById("highlight-select").options].map((o) => o.value);
+    return { on: [...document.querySelectorAll(".tt-row")]
+                   .filter((x) => !x.className.includes("dim"))
+                   .map((x) => x.dataset.id),
+             hasOpts: opts.includes("status:past-deadline") && opts.includes("status:pinned") };`);
+  check(r.on.join(",") === "t3", "gantt: destaque 'pinned' acende só a de data fixa");
+  check(r.hasOpts === true, "gantt: os dois destaques entram no seletor");
+
+  // modal: campos novos são lidos e gravados, e resumo os desabilita
+  r = runIn(`openModal("t2");
+    const before = { deadline: document.getElementById("f-deadline").value,
+                     pinned: document.getElementById("f-pinned").checked };
+    document.getElementById("f-deadline").value = "2026-03-20";
+    document.getElementById("f-pinned").checked = true;
+    submitModal();
+    const t = state.current.tasks.find((x) => x.id === "t2");
+    return { before, after: { deadline: t.deadline, pinned: t.pinned } };`);
+  check(r.before.deadline === "2026-03-04" && r.before.pinned === false,
+        "gantt: o modal mostra o prazo da tarefa");
+  check(r.after.deadline === "2026-03-20" && r.after.pinned === true,
+        "gantt: e grava os dois campos");
+
+  r = runIn(`openModal("t2");
+    document.getElementById("f-deadline").value = "";
+    submitModal();
+    return state.current.tasks.find((x) => x.id === "t2").deadline;`);
+  check(r === null, "gantt: limpar o campo remove o compromisso (null, não \"\")");
+
+  r = runIn(`state.current.tasks.push(Object.assign({}, state.current.tasks[3],
+      { id: "t5", name: "Filha", parent: "t4" }));
+    renderAll();
+    openModal("t4");
+    return { deadline: document.getElementById("f-deadline").disabled,
+             pinned: document.getElementById("f-pinned").disabled };`);
+  check(r.deadline === true && r.pinned === true,
+        "gantt: resumo desabilita prazo e data fixa (datas derivam dos filhos)");
 
   close();
 }

@@ -90,6 +90,18 @@ window.PerthI18n = (function () {
       "Julia purple": "Roxo Julia", "Julia green": "Verde Julia",
       "Julia red": "Vermelho Julia", "Julia blue": "Azul Julia", "Amber": "Âmbar",
       "Milestone": "Marco",
+      // prazo (compromisso) e data fixa
+      "Deadline": "Prazo limite",
+      "deadline": "prazo limite",
+      "Pin start date": "Fixar a data de início",
+      "pinned start": "data de início fixa",
+      "auto-schedule wants": "o auto-schedule quer",
+      "Past deadline": "Fora do prazo",
+      "Pinned start": "Data fixa",
+      "Commitment: never moves the task, but busting it turns the slack of this task and of everything feeding it negative":
+        "Compromisso: nunca move a tarefa, mas estourá-lo deixa negativa a folga dela e de tudo que a alimenta",
+      "Contract date: auto-schedule leaves it where it is":
+        "Data contratual: o auto-schedule não a move",
       "Summary task: start, duration and progress roll up from its subtasks.":
         "Tarefa-resumo: início, duração e progresso derivam das subtarefas.",
       "Depends on": "Depende de", "Notes": "Notas",
@@ -298,6 +310,18 @@ window.PerthI18n = (function () {
       "Julia purple": "Morado Julia", "Julia green": "Verde Julia",
       "Julia red": "Rojo Julia", "Julia blue": "Azul Julia", "Amber": "Ámbar",
       "Milestone": "Hito",
+      // plazo (compromiso) y fecha fija
+      "Deadline": "Fecha límite",
+      "deadline": "fecha límite",
+      "Pin start date": "Fijar la fecha de inicio",
+      "pinned start": "fecha de inicio fija",
+      "auto-schedule wants": "el auto-schedule quiere",
+      "Past deadline": "Fuera de plazo",
+      "Pinned start": "Fecha fija",
+      "Commitment: never moves the task, but busting it turns the slack of this task and of everything feeding it negative":
+        "Compromiso: nunca mueve la tarea, pero incumplirlo vuelve negativa la holgura de ella y de todo lo que la alimenta",
+      "Contract date: auto-schedule leaves it where it is":
+        "Fecha contractual: el auto-schedule no la mueve",
       "Summary task: start, duration and progress roll up from its subtasks.":
         "Tarea resumen: inicio, duración y progreso se derivan de sus subtareas.",
       "Depends on": "Depende de", "Notes": "Notas",
@@ -499,6 +523,18 @@ window.PerthI18n = (function () {
       "Julia purple": "Violet Julia", "Julia green": "Vert Julia",
       "Julia red": "Rouge Julia", "Julia blue": "Bleu Julia", "Amber": "Ambre",
       "Milestone": "Jalon",
+      // échéance (engagement) et date épinglée
+      "Deadline": "Échéance",
+      "deadline": "échéance",
+      "Pin start date": "Épingler la date de début",
+      "pinned start": "date de début épinglée",
+      "auto-schedule wants": "l'auto-planification veut",
+      "Past deadline": "Hors délai",
+      "Pinned start": "Début épinglé",
+      "Commitment: never moves the task, but busting it turns the slack of this task and of everything feeding it negative":
+        "Engagement : ne déplace jamais la tâche, mais le dépasser rend négative la marge de celle-ci et de tout ce qui l'alimente",
+      "Contract date: auto-schedule leaves it where it is":
+        "Date contractuelle : l'auto-planification ne la déplace pas",
       "Summary task: start, duration and progress roll up from its subtasks.":
         "Tâche récapitulative : début, durée et avancement dérivent des sous-tâches.",
       "Depends on": "Dépend de", "Notes": "Notes",
@@ -700,6 +736,18 @@ window.PerthI18n = (function () {
       "Julia purple": "Julia 紫", "Julia green": "Julia 绿",
       "Julia red": "Julia 红", "Julia blue": "Julia 蓝", "Amber": "琥珀",
       "Milestone": "里程碑",
+      // 截止期限（承诺）与固定日期
+      "Deadline": "截止期限",
+      "deadline": "截止期限",
+      "Pin start date": "固定开始日期",
+      "pinned start": "开始日期已固定",
+      "auto-schedule wants": "自动排程建议",
+      "Past deadline": "已超期",
+      "Pinned start": "固定开始",
+      "Commitment: never moves the task, but busting it turns the slack of this task and of everything feeding it negative":
+        "承诺：从不移动任务，但一旦超期，该任务及其所有前置任务的浮动时间都会变为负数",
+      "Contract date: auto-schedule leaves it where it is":
+        "合同日期：自动排程不会移动它",
       "Summary task: start, duration and progress roll up from its subtasks.":
         "摘要任务：开始、工期和进度由子任务汇总而来。",
       "Depends on": "依赖于", "Notes": "备注",
