@@ -216,7 +216,14 @@ function _cpm(p::Project)
     # max(hoje, último fim) e todo projeto já concluído ganhava folga
     # fantasma — caminho crítico vazio, folga = dias desde o fim.
     finish = isempty(ef) ? Dates.today() : maximum(ef)
-    lf = fill(finish, n)
+    # O prazo (deadline) entra aqui e em nenhum outro lugar: ele não move
+    # nada, só baixa o late finish da tarefa. O backward pass abaixo já
+    # propaga isso para os predecessores (lf[i] = min(lf[i], lim)), então a
+    # cadeia inteira que alimenta um prazo estourado ganha folga NEGATIVA,
+    # do tamanho exato do atraso. Prazo posterior ao término do projeto fica
+    # inerte: lf já é limitado pelo término em todas as tarefas.
+    lf = [t.deadline === nothing ? finish : min(finish, t.deadline)
+          for t in p.tasks]
     ls = Vector{Date}(undef, n)
     for i in reverse(order)              # backward pass (ciente de tipo/lag)
         for (k, dep) in succ_edges[i]
@@ -242,7 +249,11 @@ end
 Reschedule the project so that no task starts before all of its
 dependencies have finished. Each task's own start date acts as a
 *start-no-earlier-than* constraint: tasks are only pushed forward,
-never pulled back. Persists the result.
+never pulled back. Tasks marked `pinned` keep their start date — the
+engine still computes where they would have to go, so a pin the plan
+can no longer honour leaves [`slack`](@ref)'s `early_start` later than
+the task's `start`, instead of the date silently moving. Persists the
+result.
 
 Throws `ArgumentError` if the dependency graph has a cycle.
 """
@@ -250,6 +261,7 @@ function schedule!(p::Project)
     lv = _leaf_view(p)                 # resumos derivam; só folhas movem
     cpm = _cpm(lv)
     for (i, t) in enumerate(lv.tasks)
+        t.pinned && continue           # data fixa: o motor calcula, não grava
         t.start = cpm.es[i]
     end
     _with_state(st -> _save!(st, p))   # _save! refaz o rollup dos resumos
@@ -259,15 +271,19 @@ end
 """
     critical_path(p::Project) -> Vector{String}
 
-Ids of the tasks on the critical path (zero slack), in topological
+Ids of the tasks on the critical path (slack `≤ 0`), in topological
 order. Delaying any of these delays the whole project.
+
+Slack is only ever negative when a `deadline` is already missed, and
+those tasks are *more* critical than the zero-slack ones — leaving them
+out would hide exactly the chain that is late.
 """
 function critical_path(p::Project)
     lv = _leaf_view(p)
     isempty(lv.tasks) && return String[]
     cpm = _cpm(lv)
     order, _ = _toposort(lv)
-    return [lv.tasks[i].id for i in order if cpm.slack[i] == 0]
+    return [lv.tasks[i].id for i in order if cpm.slack[i] <= 0]
 end
 
 """
@@ -275,6 +291,10 @@ end
 
 Per-task CPM summary as Tables.jl-compatible rows: `id`, `name`,
 `early_start`, `early_finish`, `slack_days`, `critical`.
+
+`slack_days` goes negative when a `deadline` cannot be met: the task
+and everything feeding it are late by that many days. `critical` is
+`slack_days ≤ 0`.
 """
 function slack(p::Project)
     lv = _leaf_view(p)
@@ -283,8 +303,31 @@ function slack(p::Project)
     order, _ = _toposort(lv)
     return [(id = lv.tasks[i].id, name = lv.tasks[i].name,
              early_start = cpm.es[i], early_finish = cpm.ef[i],
-             slack_days = cpm.slack[i], critical = cpm.slack[i] == 0)
+             slack_days = cpm.slack[i], critical = cpm.slack[i] <= 0)
             for i in order]
+end
+
+"""
+    deadline_slip(p::Project) -> Vector{NamedTuple}
+
+The tasks whose planned finish is past their `deadline`, as Tables.jl
+rows: `id`, `name`, `deadline`, `finish` (calendar-aware) and
+`slip_days` — calendar days late, like [`slippage`](@ref), not the
+business days the CPM slack is measured in.
+
+Tasks without a deadline, and deadlines still being met, produce no
+row; an empty result means every commitment in the plan holds.
+"""
+function deadline_slip(p::Project)
+    out = NamedTuple[]
+    for (t, _) in ordered_tasks(p)
+        t.deadline === nothing && continue
+        fin = end_date(p, t)
+        fin <= t.deadline && continue
+        push!(out, (id = t.id, name = t.name, deadline = t.deadline,
+                    finish = fin, slip_days = Dates.value(fin - t.deadline)))
+    end
+    return out
 end
 
 """

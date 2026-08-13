@@ -200,6 +200,96 @@ end
         delete_project(old.id)
     end
 
+    @testset "prazo (deadline) e folga negativa" begin
+        # Corrente A -> B -> C, dias corridos. Datas no passado por construção.
+        p = create_project("Prazo")
+        a = add_task!(p, "A"; start = Date(2026, 3, 2), duration = 3)   # 02–04/03
+        b = add_task!(p, "B"; start = Date(2026, 3, 5), duration = 5,
+                      dependencies = [a.id])                            # 05–09/03
+        c = add_task!(p, "C"; start = Date(2026, 3, 10), duration = 4,
+                      dependencies = [b.id])                            # 10–13/03
+        @test project_finish(p) == Date(2026, 3, 13)
+        @test all(r.slack_days == 0 for r in slack(p))
+
+        # Prazo posterior ao término do projeto é inerte: lf já é limitado
+        # pelo término em todas as tarefas
+        update_task!(p, c.id; deadline = Date(2026, 3, 20))
+        @test all(r.slack_days == 0 for r in slack(p))
+        @test isempty(deadline_slip(p))
+
+        # Prazo estourado: a folga fica negativa na tarefa E em tudo que a
+        # alimenta, do tamanho exato do atraso (3 dias)
+        update_task!(p, c.id; deadline = Date(2026, 3, 10))
+        sl = Dict(r.id => r.slack_days for r in slack(p))
+        @test sl[c.id] == -3 && sl[b.id] == -3 && sl[a.id] == -3
+        # e a cadeia estourada continua no caminho crítico (slack <= 0)
+        @test critical_path(p) == [a.id, b.id, c.id]
+        @test all(r.critical for r in slack(p))
+
+        # O prazo não move nada: é compromisso, não plano
+        starts = [t.start for t in project(p.id).tasks]
+        schedule!(p)
+        @test [t.start for t in project(p.id).tasks] == starts
+
+        miss = deadline_slip(p)
+        @test length(miss) == 1
+        @test miss[1].id == c.id && miss[1].deadline == Date(2026, 3, 10)
+        @test miss[1].finish == Date(2026, 3, 13) && miss[1].slip_days == 3
+
+        # tasktable carrega prazo e atraso; sem prazo, missing
+        tt = Dict(r.id => r for r in tasktable(p))
+        @test tt[c.id].deadline == Date(2026, 3, 10) && tt[c.id].deadline_slip == 3
+        @test tt[a.id].deadline === missing && tt[a.id].deadline_slip === missing
+
+        # roundtrip .perth.jl preserva o prazo
+        path = joinpath(tmp, "prazo.perth.jl")
+        Perth.save(p, path)
+        @test occursin("deadline = Date(\"2026-03-10\")", read(path, String))
+        rp = Perth.load(path; register = false)
+        @test rp.tasks[3].deadline == Date(2026, 3, 10)
+        @test rp.tasks[1].deadline === nothing
+
+        # dias úteis: o mesmo prazo, com o atraso medido no calendário
+        set_calendar!(p, "Brazil")
+        sl2 = Dict(r.id => r.slack_days for r in slack(p))
+        @test sl2[c.id] < 0
+        set_calendar!(p, "")
+        delete_project(p.id)
+    end
+
+    @testset "data fixa (pinned)" begin
+        p = create_project("Fixa")
+        a = add_task!(p, "A"; start = Date(2026, 3, 2), duration = 3)
+        b = add_task!(p, "B"; start = Date(2026, 3, 2), duration = 2,
+                      dependencies = [a.id])
+        c = add_task!(p, "C"; start = Date(2026, 3, 2), duration = 2,
+                      dependencies = [a.id], pinned = true)
+
+        schedule!(p)
+        @test b.start == Date(2026, 3, 5)     # empurrada para depois de A
+        @test c.start == Date(2026, 3, 2)     # data contratual: não se move
+
+        # o motor continua calculando para onde ELA IRIA — é assim que o
+        # conflito aparece, em vez de a data mudar sozinha
+        rows = Dict(r.id => r for r in slack(p))
+        @test rows[c.id].early_start == Date(2026, 3, 5)
+        @test rows[c.id].early_start > c.start
+        @test rows[b.id].early_start == b.start   # sem pin, planejada = calculada
+
+        # soltar o pin devolve a tarefa ao motor
+        update_task!(p, c.id; pinned = false)
+        schedule!(p)
+        @test c.start == Date(2026, 3, 5)
+
+        # roundtrip .perth.jl preserva o pin
+        update_task!(p, c.id; pinned = true)
+        path = joinpath(tmp, "fixa.perth.jl")
+        Perth.save(p, path)
+        @test occursin("pinned = true", read(path, String))
+        @test Perth.load(path; register = false).tasks[3].pinned
+        delete_project(p.id)
+    end
+
     @testset "renderizacao nativa" begin
         p = create_project("Show")
         t1 = add_task!(p, "Base"; start = Date(2026, 8, 3), duration = 5, progress = 40)

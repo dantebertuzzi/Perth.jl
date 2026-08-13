@@ -53,6 +53,9 @@ function _to_julia_source(p::Project)
             println(io, "            baseline_start = Date(", repr(string(t.baseline_start)), "),")
         t.baseline_duration == 0 ||
             println(io, "            baseline_duration = ", t.baseline_duration, ",")
+        t.deadline === nothing ||
+            println(io, "            deadline = Date(", repr(string(t.deadline)), "),")
+        t.pinned && println(io, "            pinned = true,")
         println(io, "        ),")
     end
     println(io, "    ],")

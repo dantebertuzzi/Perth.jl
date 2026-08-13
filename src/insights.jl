@@ -101,9 +101,10 @@ end
 The project's tasks as Tables.jl-compatible rows in WBS display order —
 ready for `DataFrame(tasktable(p))`, `CSV.write`, etc. Columns: `id`,
 `name`, `wbs_depth`, `parent`, `summary`, `start`, `duration`, `finish`
-(calendar-aware), `progress`, `assignee`, `dependencies`, `color`,
-`notes`, `milestone`, `baseline_start`, `baseline_finish`, `slip_days`
-(`missing` without a baseline).
+(calendar-aware), `deadline`, `deadline_slip` (calendar days past it;
+`missing` without a deadline), `pinned`, `progress`, `assignee`,
+`dependencies`, `color`, `notes`, `milestone`, `baseline_start`,
+`baseline_finish`, `slip_days` (`missing` without a baseline).
 """
 function tasktable(p::Project)
     rows = NamedTuple[]
@@ -113,6 +114,10 @@ function tasktable(p::Project)
             id = t.id, name = t.name, wbs_depth = d, parent = t.parent,
             summary = is_summary(p, t),
             start = t.start, duration = t.duration, finish = end_date(p, t),
+            deadline = something(t.deadline, missing),
+            deadline_slip = t.deadline === nothing ? missing :
+                            Dates.value(end_date(p, t) - t.deadline),
+            pinned = t.pinned,
             progress = t.progress, assignee = t.assignee,
             dependencies = copy(t.dependencies), color = t.color,
             notes = t.notes, milestone = t.milestone,
@@ -135,6 +140,10 @@ end
 
 _as_date(v::Date) = v
 _as_date(v) = Date(String(v))
+# Prazo é opcional: coluna ausente, vazia ou missing = sem compromisso
+_as_deadline(::Nothing) = nothing
+_as_deadline(v::AbstractString) = isempty(strip(v)) ? nothing : Date(String(strip(v)))
+_as_deadline(v) = _as_date(v)
 _as_deps(v::AbstractVector) = String.(v)
 _as_deps(v::AbstractString) =
     [String(strip(s)) for s in split(v, r"[;,]") if !isempty(strip(s))]
@@ -145,9 +154,10 @@ _as_deps(v::AbstractString) =
 Append tasks to `p` from any Tables.jl source (`DataFrame`, `CSV.File`,
 a vector of `NamedTuple`s, …). Required column: `name`. Optional
 columns: `start` (`Date` or ISO string), `duration`, `progress`,
-`assignee`, `notes`, `color`, `milestone`, `parent` and `dependencies`
-(a vector of ids, or a `";"`/`","`-separated string). Persists once at
-the end — invalid parents and dependency references are pruned on save.
+`assignee`, `notes`, `color`, `milestone`, `deadline`, `pinned`,
+`parent` and `dependencies` (a vector of ids, or a `";"`/`","`-separated
+string). Persists once at the end — invalid parents and dependency
+references are pruned on save.
 """
 function add_tasks!(p::Project, table)
     Tables.istable(table) ||
@@ -167,6 +177,8 @@ function add_tasks!(p::Project, table)
             notes = String(_cell(row, :notes, "")),
             milestone = Bool(_cell(row, :milestone, false)),
             parent = String(_cell(row, :parent, "")),
+            deadline = _as_deadline(_cell(row, :deadline, nothing)),
+            pinned = Bool(_cell(row, :pinned, false)),
         )
         _normalize!(t)
         push!(p.tasks, t)

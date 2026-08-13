@@ -368,9 +368,11 @@ function _export_csv(req::HTTP.Request)
             "\"" * replace(v, "\"" => "\"\"") * "\"" : v
     end
     io = IOBuffer()
-    println(io, "id,name,start,duration,progress,assignee,cost,milestone,parent,dependencies,notes")
+    println(io, "id,name,start,duration,deadline,pinned,progress,assignee,cost," *
+                "milestone,parent,dependencies,notes")
     for t in p.tasks
-        println(io, join(esc.([t.id, t.name, t.start, t.duration, t.progress,
+        println(io, join(esc.([t.id, t.name, t.start, t.duration,
+                               something(t.deadline, ""), t.pinned, t.progress,
                                t.assignee, t.cost, t.milestone, t.parent,
                                join(t.dependencies, " "), t.notes]), ","))
     end

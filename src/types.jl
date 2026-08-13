@@ -26,6 +26,15 @@ A single task (or milestone) on the Gantt chart.
   descendants on every save (see [`set_parent!`](@ref)).
 - `baseline_start::Union{Nothing,Date}` / `baseline_duration::Int`:
   snapshot taken by [`set_baseline!`](@ref); `nothing`/`0` = no baseline.
+- `deadline::Union{Nothing,Date}`: a date the task must not finish after.
+  It never moves the task — it caps the *late finish* in the CPM
+  backward pass, so busting it turns the slack of this task and of
+  everything feeding it negative. `nothing` = no commitment.
+- `pinned::Bool`: the start date is fixed (a contract date, a delivery
+  window). [`schedule!`](@ref) leaves it where it is; the engine still
+  computes where it *would* go, so a pin the plan can no longer honour
+  shows up as an `early_start` later than `start` in [`slack`](@ref)
+  instead of the task silently moving.
 """
 Base.@kwdef mutable struct GanttTask
     id::String = _short_id()
@@ -42,6 +51,8 @@ Base.@kwdef mutable struct GanttTask
     parent::String = ""
     baseline_start::Union{Nothing,Date} = nothing
     baseline_duration::Int = 0
+    deadline::Union{Nothing,Date} = nothing
+    pinned::Bool = false
 end
 
 """
