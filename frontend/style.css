@@ -434,10 +434,12 @@ body.presenting .task-table { display: none; }
    faz cada faixa começar exatamente sob a coluna de barras do gantt. */
 .res-pane {
   display: flex;
+  flex-direction: column;
   height: var(--res-h);
   border-top: 1px solid var(--line);
   background: var(--panel);
 }
+.res-cols { flex: 1; display: flex; min-height: 0; }
 .res-names {
   width: var(--table-w);
   min-width: 260px;

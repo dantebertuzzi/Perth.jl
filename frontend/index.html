@@ -248,15 +248,20 @@
   <!-- Recursos: carga diária por responsável, docada sob o gantt e alinhada
        com a MESMA escala de tempo (por isso não é um modal como a curva-S) -->
   <section class="res-pane" id="res-pane" hidden>
-    <aside class="res-names">
-      <div class="res-head">
-        <span>resources</span>
-        <button class="icon-btn res-close" data-action="resources" title="Close (R)" aria-label="Close">✕</button>
+    <!-- O cabeçalho atravessa as duas colunas: se ele morasse só na coluna
+         de nomes, as faixas começariam uma altura de cabeçalho acima dos
+         nomes e a pessoa da linha não seria a pessoa da faixa -->
+    <div class="res-head">
+      <span>resources</span>
+      <button class="icon-btn res-close" data-action="resources" title="Close (R)" aria-label="Close">✕</button>
+    </div>
+    <div class="res-cols">
+      <aside class="res-names">
+        <div class="res-list" id="res-names"></div>
+      </aside>
+      <div class="res-body" id="res-body">
+        <svg id="res-chart" xmlns="http://www.w3.org/2000/svg"></svg>
       </div>
-      <div class="res-list" id="res-names"></div>
-    </aside>
-    <div class="res-body" id="res-body">
-      <svg id="res-chart" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
   </section>
 

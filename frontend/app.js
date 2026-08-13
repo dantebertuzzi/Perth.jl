@@ -1345,17 +1345,24 @@ document.querySelector(".task-table").addEventListener("wheel", (ev) => {
 
 // Cabeçalho e tabela são contêineres overflow:hidden rolados
 // programaticamente: o conteúdo fica clipado por construção
+// Espelhar a rolagem tem que ser INSTANTÂNEO: .tl-body anda com
+// scroll-behavior:smooth (para o "ir para hoje" deslizar), e uma
+// atribuição animada faz cada painel perseguir a posição intermediária do
+// outro — os dois travam perto do início em vez de acompanhar o dedo.
+// Instantâneo o eco morre no primeiro salto, porque atribuir a posição que
+// o elemento já tem não dispara evento nenhum.
+const mirrorX = (target, left) => target.scrollTo({ left, behavior: "instant" });
+
 el.tlBody.addEventListener("scroll", () => {
   el.tlHead.scrollLeft = el.tlBody.scrollLeft;
   el.ttBody.scrollTop = el.tlBody.scrollTop;
-  if (state.resOpen) el.resBody.scrollLeft = el.tlBody.scrollLeft;
+  if (state.resOpen) mirrorX(el.resBody, el.tlBody.scrollLeft);
 });
 
 // A recíproca: rolar dentro do painel de recursos leva o gantt junto — as
-// duas escalas são a mesma, ficarem fora de fase seria mentira visual. Não
-// há laço: atribuir um scrollLeft igual ao atual não dispara evento.
+// duas escalas são a mesma, ficarem fora de fase seria mentira visual
 el.resBody.addEventListener("scroll", () => {
-  el.tlBody.scrollLeft = el.resBody.scrollLeft;
+  mirrorX(el.tlBody, el.resBody.scrollLeft);
   el.resNames.scrollTop = el.resBody.scrollTop;
 });
 
