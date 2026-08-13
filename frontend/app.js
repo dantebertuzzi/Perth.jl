@@ -251,7 +251,9 @@ function applyBackground(info) {
   const root = document.documentElement;
   const on = !!(info && info.set) && !ui.hideBackground;
   root.classList.toggle("has-bg", on);
-  root.style.setProperty("--perth-bg", on ? `url("${encodeURI(info.url)}")` : "none");
+  // /background é endpoint de dados: pede a chave como o resto da API
+  root.style.setProperty("--perth-bg",
+                         on ? `url("${encodeURI(withKey(info.url))}")` : "none");
   root.style.setProperty("--perth-bg-opacity",
                          on ? String(info.opacity ?? 0.18) : "0");
 }
@@ -352,14 +354,30 @@ function taskMatchesHighlight(t) {
 /* API                                                                  */
 /* ------------------------------------------------------------------ */
 
-// Chave de acesso do share (Perth.run(share=true, key=...)): vem na URL
-// e é reenviada em toda chamada de API — mesmo modelo do kanban.
-const ACCESS_KEY = new URLSearchParams(location.search).get("key") || "";
+// Chave de acesso do share (Perth.run(share=true, key=...)): vem na URL e é
+// reenviada em toda chamada de API. Fica na sessão para sobreviver a um
+// reload sem a query (favorito, start_url do PWA, link repassado sem o
+// ?key=) — quem não tem nenhuma das duas cai no diálogo de showKeyGate().
+// Mesmo modelo do kanban.
+const KEY_STORE = "perth-key";
+let ACCESS_KEY = new URLSearchParams(location.search).get("key") ||
+                 sessionStorage.getItem(KEY_STORE) || "";
+if (ACCESS_KEY) sessionStorage.setItem(KEY_STORE, ACCESS_KEY);
+
+function setAccessKey(value) {
+  ACCESS_KEY = value || "";
+  sessionStorage.setItem(KEY_STORE, ACCESS_KEY);
+  window.PerthPresence?.setKey(ACCESS_KEY);   // o WS usa a mesma chave
+}
+
 function withKey(path) {
   if (!ACCESS_KEY) return path;
   return path + (path.includes("?") ? "&" : "?") +
     "key=" + encodeURIComponent(ACCESS_KEY);
 }
+
+// 403 do porteiro: falta a chave (pede) x transmissão desligada (avisa)
+const isKeyError = (err) => err?.status === 403 && /access key/i.test(err.message || "");
 
 async function api(path, opts = {}) {
   const res = await fetch(withKey(path), {
@@ -1766,6 +1784,50 @@ function renderShare(body, info) {
   }
 }
 
+// Servidor com chave (Perth.run(key = "…")) e navegador sem ela: em vez de
+// morrer com um erro na barra de status, pede a chave e refaz a carga
+// inicial. Vale para o link repassado sem o ?key=, o favorito e o PWA.
+function showKeyGate(note) {
+  // o 403 da API e a recusa do WS chegam quase juntos: um diálogo só
+  if (!note && document.getElementById("keygate-note")) return;
+  const body = document.createElement("div");
+  const p = document.createElement("div");
+  p.className = "empty-note";
+  p.id = "keygate-note";
+  p.textContent = note ||
+    T("These projects require an access key. Ask whoever started the server.");
+  const input = document.createElement("input");
+  input.type = "password";
+  input.className = "keygate-input";
+  input.placeholder = T("access key");
+  const btn = document.createElement("button");
+  btn.className = "keygate-btn";
+  btn.textContent = T("enter");
+  const join = async () => {
+    const v = input.value.trim();
+    if (!v) return;
+    setAccessKey(v);
+    document.getElementById("perth-overlay")?.remove();
+    try {
+      await bootData();
+      window.PerthPresence?.reconnect();
+      refreshShareBtn();
+      refreshBackground();
+    } catch (err) {
+      isKeyError(err) ? showKeyGate(T("wrong key — try again"))
+                      : bootFailed(err);
+    }
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") join();
+    e.stopPropagation();   // não deixa o atalho global comer a digitação
+  });
+  btn.addEventListener("click", join);
+  body.append(p, input, btn);
+  showOverlay("Access key", body);
+  setTimeout(() => input.focus(), 0);
+}
+
 // Transmissão desligada pelo host: sem retry automático (o servidor recusa
 // a conexão), mas com um botão para tentar de novo quando religarem
 function showShareOff() {
@@ -2630,25 +2692,35 @@ el.chatInput?.addEventListener("keydown", (e) => {
 /* Inicialização                                                        */
 /* ------------------------------------------------------------------ */
 
+// Carga inicial dos dados — separada do init porque o diálogo da chave a
+// refaz depois que o usuário digita a chave certa (ver showKeyGate)
+async function bootData() {
+  state.knownRev = await fetchRev();
+  await loadProjects();
+  scrollToToday();
+  // Homescreen só na primeira visita (ou sem projetos): com o botão de
+  // troca gantt<->kanban, reabrir a cada navegação atrapalhava o fluxo.
+  // File -> Home screen continua abrindo sob demanda.
+  if (!state.projects.length || !localStorage.getItem("perth-welcome-seen")) {
+    showWelcome();
+  }
+  localStorage.setItem("perth-welcome-seen", "1");
+}
+
+function bootFailed(err) {
+  console.error(err);
+  const net = err instanceof TypeError && /fetch/i.test(err.message);
+  el.statusLeft.textContent = net
+    ? "no connection to the server — is Perth.run() active?"
+    : `startup error: ${err.message}`;
+}
+
 (async function init() {
   applyUI();
   try {
-    state.knownRev = await fetchRev();
-    await loadProjects();
-    scrollToToday();
-    // Homescreen só na primeira visita (ou sem projetos): com o botão de
-    // troca gantt<->kanban, reabrir a cada navegação atrapalhava o fluxo.
-    // File -> Home screen continua abrindo sob demanda.
-    if (!state.projects.length || !localStorage.getItem("perth-welcome-seen")) {
-      showWelcome();
-    }
-    localStorage.setItem("perth-welcome-seen", "1");
+    await bootData();
   } catch (err) {
-    console.error(err);
-    const net = err instanceof TypeError && /fetch/i.test(err.message);
-    el.statusLeft.textContent = net
-      ? "no connection to the server — is Perth.run() active?"
-      : `startup error: ${err.message}`;
+    isKeyError(err) ? showKeyGate() : bootFailed(err);
   }
   setInterval(pollFallback, POLL_MS);
   refreshShareBtn();   // estado inicial do botão de transmitir da menubar
@@ -2745,7 +2817,8 @@ el.chatInput?.addEventListener("keydown", (e) => {
       onShare: () => refreshShare(),
       // o REPL trocou a imagem de fundo: aplica sem reload
       onBackground: applyBackground,
-      onDenied: (reason) => { if (reason === "share_off") showShareOff(); },
+      onDenied: (reason) =>
+        reason === "share_off" ? showShareOff() : showKeyGate(),
     });
     // cursores são ancorados a elementos: reancorar em scroll/resize
     tlBody?.addEventListener("scroll", PerthPresence.refreshCursors,

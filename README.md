@@ -189,7 +189,8 @@ exactly like `Perth.kanban(share = true)`, and edits push an instant
 instead of waiting for the next poll. `key = "…"` requires that access
 key from every non-host machine (embedded automatically in the LAN links
 Perth prints, so nobody has to type it) — both on the WebSocket and on
-the REST API.
+the REST API. Whoever opens the page without it is asked for the key on
+screen, and the browser keeps it for the rest of the session.
 
 **Security:** without `key`, anyone on the network who knows the port
 can open and edit every project — same caveat as the kanban. Never
@@ -210,6 +211,8 @@ The file is read from the machine running the server and served at
 `/background`; replacing it on disk changes the background on the next
 reload, and `background!` itself lands live on open browsers. It stays in
 `settings.json` in the data directory, next to the other preferences.
+Being the only route that serves bytes from outside the frontend, it
+sits behind the access key like the API does.
 
 There is no upload endpoint on purpose. Both servers listen on `0.0.0.0`
 so sharing can be toggled live, and an upload would be a *write* surface

@@ -225,9 +225,20 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
     return url
 end
 
+# Veredito do porteiro para uma requisição HTTP (o WS tem o seu, logo
+# abaixo): :not_shared (transmissão desligada), :need_key (rota de dados sem
+# a chave) ou :ok. Vive fora do handler para poder ser testado com um IP
+# remoto de mentira — do loopback, que é isento, o teste seria sempre :ok.
+function _gantt_gate(path::AbstractString, ip::AbstractString, qp)
+    _gantt_share_ok(ip) || return :not_shared
+    (_key_protected(path) && !_keyok(ip, qp, GANTT_KEY[])) && return :need_key
+    return :ok
+end
+
 # WebSocket exige handler de stream; o resto delega ao router de Request.
 # Quando há chave configurada, máquinas que não são o host precisam dela
-# tanto no upgrade do WS quanto nas rotas /api/* (mesmo modelo do kanban).
+# tanto no upgrade do WS quanto nas rotas de dados (ver _key_protected —
+# mesmo modelo do kanban).
 function _gantt_handler(router)
     return function (http::HTTP.Stream)
         ip = _peer_ip(http)
@@ -236,14 +247,12 @@ function _gantt_handler(router)
         catch
             Dict{String,String}()
         end
-        keyok = isempty(GANTT_KEY[]) || _presence_is_host(ip) ||
-                get(qp, "key", "") == GANTT_KEY[]
-        # porteiro da transmissão, antes de tudo: com o share desligado a
-        # porta existe (para o botão poder religá-la) mas só atende o host
-        share_ok = _gantt_share_ok(ip)
         if HTTP.WebSockets.isupgrade(http.message)
-            share_ok || return HTTP.WebSockets.upgrade(
+            # porteiro da transmissão, antes de tudo: com o share desligado a
+            # porta existe (para o botão poder religá-la) mas só atende o host
+            _gantt_share_ok(ip) || return HTTP.WebSockets.upgrade(
                 ws -> _presence_deny(ws, "share_off"), http)
+            keyok = _keyok(ip, qp, GANTT_KEY[])
             HTTP.WebSockets.upgrade(ws -> _presence_ws(GANTT_HUB, ws, ip, keyok;
                                                        extra_init = (; rev = _state().rev)),
                                     http)
@@ -251,10 +260,11 @@ function _gantt_handler(router)
             # o router não vê o stream: propaga o IP p/ o log de atividades
             HTTP.setheader(http.message, "X-Perth-Peer" => ip)
             path = HTTP.URI(http.message.target).path
-            if !share_ok
+            verdict = _gantt_gate(path, ip, qp)
+            if verdict === :not_shared
                 HTTP.streamhandler(_ -> _error("this Perth server is not sharing to the network";
                                                status = 403))(http)
-            elseif startswith(path, "/api/") && !keyok
+            elseif verdict === :need_key
                 HTTP.streamhandler(_ -> _error("access key required"; status = 403))(http)
             elseif path == "/api/share"
                 # fica fora do router de propósito: o toggle é do host, e só

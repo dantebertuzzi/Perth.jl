@@ -5,6 +5,31 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Security
+- The access key (`key = "…"`) now also protects `/background`. It was
+  the one route outside `/api/` serving bytes from outside the frontend
+  — the image `Perth.background!` points at — so any machine on the
+  network could fetch the picture without the key, while
+  `/api/background` (its metadata) was refused. Both frontends now send
+  the key with the image URL.
+
+### Added
+- Gantt: the access key can be typed in the UI. Opening a keyed server
+  without `?key=` used to end in `startup error: access key required`
+  in the status bar and nothing else — the link with the key in it was
+  the only way in, so a bookmark, the PWA's `start_url` or a link
+  passed on without the query left you stuck. It now asks for the key
+  (the dialog the kanban already had) and keeps it in `sessionStorage`,
+  so a reload without the query still works.
+
+### Fixed
+- Kanban: the WebSocket refusal for a missing key now carries
+  `reason: "key"`, like the gantt's and like the protocol documented in
+  `presence.jl` (it was sent bare, and the client only picked the right
+  dialog by falling through the `share_off` branch).
+
 ## [0.6.0] - 2026-08-12
 
 ### Added

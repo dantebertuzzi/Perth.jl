@@ -437,6 +437,31 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
 .empty-note { color: var(--muted); padding: 12px 0; }
 .alias-hint { font-size: 10.5px; color: var(--muted); margin-top: 10px; }
 
+/* ---------- diálogo da chave de acesso (gantt e kanban) ---------- */
+
+.keygate-input {
+  width: 100%;
+  margin-top: 12px;
+  font-size: 13px;
+  padding: 7px 10px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+}
+.keygate-input:focus { border-color: var(--purple); outline: none; }
+.keygate-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--purple);
+  border: none;
+  border-radius: 8px;
+}
+.keygate-btn:hover { filter: brightness(1.08); }
+
 /* ---------- compartilhar / QR (diálogo Share do gantt e do kanban) ---------- */
 
 .share-url {

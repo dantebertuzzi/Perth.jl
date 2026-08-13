@@ -60,6 +60,11 @@ const urlKey = new URLSearchParams(location.search).get("key");
 if (urlKey) sessionStorage.setItem("perth-kanban-key", urlKey);
 const accessKey = () => sessionStorage.getItem("perth-kanban-key") || "";
 const keyQS = () => (accessKey() ? "?key=" + encodeURIComponent(accessKey()) : "");
+// idem, para caminhos que já trazem query (ex.: /background?v=…)
+const withKey = (path) =>
+  !accessKey() ? path
+    : path + (path.includes("?") ? "&" : "?") +
+      "key=" + encodeURIComponent(accessKey());
 
 const state = {
   board: { columns: [] },
@@ -2450,13 +2455,14 @@ function renderShare(body, info) {
 }
 
 function showKeyGate() {
+  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const body = document.createElement("div");
   const p = document.createElement("div");
   p.className = "empty-note";
-  p.textContent = "This board requires an access key. Ask whoever started the server.";
+  p.textContent = T("This board requires an access key. Ask whoever started the server.");
   const input = document.createElement("input");
   input.type = "password";
-  input.placeholder = "access key";
+  input.placeholder = T("access key");
   input.className = "keygate-input";
   const join = () => {
     const v = input.value.trim();
@@ -2465,6 +2471,7 @@ function showKeyGate() {
     state.denied = false;
     closeModal();
     connect();
+    refreshBackground();   // o fundo tinha levado 403 sem a chave
   };
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") join();
@@ -2472,10 +2479,10 @@ function showKeyGate() {
   });
   const btn = document.createElement("button");
   btn.className = "keygate-btn";
-  btn.textContent = "enter board";
+  btn.textContent = T("enter board");
   btn.addEventListener("click", join);
   body.append(p, input, btn);
-  showModal("Access key", body, "keygate");
+  showModal(T("Access key"), body, "keygate");
   setTimeout(() => input.focus(), 0);
 }
 
@@ -2875,7 +2882,9 @@ function applyBackground(info) {
   const root = document.documentElement;
   const on = !!(info && info.set) && !hideBgToggle.checked;
   root.classList.toggle("has-bg", on);
-  root.style.setProperty("--perth-bg", on ? `url("${encodeURI(info.url)}")` : "none");
+  // /background é endpoint de dados: pede a chave como o resto da API
+  root.style.setProperty("--perth-bg",
+                         on ? `url("${encodeURI(withKey(info.url))}")` : "none");
   root.style.setProperty("--perth-bg-opacity", on ? String(info.opacity ?? 0.18) : "0");
 }
 

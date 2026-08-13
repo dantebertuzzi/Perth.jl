@@ -162,6 +162,15 @@ window.PerthI18n = (function () {
       "The machine running Perth stopped transmitting these projects.":
         "A máquina que roda o Perth parou de transmitir estes projetos.",
       "try again": "tentar de novo",
+      "Access key": "Chave de acesso",
+      "These projects require an access key. Ask whoever started the server.":
+        "Estes projetos exigem uma chave de acesso. Peça a quem subiu o servidor.",
+      "This board requires an access key. Ask whoever started the server.":
+        "Este quadro exige uma chave de acesso. Peça a quem subiu o servidor.",
+      "access key": "chave de acesso",
+      "enter": "entrar",
+      "enter board": "entrar no quadro",
+      "wrong key — try again": "chave incorreta — tente de novo",
       "could not load share info":
         "não foi possível carregar os dados de compartilhamento",
       "not sharing": "sem transmissão",
@@ -383,6 +392,15 @@ window.PerthI18n = (function () {
       "The machine running Perth stopped transmitting these projects.":
         "La máquina que ejecuta Perth dejó de transmitir estos proyectos.",
       "try again": "intentar de nuevo",
+      "Access key": "Clave de acceso",
+      "These projects require an access key. Ask whoever started the server.":
+        "Estos proyectos requieren una clave de acceso. Pídesela a quien inició el servidor.",
+      "This board requires an access key. Ask whoever started the server.":
+        "Este tablero requiere una clave de acceso. Pídesela a quien inició el servidor.",
+      "access key": "clave de acceso",
+      "enter": "entrar",
+      "enter board": "entrar al tablero",
+      "wrong key — try again": "clave incorrecta — inténtalo de nuevo",
       "could not load share info": "no se pudo cargar la información de compartir",
       "not sharing": "sin transmisión",
       "Rename machines…": "Renombrar máquinas…",
@@ -599,6 +617,15 @@ window.PerthI18n = (function () {
       "The machine running Perth stopped transmitting these projects.":
         "La machine qui exécute Perth a arrêté de diffuser ces projets.",
       "try again": "réessayer",
+      "Access key": "Clé d'accès",
+      "These projects require an access key. Ask whoever started the server.":
+        "Ces projets demandent une clé d'accès. Demandez-la à qui a lancé le serveur.",
+      "This board requires an access key. Ask whoever started the server.":
+        "Ce tableau demande une clé d'accès. Demandez-la à qui a lancé le serveur.",
+      "access key": "clé d'accès",
+      "enter": "entrer",
+      "enter board": "entrer dans le tableau",
+      "wrong key — try again": "clé incorrecte — réessayez",
       "could not load share info": "impossible de charger les infos de partage",
       "not sharing": "pas de diffusion",
       "Rename machines…": "Renommer les machines…",
@@ -814,6 +841,15 @@ window.PerthI18n = (function () {
       "The machine running Perth stopped transmitting these projects.":
         "运行 Perth 的机器已停止广播这些项目。",
       "try again": "重试",
+      "Access key": "访问密钥",
+      "These projects require an access key. Ask whoever started the server.":
+        "这些项目需要访问密钥。请向启动服务器的人索取。",
+      "This board requires an access key. Ask whoever started the server.":
+        "此看板需要访问密钥。请向启动服务器的人索取。",
+      "access key": "访问密钥",
+      "enter": "进入",
+      "enter board": "进入看板",
+      "wrong key — try again": "密钥错误 — 请重试",
       "could not load share info": "无法加载分享信息",
       "not sharing": "未广播",
       "Rename machines…": "重命名设备…",
