@@ -85,7 +85,12 @@ function _resolve_save_path(p::Project, raw::AbstractString)
     raw = strip(raw)
     path = abspath(expanduser(raw))
     if isdir(path) || endswith(raw, '/') || endswith(raw, '\\')
-        slug = strip(replace(lowercase(p.name), r"[^a-z0-9]+" => "-"), '-')
+        # acento é transliterado, não descartado: sem isto "Análise
+        # estatística" virava o arquivo "an-lise-estat-stica.perth.jl".
+        # Mesma armadilha do slug de board no kanban (ver _slugify), e este
+        # é um nome que o usuário vê e convive.
+        ascii = Unicode.normalize(lowercase(p.name); stripmark = true)
+        slug = strip(replace(ascii, r"[^a-z0-9]+" => "-"), '-')
         isempty(slug) && (slug = p.id)
         path = joinpath(path, "$(slug).perth.jl")
     end

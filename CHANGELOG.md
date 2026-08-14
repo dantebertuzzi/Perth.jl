@@ -8,6 +8,32 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Fixed
+- An accented project name no longer produces a mangled `.perth.jl` file
+  name. `"Análise estatística"` became `an-lise-estat-stica.perth.jl` —
+  the same swallowed-accent bug as the kanban board slug, in the path
+  the save box builds when you point it at a folder, and a file name you
+  see and live with. A name that reduces to nothing still falls back to
+  the project id.
+- Gantt: the chart now redraws just after midnight. Everything derived
+  from *today* — the today line, the `past deadline` highlight, the
+  deadline flags' slip count — is built inside `render*()`, which runs
+  when the revision changes, not when the clock moves: a Gantt left open
+  on an office wall overnight kept drawing yesterday's today line until
+  somebody edited something.
+- Tests: the `gantt · prazo e data fixa` block closed its jsdom window
+  without letting the async `init()` settle. The orphaned `init()` would
+  wake against a destroyed `document` and take the whole process down —
+  reported with a stack pointing at whichever block happened to yield
+  next, which is a bad afternoon for whoever hits it.
+
+### Added
+- `.gitattributes` freezing line endings as stored (`* -text`). The
+  repository is mostly CRLF, and a clone on a machine with
+  `core.autocrlf=true` — Git's default on Windows, which the README
+  already documents using — would rewrite every file at checkout. It
+  does not stop an editor from writing the wrong ending inside a file;
+  that still shows up as a diff, which is where it belongs.
+
 - Kanban: an accented board name no longer produces a mangled file name.
   `_slugify` dropped anything outside `[a-z0-9_-]`, so `"cálculo"` became
   the slug `clculo` and `"estatística"` became `estatstica` — typing the
