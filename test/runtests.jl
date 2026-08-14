@@ -1924,6 +1924,100 @@ end
                                  Date(2026, 8, 3), Date(2026, 8, 12)) == 10
     end
 
+    @testset "ponte de campos: boards que não estão carregados" begin
+        # Regressão de uso real: a ponte só espelhava no board ATIVO, então
+        # um card vinculado num board qualquer parava de acompanhar o gantt
+        # assim que você trocasse de board — e não se recuperava, porque
+        # voltar ao board só relê o arquivo, que já estava velho. Com o
+        # kanban tendo um board por vez, bastava ter dois para a ponte
+        # deixar de valer no segundo.
+        # um diretório só, como em produção: o board vive no mesmo data
+        # dir dos projetos (os .json de projeto não colidem — a varredura
+        # olha só o prefixo kanban)
+        bdir = mktempdir()
+        Perth._init_state!(bdir)
+        Perth._init_kanban!(bdir; name = "obra")
+        p = create_project("Dois boards")
+        t = add_task!(p, "Original"; start = Date(2026, 9, 1), duration = 3,
+                      assignee = "Ana")
+        kanban_from_project!(p)
+        @test [c.text for c in kanban_cards()] == ["Original"]
+
+        cardsof(slug) = begin      # lê o board direto do arquivo
+            file = first(Perth._board_paths(bdir, slug))
+            b = Perth._plain(JSON3.read(read(file, String)))
+            [card for col in b["columns"] for card in col["cards"]]
+        end
+
+        # troca de board e edita a tarefa: o card do board "obra" tem de
+        # acompanhar mesmo estando só em disco
+        kanban_board!("outro")
+        update_task!(project("Dois boards"), t.id;
+                     name = "Renomeada", assignee = "Bruno", duration = 6,
+                     progress = 100)
+        card = only(cardsof("obra"))
+        @test String(card["text"]) == "Renomeada"
+        @test String(card["assignee"]) == "Bruno"
+        @test String(card["due"]) == "2026-09-06"
+        @test card["done"] === true
+        # done_at é o que alimenta o auto-arquivamento: o board em disco não
+        # pode ficar num formato que o board carregado nunca produziria
+        @test haskey(card, "done_at")
+
+        # reabrir o board mostra o que o gantt gravou, sem surpresa
+        kanban_board!("obra")
+        @test [c.text for c in kanban_cards()] == ["Renomeada"]
+
+        # reabrir o gantt na direção contrária continua funcionando
+        update_task!(project("Dois boards"), t.id; progress = 0)
+        @test only(cardsof("obra"))["done"] === false
+        @test !haskey(only(cardsof("obra")), "done_at")
+
+        # esvaziar o responsável apaga a chave, como faz o setAssignee
+        kanban_board!("outro")
+        update_task!(project("Dois boards"), t.id; assignee = "")
+        @test !haskey(only(cardsof("obra")), "assignee")
+
+        # board sem card do projeto não é regravado: a porta barata (o id do
+        # projeto no texto cru) evita fazer parse de tudo a cada save
+        vazio = first(Perth._board_paths(bdir, "outro"))
+        Perth._kanban_persist(Perth._kanban_state())
+        antes = mtime(vazio)
+        sleep(0.05)
+        update_task!(project("Dois boards"), t.id; name = "Outra vez")
+        @test mtime(vazio) == antes
+
+        # arquivo de board ilegível não derruba o salvamento do projeto.
+        # Precisa citar o id do projeto: sem isso a porta barata o descarta
+        # antes de qualquer parse — que é o comportamento desejado, e o
+        # motivo de lixo solto no diretório não custar nem um aviso.
+        quebrado = joinpath(bdir, "kanban-quebrado.json")
+        write(quebrado, "{ isto não é json, mas cita " * p.id)
+        @test_logs (:warn,) match_mode = :any begin
+            update_task!(project("Dois boards"), t.id; name = "Depois do lixo")
+        end
+        @test String(only(cardsof("obra"))["text"]) == "Depois do lixo"
+        rm(quebrado)
+        # lixo que NÃO cita o projeto nem é aberto: nenhum aviso
+        write(joinpath(bdir, "kanban-lixo.json"), "{ nem json nem projeto")
+        @test_logs min_level = Logging.Warn begin
+            update_task!(project("Dois boards"), t.id; name = "Depois do lixo 2")
+        end
+
+        # e vale com o kanban NUNCA aberto nesta sessão: os cards estão em
+        # disco independentemente de alguém ter olhado o board
+        antigo = Perth.KANBAN[]
+        try
+            Perth.KANBAN[] = nothing
+            update_task!(project("Dois boards"), t.id; name = "Sem kanban aberto")
+            @test String(only(cardsof("obra"))["text"]) == "Sem kanban aberto"
+        finally
+            Perth.KANBAN[] = antigo
+        end
+
+        Perth._init_kanban!(mktempdir())
+    end
+
     include("splash.jl")
 
 end

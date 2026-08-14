@@ -5,6 +5,34 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- Kanban: the Gantt→kanban bridge now mirrors into **every** board, not
+  just the one currently loaded. A card linked to a Gantt task only
+  followed the project while its board was the active one: editing the
+  task with another board open left the card stale **permanently**, since
+  coming back to the board merely re-reads a file that was already out of
+  date. With the kanban holding one board at a time, having two boards
+  was enough for the bridge to stop meaning anything on the second — and
+  the drift was silent, which is the worst part: the board looks fine and
+  disagrees with the plan.
+
+  Fixing it needed no multi-board state. Boards that are not loaded have
+  no connected clients by definition, so there is nothing to broadcast
+  and no activity log to write: the sync reads the file, applies the same
+  field rules, and rewrites it atomically. The mirroring rule itself was
+  extracted into one function (`_card_task_diff`) used by both paths — as
+  two copies it would have diverged on the first change.
+
+  The scan is gated on the raw file text containing the project id, so
+  boards with no linked card are never parsed. Measured at 0.43 ms of a
+  0.9 ms save with 7 boards and 47 KB of board files; a data directory
+  with no kanban at all pays one `readdir`.
+
+  It also applies with the kanban never opened in this session: the cards
+  are on disk whether or not anyone looked at them.
+
 ## [0.7.0] - 2026-08-13
 
 ### Security
