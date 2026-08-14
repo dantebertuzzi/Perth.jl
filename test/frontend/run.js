@@ -68,6 +68,7 @@ function loadKanbanApp() {
     w.document.head.appendChild(s);
   };
   inject(read("frontend/shared/i18n.js"));
+  inject(read("frontend/shared/background.js"));
   inject(read("frontend/kanban/app.js"));
 
   // Roda `code` como mais um <script> na mesma página — mesmo ambiente
@@ -120,6 +121,7 @@ function loadGanttApp(opts = {}) {
   };
   inject(read("frontend/shared/i18n.js"));
   inject(read("frontend/shared/presence.js"));
+  inject(read("frontend/shared/background.js"));
   inject(read("frontend/app.js"));
 
   const runIn = (code) => {
@@ -869,6 +871,104 @@ console.log("gantt · transmitir (share)");
  * ------------------------------------------------------------------ */
 
 const bgPayload = `{ set: true, url: "/background?v=abc123", opacity: 0.3, name: "foto.jpg" }`;
+
+console.log("fundo da UI · rotação de imagens (shared/background.js)");
+{
+  // Roda contra o app do kanban só porque precisa de UMA página montada;
+  // o módulo é o mesmo nos dois (o gantt injeta o mesmo arquivo).
+  const { w, runIn, close } = loadKanbanApp();
+
+  const rot = (interval) => `{ set: true, opacity: 0.4, interval: ${interval},
+    url: "/background?v=a", name: "a.png",
+    images: [{ url: "/background?v=a", name: "a.png" },
+             { url: "/background?i=1&v=b", name: "b.png" },
+             { url: "/background?i=2&v=c", name: "c.jpg" }] }`;
+
+  // índice derivado do relógio: quem calcula é cada navegador, sem tick do
+  // servidor — então a conta tem de bater com a do próximo cliente
+  let r = runIn(`applyBackground(${rot(60)});
+    const per = 60000;
+    return { i: PerthBackground.indexNow(),
+             esperado: Math.floor(Date.now() / per) % 3,
+             n: PerthBackground.images().length,
+             img: document.documentElement.style.getPropertyValue("--perth-bg"),
+             op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
+  check(r.n === 3, "a rotação chega inteira do servidor");
+  check(r.i === r.esperado, "o índice em exibição sai do relógio (mesma conta em toda máquina)");
+  check(new RegExp(`background\\?(i=${r.i}&)?v=`).test(r.img),
+        "e a camada aponta a imagem desse índice");
+  check(r.op === "0.4", "opacidade vem do servidor, como antes");
+
+  // payload antigo (sem `images`) continua valendo: um cliente pode estar
+  // aberto de antes da feature
+  r = runIn(`applyBackground({ set: true, url: "/background?v=x", opacity: 0.2 });
+    return { n: PerthBackground.images().length,
+             img: document.documentElement.style.getPropertyValue("--perth-bg") };`);
+  check(r.n === 1 && /v=x/.test(r.img), "payload de uma imagem só (formato antigo) segue funcionando");
+
+  // intervalo 0 = sem rotação: fica na primeira, sem timer
+  r = runIn(`applyBackground(${rot(0)});
+    return PerthBackground.indexNow();`);
+  check(r === 0, "interval = 0 trava na primeira imagem");
+
+  // a troca é apagar -> trocar a imagem no vale -> acender. O vale (camada
+  // em opacidade 0, só a cor do papel aparecendo) É o escurecimento pedido.
+  // O relógio é adiantado na mão: é dele que sai o índice, então empurrar
+  // Date.now um período à frente é exatamente o que acontece na virada.
+  r = runIn(`applyBackground(${rot(60)});
+    const st = document.documentElement.style;
+    window.__antes = { i: PerthBackground.indexNow(),
+                       img: st.getPropertyValue("--perth-bg") };
+    window.__realNow = Date.now;
+    Date.now = () => window.__realNow() + 60000;   // um período à frente
+    PerthBackground.tick();
+    return { antesIdx: window.__antes.i,
+             agoraIdx: PerthBackground.indexNow(),
+             opNoVale: st.getPropertyValue("--perth-bg-opacity"),
+             imgNoVale: st.getPropertyValue("--perth-bg") };`);
+  check(r.agoraIdx === (r.antesIdx + 1) % 3, "um período adiante = próxima imagem");
+  check(r.opNoVale === "0", "a troca começa apagando a camada (o escurecimento)");
+  check(r.imgNoVale === w.__antes.img,
+        "e a imagem só troca no vale, não antes — nada de corte seco");
+
+  await new Promise((res) => setTimeout(res, 600));   // passa o fade
+
+  r = runIn(`const st = document.documentElement.style;
+    return { img: st.getPropertyValue("--perth-bg"),
+             op: st.getPropertyValue("--perth-bg-opacity"),
+             mudou: st.getPropertyValue("--perth-bg") !== window.__antes.img };`);
+  check(r.mudou === true, "passado o vale, a imagem é a nova");
+  check(r.op === "0.4", "e a camada volta à opacidade do servidor");
+  check(/i=/.test(r.img) || /v=a/.test(r.img), "apontando uma das URLs da rotação");
+
+  runIn(`Date.now = window.__realNow; return null;`);   // devolve o relógio
+
+  // esconder localmente para a rotação (não adianta girar o que não se vê)
+  r = runIn(`applyBackground(${rot(60)});
+    const t = document.getElementById("hide-bg-toggle");
+    t.checked = true;
+    t.dispatchEvent(new Event("change"));
+    return { has: document.documentElement.classList.contains("has-bg"),
+             op: document.documentElement.style.getPropertyValue("--perth-bg-opacity"),
+             servidor: PerthBackground.images().length };`);
+  check(r.has === false && r.op === "0", "esconder apaga a camada");
+  check(r.servidor === 3, "e não mexe no que o servidor mandou");
+
+  r = runIn(`const t = document.getElementById("hide-bg-toggle");
+    t.checked = false;
+    t.dispatchEvent(new Event("change"));
+    return { has: document.documentElement.classList.contains("has-bg"),
+             op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
+  check(r.has === true && r.op === "0.4", "desmarcar traz a rotação de volta sem recarregar");
+
+  // sem fundo nenhum: nada de URL velha pendurada na camada
+  r = runIn(`applyBackground({ set: false });
+    return { img: document.documentElement.style.getPropertyValue("--perth-bg"),
+             n: PerthBackground.images().length };`);
+  check(/none/.test(r.img) && r.n === 0, "sem fundo, a camada solta a imagem que segurava");
+
+  close();
+}
 
 console.log("kanban · fundo da UI");
 {

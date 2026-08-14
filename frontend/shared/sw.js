@@ -7,7 +7,8 @@
 
 const CACHE = "perth-static-v1";
 const STATIC = ["/", "/style.css", "/app.js", "/logo.png", "/favicon.svg",
-                "/shared/ui.css", "/shared/presence.js", "/shared/i18n.js"];
+                "/shared/ui.css", "/shared/presence.js", "/shared/i18n.js",
+                "/shared/background.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE)

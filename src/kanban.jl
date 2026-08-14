@@ -1145,6 +1145,7 @@ const _KANBAN_FILES = Dict(
     "/shared/presence.js" => ("shared/presence.js", :main),
     "/shared/i18n.js" => ("shared/i18n.js", :main),
     "/shared/draggable.js" => ("shared/draggable.js", :main),
+    "/shared/background.js" => ("shared/background.js", :main),
     "/manifest.webmanifest" => ("kanban/manifest.webmanifest", :root),
     "/sw.js" => ("shared/sw.js", :root),
 )
@@ -1351,7 +1352,7 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
     # Fundo da UI: bytes vêm de fora do frontend (caminho apontado pelo
     # REPL), então não passa pela whitelist de arquivos estáticos — e por
     # isso a chave o protege como um endpoint de dados (_key_protected)
-    path == "/background" && return _bg_response()
+    path == "/background" && return _bg_response(req)
     entry = get(_KANBAN_FILES, path, nothing)
     entry === nothing && return _error("not found"; status = 404)
     name, origin = entry

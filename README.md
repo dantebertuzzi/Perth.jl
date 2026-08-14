@@ -219,36 +219,53 @@ disconnects nobody, since nothing they hold became invalid.
 can open and edit every project — same caveat as the kanban. Never
 expose the port to the internet.
 
-### A background image
+### A background image (or a slideshow)
 
-A local image can sit behind the UI — both apps, every connected
-browser:
+Local images can sit behind the UI — both apps, every connected browser:
 
 ```julia
 Perth.background!("~/Pictures/office.jpg")
+Perth.background!("~/Pictures/walls/"; interval = 90)   # a folder: cycles
+Perth.background!(["~/a.jpg", "~/b.png"])
 Perth.background!(opacity = 0.35)   # how much of the image shows through (0–1)
 Perth.background_clear!()
 ```
 
-The file is read from the machine running the server and served at
-`/background`; replacing it on disk changes the background on the next
-reload, and `background!` itself lands live on open browsers. It stays in
-`settings.json` in the data directory, next to the other preferences.
-Being the only route that serves bytes from outside the frontend, it
-sits behind the access key like the API does.
+Point at a file, a list of files, or a folder. With more than one image
+the UI cycles: the current one fades out, the next fades in over the
+paper colour. Every browser derives *which* image is showing from the
+wall clock, so all of them are on the same photo without the server
+ticking, and a tab opened late lands in phase.
+
+Files are read from the machine running the server and served at
+`/background`; replacing one on disk changes the background on the next
+reload, and `background!` itself lands live on open browsers. The setting
+stays in `settings.json` in the data directory, next to the other
+preferences. Being the only route that serves bytes from outside the
+frontend, it sits behind the access key like the API does.
+
+**A folder is read once, when you point at it** — it becomes a frozen
+list, not a directory watched live. Anything in it that is not a usable
+image is skipped (the log line says how many were taken and how many
+were left out), and anything dropped in *afterwards* is not published to
+your network behind your back: add photos by calling `background!` on
+the folder again. That also keeps the rotation identical on every
+machine, which is what lets the clock decide the current image with no
+coordination.
 
 There is no upload endpoint on purpose. Both servers listen on `0.0.0.0`
 so sharing can be toggled live, and an upload would be a *write* surface
 on a LAN-reachable port; pointing at a path grants nothing new, since
-whoever has the REPL already has the disk. The file is validated by
-content (PNG, JPEG, GIF or WebP, up to 12 MB), not by extension, so a
-mistyped path doesn't become a file published to the network.
+whoever has the REPL already has the disk. Every file is validated by
+content (PNG, JPEG, GIF or WebP, up to 12 MB each), not by extension, so
+a mistyped path doesn't become a file published to the network.
 
 The default opacity is deliberately low: panels, cards and bars keep
 their solid surfaces and the image fills the space around them. Each
 browser can hide it locally from the settings panel (*Hide background*) —
 a rendering preference, like *Hide other cursors*, not a way to keep the
-image private.
+image private. Point at a folder you would be comfortable showing on the
+office wall.
 
 ## Kanban: a shared board for the office
 
@@ -465,7 +482,7 @@ frontend/
   index.html, style.css, app.js   the gantt — vanilla JS, no build step
   kanban/                         the board, same stack
   shared/                         ui.css, presence.js, i18n.js,
-                                  draggable.js, sw.js
+                                  draggable.js, background.js, sw.js
 ```
 
 Both servers bind `0.0.0.0` and decide per connection who gets in (see

@@ -1338,6 +1338,132 @@ end
         Perth._init_state!(tmp)   # devolve o estado global do resto da suíte
     end
 
+    @testset "fundo da UI: rotação de imagens" begin
+        bgtmp = mktempdir()
+        Perth._init_state!(bgtmp)
+        png(n) = vcat(UInt8[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+                      fill(UInt8(n), 24))
+        jpg = vcat(UInt8[0xFF, 0xD8, 0xFF], fill(UInt8(9), 24))
+
+        pasta = joinpath(bgtmp, "fundos")
+        mkpath(pasta)
+        write(joinpath(pasta, "b.png"), png(2))
+        write(joinpath(pasta, "a.png"), png(1))
+        write(joinpath(pasta, "c.jpg"), jpg)
+        # o que a pasta tem e não serve: ignorado, não é erro
+        write(joinpath(pasta, "leiame.txt"), "não sou imagem")
+        write(joinpath(pasta, "mentira.png"), "extensão .png, conteúdo de texto")
+        mkpath(joinpath(pasta, "subpasta"))
+        write(joinpath(pasta, "subpasta", "d.png"), png(4))
+
+        got = Perth.background!(pasta)
+        @test got isa Vector{String}
+        # ordenada por nome: é a ordem que todos os navegadores usam para
+        # concordar sobre qual foto está em exibição agora
+        @test basename.(got) == ["a.png", "b.png", "c.jpg"]
+        @test Perth.backgrounds() == got
+        @test Perth.background() == got[1]        # a primeira, para quem só quer uma
+
+        info = Perth._bg_payload()
+        @test info.set == true
+        @test length(info.images) == 3
+        @test info.name == "a.png"                 # compat: descreve a primeira
+        @test info.url == info.images[1].url
+        @test info.url == first(info.images).url && !occursin("i=", info.url)
+        @test occursin("i=1&", info.images[2].url) && occursin("i=2&", info.images[3].url)
+        @test [i.name for i in info.images] == ["a.png", "b.png", "c.jpg"]
+        @test info.interval == Perth._BG_DEFAULT_INTERVAL
+
+        # cada índice serve os bytes da sua imagem; fora da faixa é 404
+        @test Perth._bg_response(0).body == png(1)
+        @test Perth._bg_response(1).body == png(2)
+        @test Perth._bg_response(2).body == jpg
+        @test HTTP.header(Perth._bg_response(2), "Content-Type") == "image/jpeg"
+        @test Perth._bg_response(3).status == 404
+        @test Perth._bg_response(-1).status == 404
+        # o índice vem da query (?i=N); lixo vira a primeira, não erro
+        @test Perth._bg_response(HTTP.Request("GET", "/background?i=1")).body == png(2)
+        @test Perth._bg_response(HTTP.Request("GET", "/background")).body == png(1)
+        @test Perth._bg_response(HTTP.Request("GET", "/background?i=abc")).body == png(1)
+
+        # a lista é CONGELADA: o que cair na pasta depois não é publicado
+        # para a rede sem alguém apontar de novo
+        write(joinpath(pasta, "intrusa.png"), png(7))
+        @test length(Perth._bg_payload().images) == 3
+        @test Perth._bg_response(3).status == 404
+        Perth.background!(pasta)                   # apontar de novo é que inclui
+        @test length(Perth._bg_payload().images) == 4
+
+        # apagar um arquivo encurta a rotação em vez de dar 404 no meio dela
+        rm(joinpath(pasta, "intrusa.png"))
+        rm(joinpath(pasta, "b.png"))
+        @test basename.(Perth.backgrounds()) == ["a.png", "c.jpg"]
+        @test Perth._bg_response(1).body == jpg
+        @test Perth._bg_response(2).status == 404
+
+        # intervalo: persistente, ajustável sozinho, e 0 desliga a rotação
+        @test Perth._bg_interval() == Perth._BG_DEFAULT_INTERVAL
+        Perth.background!(interval = 15)
+        @test Perth._bg_interval() == 15
+        @test Perth._bg_payload().interval == 15
+        Perth.background!(interval = 0)
+        @test Perth._bg_payload().interval == 0
+        Perth.background!(interval = 90)
+        @test_throws ArgumentError Perth.background!()   # sem imagem nem ajuste
+
+        # persistência no settings.json (a lista vai como JSON)
+        @test isfile(joinpath(bgtmp, "settings.json"))
+        Perth._init_state!(bgtmp)
+        @test length(Perth.backgrounds()) == 2
+        @test Perth._bg_interval() == 90
+
+        # lista explícita: aqui um caminho ruim é engano de quem digitou e
+        # aborta a chamada, ao contrário do descarte silencioso da pasta
+        solta = joinpath(bgtmp, "solta.png")
+        write(solta, png(5))
+        @test Perth.background!([solta, joinpath(pasta, "a.png")]) ==
+              [solta, joinpath(pasta, "a.png")]
+        @test length(Perth.backgrounds()) == 2
+        @test_throws ArgumentError Perth.background!([solta, joinpath(pasta, "leiame.txt")])
+        @test_throws ArgumentError Perth.background!(String[])
+        @test length(Perth.backgrounds()) == 2     # a rotação válida continua
+        # duplicatas somem: duas entradas iguais girariam para a mesma foto
+        @test length(Perth.background!([solta, solta])) == 1
+
+        # uma imagem só volta a gravar no formato antigo (_BG_KEY), que é o
+        # que um Perth anterior a esta feature sabe ler
+        Perth.background!(solta)
+        @test Perth._state().settings[Perth._BG_KEY] == solta
+        @test !haskey(Perth._state().settings, Perth._BG_LIST_KEY)
+        @test Perth._bg_payload().interval == 0    # uma imagem não gira
+        @test length(Perth._bg_payload().images) == 1
+
+        # e apontar uma pasta volta a gravar a lista, limpando a chave antiga
+        Perth.background!(pasta)
+        @test haskey(Perth._state().settings, Perth._BG_LIST_KEY)
+        @test !haskey(Perth._state().settings, Perth._BG_KEY)
+        Perth.background_clear!()
+        @test isempty(Perth.backgrounds()) && Perth.background() === nothing
+        @test !haskey(Perth._state().settings, Perth._BG_LIST_KEY)
+
+        # pasta sem nenhuma imagem utilizável é erro, não rotação vazia
+        vazia = joinpath(bgtmp, "vazia")
+        mkpath(vazia)
+        @test_throws ArgumentError Perth.background!(vazia)
+        write(joinpath(vazia, "x.txt"), "nada aqui")
+        @test_throws ArgumentError Perth.background!(vazia)
+
+        # a rota do kanban entende o índice do mesmo jeito que a do gantt
+        Perth.background!(pasta)
+        krot = Perth._kanban_static(HTTP.Request("GET", "/background?i=1"), "127.0.0.1")
+        @test krot.status == 200 && krot.body == Perth._bg_response(1).body
+        grot = Perth._build_router()(HTTP.Request("GET", "/background?i=1"))
+        @test grot.status == 200 && grot.body == krot.body
+
+        Perth.background_clear!()
+        Perth._init_state!(tmp)
+    end
+
     @testset "QR code (extensão QRCoders)" begin
         # QRCoders importado no topo do arquivo ativa PerthQRCodersExt de
         # verdade — _qr_matrix não é mais o stub `nothing` do pacote base
@@ -1363,7 +1489,8 @@ end
         # Importante: despacha pelo ROUTER construído por _build_router(),
         # não chama _static(...) direto — senão o teste não pega esquecer
         # o HTTP.register!, que foi exatamente o bug original.
-        shared_files = ("ui.css", "presence.js", "i18n.js", "draggable.js")
+        shared_files = ("ui.css", "presence.js", "i18n.js", "draggable.js",
+                        "background.js")
         router = Perth._build_router()
 
         for f in shared_files
