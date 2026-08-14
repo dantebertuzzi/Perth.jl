@@ -57,6 +57,10 @@ function loadKanbanApp() {
   w.fetch = () => new Promise(() => {});   // nunca resolve: nada depende da rede aqui
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   w.structuredClone = structuredClone;     // não existe em window por padrão no jsdom
+  // o jsdom que o CI instala (sempre o mais novo) não traz o namespace
+  // global CSS; some com ele aqui também, senão uma dependência de
+  // CSS.escape passa local e quebra só lá — foi o que aconteceu uma vez
+  delete w.CSS;
 
   const inject = (code) => {
     const s = w.document.createElement("script");
@@ -106,6 +110,7 @@ function loadGanttApp(opts = {}) {
   w.fetch = opts.fetch || (() => Promise.reject(new Error("fetch disabled in test")));
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   w.structuredClone = structuredClone;
+  delete w.CSS;                 // idem loadKanbanApp: espelha o jsdom do CI
   w.console.error = () => {};   // init() loga o fetch rejeitado de propósito acima; ruído esperado
 
   const inject = (code) => {

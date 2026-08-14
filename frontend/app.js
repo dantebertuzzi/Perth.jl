@@ -863,7 +863,11 @@ function renderHighlightSelect() {
   gt.appendChild(opt("type:milestone", "Milestones"));
   sel.appendChild(gt);
 
-  if (cur && sel.querySelector(`option[value="${CSS.escape(cur)}"]`)) {
+  // varre as opções em vez de montar um seletor: o valor vem de nome de
+  // responsável (texto livre do usuário), que num seletor precisaria de
+  // CSS.escape — API que nem todo ambiente de teste tem, e desnecessária
+  // para uma comparação de igualdade
+  if (cur && [...sel.options].some((o) => o.value === cur)) {
     sel.value = cur;
   } else {
     sel.value = "";
