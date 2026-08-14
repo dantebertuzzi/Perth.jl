@@ -79,12 +79,14 @@ function loadKanbanApp() {
 
 // Mesma técnica de loadKanbanApp(), pro app do gantt.
 // `opts.fetch` troca o stub de rede (ver o bloco da chave de acesso, que
-// precisa de um 403 de verdade em vez da rejeição padrão).
+// precisa de um 403 de verdade em vez da rejeição padrão) e `opts.url`, o
+// endereço da página (é de lá que sai o ?key= do share).
 function loadGanttApp(opts = {}) {
   const html = read("frontend/index.html")
     .replace(/<script src="\/shared\/presence.js"><\/script>/, "")
     .replace(/<script src="\/app.js"><\/script>/, "");
-  const dom = new JSDOM(html, { runScripts: "dangerously", url: "http://localhost/" });
+  const dom = new JSDOM(html, { runScripts: "dangerously",
+                                url: opts.url || "http://localhost/" });
   const w = dom.window;
 
   // window.__ws sempre aponta pra instância mais recente: PerthPresence.
@@ -418,9 +420,10 @@ console.log("gantt · undo/redo (reconciliação por tarefa)");
 
 console.log("gantt · chave de acesso");
 {
-  // Servidor com Perth.run(key = "…") e navegador sem a chave: a API
-  // responde 403 "access key required" e a UI tem que PEDIR a chave, não
-  // morrer com um erro na barra de status.
+  // Servidor com Perth.run(key = "…") e navegador com a chave errada (aqui
+  // um link antigo, de antes de o host trocá-la): a API responde 403
+  // "access key required" e a UI tem que PEDIR a chave, não morrer com um
+  // erro na barra de status.
   const calls = [];
   const fetch403 = (url) => {
     calls.push(url);
@@ -435,11 +438,15 @@ console.log("gantt · chave de acesso");
       json: () => Promise.resolve(url.startsWith("/api/rev") ? { rev: 7 } : []),
     });
   };
-  const { w, runIn, close } = loadGanttApp({ fetch: fetch403 });
+  const { w, runIn, close } = loadGanttApp({
+    fetch: fetch403, url: "http://localhost/?key=velha",
+  });
   await new Promise((r) => setTimeout(r, 50));   // deixa o init() assentar
 
   const $ = (s) => w.document.querySelector(s);
-  check($(".keygate-input") !== null, "403 sem chave abre o diálogo da chave");
+  check(calls.some((u) => u.includes("key=velha")),
+        "a chave do link vai na primeira chamada");
+  check($(".keygate-input") !== null, "403 com a chave errada abre o diálogo");
   check(w.document.getElementById("perth-overlay") !== null, "diálogo é um overlay");
 
   // a recusa do WS chega logo depois do 403 da API: um diálogo só
@@ -459,6 +466,8 @@ console.log("gantt · chave de acesso");
         "a carga inicial é refeita já com a chave");
   check(/[?&]key=s3cr3t\b/.test(w.__ws.url),
         "o WS reconecta com a chave (PerthPresence.setKey)");
+  check(!/key=/.test(w.location.search),
+        "o ?key= velho sai da URL (senão voltaria no F5, à frente da sessão)");
 
   // /background também é rota de dados: a URL da imagem (que já vem com
   // ?v=…) leva a chave em & — senão o fundo some para quem não é o host
@@ -468,6 +477,80 @@ console.log("gantt · chave de acesso");
   `);
   check(bg.includes("/background?v=abc&key=s3cr3t"),
         "a URL do fundo leva a chave");
+  close();
+}
+
+console.log("gantt · trocar a chave pelo diálogo de Share");
+{
+  // Só a máquina do servidor (info.host) vê o controle; aplicar manda
+  // POST /api/key e o diálogo se redesenha com os links novos.
+  const calls = [];
+  const share = (keyed) => ({
+    urls: ["http://192.168.0.7:8123" + (keyed ? "?key=k" : "")],
+    target: "http://192.168.0.7:8123", qr: null,
+    shared: true, can_share: true, keyed, host: true,
+  });
+  const { runIn, close } = loadGanttApp({
+    fetch: (url, opts) => {
+      calls.push({ url, body: opts && opts.body, method: opts && opts.method });
+      const body = url.startsWith("/api/rev") ? { rev: 1 }
+                 : url.startsWith("/api/projects") ? []
+                 : share(true);
+      return Promise.resolve({ ok: true, status: 200,
+                               json: () => Promise.resolve(body) });
+    },
+  });
+  await new Promise((r) => setTimeout(r, 50));
+
+  const draw = (info) => runIn(`
+    const body = document.createElement("div");
+    body.id = "share-body-test";
+    document.body.append(body);
+    renderShare(body, ${JSON.stringify(info)});
+    return {
+      row: !!body.querySelector(".share-key"),
+      input: !!body.querySelector(".share-key-input"),
+      remove: !!body.querySelector(".share-key .danger"),
+      label: body.querySelector(".share-key span")?.textContent || null,
+    };
+  `);
+
+  let r = draw(share(false));
+  check(r.row && r.input, "host sem chave: o diálogo oferece pôr uma");
+  check(r.remove === false, "sem chave não há o que remover");
+  check(r.label === "No access key", "estado da chave no rótulo");
+
+  r = draw(share(true));
+  check(r.remove === true, "com chave, aparece o botão de remover");
+  check(r.label === "Access key required", "rótulo acompanha o estado");
+
+  r = draw({ ...share(true), host: false });
+  check(r.row === false, "máquina remota não vê o controle da chave");
+
+  calls.length = 0;
+  runIn(`
+    const body = document.querySelector("#share-body-test");
+    renderShare(body, ${JSON.stringify(share(false))});
+    body.querySelector(".share-key-input").value = "  nova-chave  ";
+    body.querySelector(".share-key .primary").click();
+    return 1;
+  `);
+  await new Promise((r) => setTimeout(r, 50));
+  const post = calls.find((c) => c.url.startsWith("/api/key"));
+  check(!!post && post.method === "POST", "aplicar manda POST /api/key");
+  check(post && JSON.parse(post.body).key === "nova-chave",
+        "a chave vai sem os espaços em volta");
+
+  calls.length = 0;
+  runIn(`
+    const body = document.querySelector("#share-body-test");
+    renderShare(body, ${JSON.stringify(share(true))});
+    body.querySelector(".share-key .danger").click();
+    return 1;
+  `);
+  await new Promise((r) => setTimeout(r, 50));
+  const drop = calls.find((c) => c.url.startsWith("/api/key"));
+  check(drop && JSON.parse(drop.body).key === "", "remover manda chave vazia");
   close();
 }
 
@@ -567,8 +650,13 @@ const fakeShareServer = (host, canShare) => `
   window.__share = { urls: ["http://localhost:8150"], target: "http://localhost:8150",
                      qr: null, shared: false, can_share: ${canShare}, keyed: false,
                      host: ${host} };
+  window.__keys = [];
   window.fetch = (url, opts) => {
-    if (opts && opts.method === "POST") {
+    if (opts && opts.method === "POST" && url.startsWith("/api/key")) {
+      const key = JSON.parse(opts.body).key;
+      window.__keys.push(key);
+      window.__share = Object.assign({}, window.__share, { keyed: key !== "" });
+    } else if (opts && opts.method === "POST") {
       const on = JSON.parse(opts.body).on;
       window.__posts.push(on);
       window.__share = Object.assign({}, window.__share, { shared: on,
@@ -622,6 +710,31 @@ console.log("kanban · transmitir (share)");
   await tick();
   r = runIn(`return !!document.querySelector(".share-toggle");`);
   check(r === false, "kanban: sem can_share, nem o host vê a chave");
+
+  // ...mas a chave de acesso continua valendo com o alcance preso no
+  // socket, então o controle dela sobrevive ao interruptor sumir
+  r = runIn(`return { key: !!document.querySelector(".share-key"),
+                      remove: !!document.querySelector(".share-key .danger") };`);
+  check(r.key === true, "kanban: com host fixo, o host ainda troca a chave");
+  check(r.remove === false, "kanban: sem chave configurada, nada a remover");
+
+  runIn(`document.querySelector(".share-key-input").value = "  k2  ";
+         document.querySelector(".share-key .primary").click(); return null;`);
+  await tick();
+  r = runIn(`return { keys: window.__keys,
+                      remove: !!document.querySelector(".share-key .danger") };`);
+  check(JSON.stringify(r.keys) === '["k2"]', "kanban: aplicar manda a chave sem espaços");
+  check(r.remove === true, "kanban: com chave, o diálogo passa a oferecer remover");
+
+  runIn(`document.querySelector(".share-key .danger").click(); return null;`);
+  await tick();
+  r = runIn(`return window.__keys;`);
+  check(JSON.stringify(r) === '["k2",""]', "kanban: remover manda chave vazia");
+
+  runIn(`closeModal(); ${fakeShareServer(false, true)} showShare(); return null;`);
+  await tick();
+  r = runIn(`return !!document.querySelector(".share-key");`);
+  check(r === false, "kanban: máquina remota não vê o controle da chave");
 
   // botão da menubar: espelha o estado e alterna sem abrir o diálogo
   runIn(`closeModal(); ${fakeShareServer(true, true)} refreshShareBtn(); return null;`);

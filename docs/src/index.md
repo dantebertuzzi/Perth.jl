@@ -17,7 +17,8 @@ Perth.kanban(share = true)  # Kanban shared on your LAN, with a QR code
   machine as a labelled cursor with its name and IP, pair-programming style.
   Sharing switches on and off live — [`Perth.share!`](@ref),
   [`kanban_share!`](@ref) or the *Share / QR…* dialog — without restarting
-  the server.
+  the server, and so does the access key ([`Perth.key!`](@ref),
+  [`kanban_key!`](@ref) or the same dialog).
 - **Real scheduling**: CPM, critical path, slack, dependency lag and
   SS/FF link types, business-day calendars via BusinessDays.jl.
 - **Commitments vs. plan**: a task's `deadline` never moves it — busting

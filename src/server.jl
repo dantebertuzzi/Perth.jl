@@ -81,6 +81,69 @@ function share!(on::Bool = true; actor::AbstractString = "repl")
     return on
 end
 
+"""
+    Perth.key!(key = "") -> Bool
+
+Set (or drop, with `""`) the access key of the running gantt server,
+live — no restart, no [`Perth.stop`](@ref). Returns whether a key is
+required from now on. Surrounding whitespace is trimmed, so a pasted key
+does not fail on a trailing space.
+
+Machines on the network must send the key on every request and on the
+presence socket; the machine running the server never needs it. The LAN
+links (and the QR code) carry the key, so nobody has to type it — see
+[`Perth.run`](@ref).
+
+Changing the key disconnects every machine on the network immediately:
+the key they hold is now the wrong one, and each is asked for the new
+one on screen rather than left with a dead page. Dropping the key
+(`key!()`) disconnects nobody — nothing they hold became invalid.
+
+The same control is in the UI (File → Share / QR…), available only from
+the machine running the server.
+
+```julia
+Perth.key!("obra-2026")   # exige a chave de quem vem da rede
+Perth.key!()              # volta a aceitar qualquer um da rede
+```
+"""
+function key!(key::AbstractString = ""; actor::AbstractString = "repl")
+    SERVER[] === nothing && throw(ArgumentError("Perth is not running — Perth.run() first"))
+    new = _cap_text(strip(String(key)))
+    GANTT_KEY[] == new && return !isempty(new)
+    GANTT_KEY[] = new
+    # a chave antiga virou inválida: quem está de fora precisa reentrar (o
+    # porteiro sozinho só barra conexões novas). Tirar a chave não invalida
+    # ninguém — derrubar seria pedir na tela uma chave que não existe mais.
+    isempty(new) || _hub_drop_remote!(GANTT_HUB; reason = "key")
+    _with_state(st -> _log_activity!(st, actor, "key",
+        isempty(new) ? "removed the access key" : "changed the access key"))
+    _hub_broadcast(GANTT_HUB, JSON3.write((; type = "key", keyed = !isempty(new))))
+    @info(isempty(new) ?
+          "Perth: access key removed — anyone on the network can open the projects." :
+          "Perth: access key set — new links: " * join(_gantt_urls(), " "))
+    return !isempty(new)
+end
+
+# POST /api/key {"key": "…"} — só do host, como o toggle da transmissão.
+# Devolve o payload de /api/share: os links (e o QR) mudam com a chave.
+function _gantt_key_set(req::HTTP.Request, ip::AbstractString)
+    _presence_is_host(ip) ||
+        return _error("only the machine running Perth can change this"; status = 403)
+    key = try
+        String(get(JSON3.read(String(req.body)), "key", ""))
+    catch
+        return _error("expected {\"key\": \"…\"}"; status = 400)
+    end
+    try
+        key!(key; actor = ip)
+    catch err
+        err isa ArgumentError && return _error(err.msg; status = 409)
+        rethrow()
+    end
+    return _json(_gantt_share_payload(ip))
+end
+
 function _gantt_share_toggle(req::HTTP.Request, ip::AbstractString)
     _presence_is_host(ip) ||
         return _error("only the machine running Perth can change this"; status = 403)
@@ -272,6 +335,8 @@ function _gantt_handler(router)
                 HTTP.streamhandler(http.message.method == "POST" ?
                     req -> _gantt_share_toggle(req, ip) :
                     _ -> _json(_gantt_share_payload(ip)))(http)
+            elseif path == "/api/key" && http.message.method == "POST"
+                HTTP.streamhandler(req -> _gantt_key_set(req, ip))(http)   # idem: host-only
             else
                 HTTP.streamhandler(router)(http)
             end

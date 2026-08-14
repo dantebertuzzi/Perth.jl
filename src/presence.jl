@@ -119,7 +119,9 @@ end
 # Derruba as conexões de máquinas remotas, preservando as do host. Chamado
 # ao desligar a transmissão: o porteiro de conexão só vale para conexões
 # novas, então quem já estava dentro precisa ser desconectado na mão.
-function _hub_drop_remote!(hub::PresenceHub)
+# `reason` escolhe o diálogo do outro lado: "share_off" oferece um retry,
+# "key" pede a chave (é o caso da troca de chave — ver key!).
+function _hub_drop_remote!(hub::PresenceHub; reason::AbstractString = "share_off")
     gone = lock(hub.lock) do
         out = PresenceClient[]
         for (id, c) in collect(hub.clients)
@@ -130,7 +132,7 @@ function _hub_drop_remote!(hub::PresenceHub)
         out
     end
     for c in gone
-        _presence_deny(c.ws, "share_off")
+        _presence_deny(c.ws, reason)
         _hub_broadcast(hub, JSON3.write(Dict("type" => "leave", "id" => c.id)))
     end
     return length(gone)

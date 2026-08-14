@@ -1072,9 +1072,139 @@ end
             # o shell da página segue aberto (diálogo da chave)
             @test status("/", other) == 200
             @test status("/app.js", other) == 200
+
+            # ── trocar a chave ao vivo (Perth.key! / botão do diálogo) ──
+            # sem servidor no ar não há chave a trocar
+            @test Perth.SERVER[] === nothing
+            @test_throws ArgumentError Perth.key!("nova")
+            @test Perth.KANBAN_SERVER[] === nothing
+            @test_throws ArgumentError Perth.kanban_key!("nova")
+
+            # com o board de pé (listener de mentira no loopback: o que
+            # importa é KANBAN_SERVER[] não ser `nothing`)
+            dummy = Perth._quiet() do
+                HTTP.listen!(http -> nothing, "127.0.0.1", 0; verbose = false)
+            end
+            Perth.KANBAN_SERVER[] = dummy
+            @test Perth.kanban_key!("outra") == true
+            @test Perth.KANBAN_KEY[] == "outra"
+            @test status("/api/boards?key=s3cr3t", other) == 403   # a antiga morreu
+            @test status("/api/boards?key=outra", other) == 200
+            # espaços em volta somem: chave colada não quebra por um espaço
+            @test Perth.kanban_key!("  espacos  ") == true
+            @test Perth.KANBAN_KEY[] == "espacos"
+            # remover volta a deixar a rede entrar sem chave
+            @test Perth.kanban_key!() == false
+            @test Perth.KANBAN_KEY[] == ""
+            @test status("/api/boards", other) == 200
+            # a troca entra no log de atividades do board
+            @test any(e -> e["type"] == "key", Perth._kanban_state().log)
+
+            # o endpoint: só o host, e é POST
+            post_key(k, ip) = Perth._kanban_static(
+                HTTP.Request("POST", "/api/key", ["Content-Type" => "application/json"],
+                             """{"key":"$k"}"""), ip)
+            Perth.KANBAN_SHARED[] = true
+            @test post_key("de-fora", other).status == 403
+            @test Perth.KANBAN_KEY[] == ""              # e nada mudou
+            ok = post_key("do-host", "127.0.0.1")
+            @test ok.status == 200
+            @test Perth.KANBAN_KEY[] == "do-host"
+            @test JSON3.read(ok.body)["keyed"] == true  # payload de /api/share
+            @test occursin("key=do-host", JSON3.read(ok.body)["urls"][1])
+            @test post_key("", "127.0.0.1").status == 200
+            @test Perth.KANBAN_KEY[] == ""
+            @test JSON3.read(post_key("x", "127.0.0.1").body)["keyed"] == true
+            # GET em /api/key não é rota: cai no 404 da API
+            @test Perth._kanban_static(HTTP.Request("GET", "/api/key"), "127.0.0.1").status == 404
+
+            # gantt: mesma coisa pelo endpoint, com o servidor "de pé"
+            Perth.SERVER[] = dummy
+            Perth.GANTT_SHARED[] = true
+            Perth.GANTT_KEY[] = ""
+            gpost(k, ip) = Perth._gantt_key_set(
+                HTTP.Request("POST", "/api/key", ["Content-Type" => "application/json"],
+                             """{"key":"$k"}"""), ip)
+            @test gpost("de-fora", other).status == 403
+            @test Perth.GANTT_KEY[] == ""
+            gok = gpost("do-host", "127.0.0.1")
+            @test gok.status == 200
+            @test Perth.GANTT_KEY[] == "do-host"
+            @test JSON3.read(gok.body)["keyed"] == true
+            @test Perth._gantt_gate("/api/projects", other, noqp) === :need_key
+            @test Perth._gantt_gate("/api/projects", other,
+                                    Dict("key" => "do-host")) === :ok
+            @test Perth.key!() == false          # remove
+            @test Perth._gantt_gate("/api/projects", other, noqp) === :ok
+            # corpo sem "key" limpa a chave (o botão "remove" manda "")
+            Perth.key!("z")
+            @test Perth._gantt_key_set(HTTP.Request("POST", "/api/key", [], "{}"),
+                                       "127.0.0.1").status == 200
+            @test Perth.GANTT_KEY[] == ""
         finally
             Perth.GANTT_KEY[], Perth.GANTT_SHARED[] = gantt_key, gantt_was
             Perth.KANBAN_KEY[], Perth.KANBAN_SHARED[] = kanban_key, kanban_was
+            Perth.SERVER[] = nothing
+            if Perth.KANBAN_SERVER[] !== nothing
+                Perth._quiet(() -> close(Perth.KANBAN_SERVER[]))
+                Perth.KANBAN_SERVER[] = nothing
+            end
+        end
+
+        # trocar a chave derruba quem é de fora com reason "key" — é o que
+        # faz a UI pedir a chave nova em vez de oferecer "tentar de novo"
+        hub = Perth.PresenceHub()
+        ipref = Ref("192.168.0.90")
+        server, port = _presence_test_server(hub, ipref)
+        try
+            reason = Ref{Any}(nothing)
+            t = @async HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)          # init
+                msg = JSON3.read(HTTP.WebSockets.receive(ws))
+                reason[] = (msg["type"], get(msg, "reason", nothing))
+            end
+            @test _await_clients(hub, 1) == 1
+            @test Perth._hub_drop_remote!(hub; reason = "key") == 1
+            wait(t)
+            @test reason[] == ("denied", "key")
+        finally
+            Perth._quiet(() -> close(server))
+        end
+
+        # ...mas TIRAR a chave não derruba ninguém: nada do que a máquina
+        # remota tem virou inválido, e pedir na tela uma chave que não
+        # existe mais seria só um beco sem saída
+        # ...mas TIRAR a chave não derruba ninguém: nada do que a máquina
+        # remota tem virou inválido, e pedir na tela uma chave que não
+        # existe mais seria só um beco sem saída. Aqui o hub é o global
+        # (GANTT_HUB), porque é nele que key! mexe.
+        gantt_key2, gantt_was2 = Perth.GANTT_KEY[], Perth.GANTT_SHARED[]
+        dummy2 = Perth._quiet() do
+            HTTP.listen!(http -> nothing, "127.0.0.1", 0; verbose = false)
+        end
+        Perth.SERVER[] = dummy2
+        ipref2 = Ref("192.168.0.91")
+        server3, port3 = _presence_test_server(Perth.GANTT_HUB, ipref2)
+        try
+            Perth.GANTT_SHARED[] = true
+            Perth.GANTT_KEY[] = "antiga"
+            release = Channel{Bool}(1)
+            alive = @async HTTP.WebSockets.open("ws://127.0.0.1:$port3") do ws
+                HTTP.WebSockets.receive(ws)      # init
+                take!(release)
+            end
+            @test _await_clients(Perth.GANTT_HUB, 1) == 1
+            @test Perth.key!() == false
+            @test Perth.GANTT_KEY[] == ""
+            @test length(Perth.GANTT_HUB.clients) == 1   # seguiu conectado
+            put!(release, true)
+            wait(alive)
+        finally
+            Perth._quiet(() -> close(server3))
+            Perth.GANTT_KEY[], Perth.GANTT_SHARED[] = gantt_key2, gantt_was2
+            Perth.SERVER[] = nothing
+            Perth._quiet(() -> close(dummy2))
+            _await_clients(Perth.GANTT_HUB, 0)
         end
     end
 

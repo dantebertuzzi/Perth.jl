@@ -368,6 +368,15 @@ function setAccessKey(value) {
   ACCESS_KEY = value || "";
   sessionStorage.setItem(KEY_STORE, ACCESS_KEY);
   window.PerthPresence?.setKey(ACCESS_KEY);   // o WS usa a mesma chave
+  // A URL tem prioridade sobre a sessão na carga (um link novo manda), o
+  // que deixaria um ?key= velho reaparecer no F5 depois de o host trocar a
+  // chave. Quem digitou a chave não precisa mais dele: some da barra.
+  const q = new URLSearchParams(location.search);
+  if (q.has("key")) {
+    q.delete("key");
+    const rest = q.toString();
+    history.replaceState(null, "", location.pathname + (rest ? "?" + rest : ""));
+  }
 }
 
 function withKey(path) {
@@ -1716,6 +1725,64 @@ function refreshShare() {
     .catch(() => { body.textContent = T("could not load share info"); });
 }
 
+// Linha da chave de acesso no diálogo de Share (só o host a vê). Aplicar
+// uma chave nova derruba quem está na rede — a chave antiga passou a ser a
+// errada —, e cada um é reperguntado na tela em vez de ficar com uma
+// página morta; daí o aviso ao lado, e não um confirm().
+function shareKeyRow(body, info) {
+  const wrap = document.createElement("div");
+  const row = document.createElement("div");
+  row.className = "share-key";
+  const label = document.createElement("span");
+  label.textContent = T(info.keyed ? "Access key required" : "No access key");
+  const input = document.createElement("input");
+  input.type = "password";
+  input.className = "share-key-input";
+  input.placeholder = T(info.keyed ? "new access key" : "access key");
+
+  const apply = async (key, btn) => {
+    btn.disabled = true;
+    try {
+      const next = await api("/api/key", {
+        method: "POST", body: JSON.stringify({ key }),
+      });
+      renderShare(body, next);   // links e QR mudam junto com a chave
+    } catch (err) {
+      btn.disabled = false;
+      alert(err.message);
+    }
+  };
+
+  const set = document.createElement("button");
+  set.className = "primary";
+  set.textContent = T("apply");
+  set.addEventListener("click", () => {
+    const v = input.value.trim();
+    v && apply(v, set);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") set.click();
+    e.stopPropagation();
+  });
+  row.append(label, input, set);
+
+  if (info.keyed) {
+    const drop = document.createElement("button");
+    drop.className = "danger";
+    drop.textContent = T("remove");
+    drop.addEventListener("click", () => apply("", drop));
+    row.append(drop);
+  }
+
+  const hint = document.createElement("div");
+  hint.className = "alias-hint";
+  hint.textContent = info.keyed
+    ? T("The links below already carry the key. Changing it disconnects everyone on the network — they are asked for the new one.")
+    : T("Without a key, anyone on the network who knows the port can open and edit these projects.");
+  wrap.append(row, hint);
+  return wrap;
+}
+
 function renderShare(body, info) {
   body.textContent = "";
 
@@ -1746,6 +1813,10 @@ function renderShare(body, info) {
     row.append(label, btn);
     body.append(row);
   }
+
+  // Chave de acesso: só o host troca. Fora do `can_share` de propósito —
+  // com o alcance preso no socket (host fixo) a chave continua valendo.
+  if (info.host) body.append(shareKeyRow(body, info));
 
   for (const u of info.urls) {
     const row = document.createElement("div");
@@ -2815,6 +2886,9 @@ function bootFailed(err) {
       onTyping: handleTyping,
       // a transmissão mudou: o diálogo de Share, se aberto, se redesenha
       onShare: () => refreshShare(),
+      // idem para a chave (trocada pelo REPL ou por outra aba desta máquina):
+      // os links do diálogo mudam junto
+      onKey: () => refreshShare(),
       // o REPL trocou a imagem de fundo: aplica sem reload
       onBackground: applyBackground,
       onDenied: (reason) =>
