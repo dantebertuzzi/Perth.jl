@@ -235,7 +235,7 @@ function applyUI() {
   $("#set-hide-cursors").setAttribute("aria-pressed", String(ui.hideCursors));
   document.documentElement.classList.toggle("hide-remote-cursors", ui.hideCursors);
   $("#set-hide-bg").setAttribute("aria-pressed", String(ui.hideBackground));
-  applyBackground(bgInfo);
+  applyBackground();          // sem argumento: só redesenha com o que já se sabe
 }
 
 /* ------------------------------------------------------------------ */
@@ -246,16 +246,17 @@ function applyUI() {
 
 let bgInfo = null;
 
+// A camada, a rotação e o fade vivem em shared/background.js (os dois apps
+// usam o mesmo). Daqui vão só as duas coisas que são deste app: a
+// preferência local de esconder e como a chave de acesso entra na URL.
+PerthBackground.init({
+  isHidden: () => ui.hideBackground,
+  withKey,
+});
+
 function applyBackground(info) {
-  bgInfo = info;
-  const root = document.documentElement;
-  const on = !!(info && info.set) && !ui.hideBackground;
-  root.classList.toggle("has-bg", on);
-  // /background é endpoint de dados: pede a chave como o resto da API
-  root.style.setProperty("--perth-bg",
-                         on ? `url("${encodeURI(withKey(info.url))}")` : "none");
-  root.style.setProperty("--perth-bg-opacity",
-                         on ? String(info.opacity ?? 0.18) : "0");
+  if (info !== undefined) bgInfo = info;
+  PerthBackground.apply(info);
 }
 
 function refreshBackground() {

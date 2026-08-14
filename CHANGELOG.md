@@ -66,6 +66,45 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   round-trip, and `POST /api/projects/{id}/pert` applies the estimates,
   mirroring `/schedule`.
 
+- **The UI background can be a slideshow.** `Perth.background!` now takes
+  a folder or a list of files as well as a single image: with more than
+  one, the UI cycles through them — the current one fades out, the next
+  fades in over the paper colour. `interval` (seconds, default 60) sets
+  the pace; `interval = 0` stops on the first image. `Perth.backgrounds()`
+  reads the rotation back.
+
+  Which image is showing is derived **from the wall clock** in each
+  browser (`floor(now / interval) % n`), not from a local counter and not
+  from a server tick: every machine is on the same photo without
+  coordination, a tab opened late lands in phase, and a laptop that was
+  asleep corrects itself on the first wake-up.
+
+  **A folder is expanded to a list at the moment you point at it, not
+  watched live.** Three reasons, in the order that decided it: (1) the
+  clock-derived index needs every client to agree on the list and its
+  order, and a live scan would let two machines see different lists and
+  compute different indices; (2) it preserves this file's stated model,
+  where the authorization is the *act of pointing* — a live folder would
+  turn that into per-folder authorization, and anything dropped in later
+  would be served to the network without anyone pointing at it, in a
+  folder that is usually where screenshots land; (3) a frozen list needs
+  no cache, no mtime invalidation and no agreed ordering. Files in the
+  folder that are not usable images are skipped, and the log line says
+  how many were taken and how many were left out.
+
+  One image still writes the old settings key, so the format a previous
+  Perth reads is untouched, and a payload without the new `images` field
+  still works in an already-open tab.
+
+### Changed
+- The background layer moved to `frontend/shared/background.js`, shared
+  by both apps — it was duplicated in `app.js` and `kanban/app.js`. Each
+  app now passes in only what is its own: the local *hide* preference
+  and how the access key goes into the URL.
+- `/background` takes an `?i=N` index for the image to serve. Without it
+  it serves the first, so old clients and the service worker keep
+  working.
+
 ### Fixed
 - Kanban: the Gantt→kanban bridge now mirrors into **every** board, not
   just the one currently loaded. A card linked to a Gantt task only

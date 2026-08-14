@@ -9,6 +9,7 @@ Perth.share!
 Perth.key!
 Perth.background!
 Perth.background
+Perth.backgrounds
 Perth.background_clear!
 create_project
 add_task!

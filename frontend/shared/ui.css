@@ -537,7 +537,10 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
 
 /* Camada fixa atrás do conteúdo. A cor do papel continua pintada no body,
    então a opacidade da imagem funciona como véu: painéis, cards e barras
-   seguem opacos e legíveis, e a foto preenche o espaço em volta deles. */
+   seguem opacos e legíveis, e a foto preenche o espaço em volta deles.
+   Uma camada basta também para a rotação de imagens: a troca é apagar,
+   trocar a foto no vale e acender (ver shared/background.js), e o vale
+   mostrando só a cor do papel É o escurecimento entre as duas. */
 body::before {
   content: "";
   position: fixed;
@@ -549,7 +552,7 @@ body::before {
   background-repeat: no-repeat;
   opacity: var(--perth-bg-opacity, 0);
   pointer-events: none;
-  transition: opacity 0.25s ease;
+  transition: opacity 0.45s ease;   /* metade da troca; casa com FADE no JS */
 }
 @media (prefers-reduced-motion: reduce) {
   body::before { transition: none; }
