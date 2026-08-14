@@ -29,8 +29,11 @@ Perth.stop()
 ```
 
 The open page detects REPL-side changes (lightweight polling of a
-revision counter) and reloads on its own; edits made in the UI are
-saved automatically and visible in the REPL on the same `Project` object.
+revision counter) and reloads on its own. The other direction is just as
+live, with one wrinkle worth knowing: a variable you bound earlier is a
+snapshot, so after editing in the browser ask for the project again —
+`project(id)` (or `projects()`) hands you what the UI just saved, while
+`p` still holds what it held when you assigned it.
 
 ## Why a Gantt package *in Julia*?
 
