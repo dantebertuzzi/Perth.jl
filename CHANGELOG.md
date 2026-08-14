@@ -7,7 +7,53 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 
 ## [Unreleased]
 
+### Added
+- `.gitattributes` freezing line endings as stored (`* -text`). The
+  repository is mostly CRLF, and a clone on a machine with
+  `core.autocrlf=true` — Git's default on Windows, which the README
+  already documents using — would rewrite every file at checkout. It
+  does not stop an editor from writing the wrong ending inside a file;
+  that still shows up as a diff, which is where it belongs.
+
 ### Fixed
+- Kanban: the Gantt→kanban bridge now mirrors into **every** board, not
+  just the one currently loaded. A card linked to a Gantt task only
+  followed the project while its board was the active one: editing the
+  task with another board open left the card stale **permanently**, since
+  coming back to the board merely re-reads a file that was already out of
+  date. With the kanban holding one board at a time, having two boards
+  was enough for the bridge to stop meaning anything on the second — and
+  the drift was silent, which is the worst part: the board looks fine and
+  disagrees with the plan.
+
+  Fixing it needed no multi-board state. Boards that are not loaded have
+  no connected clients by definition, so there is nothing to broadcast
+  and no activity log to write: the sync reads the file, applies the same
+  field rules, and rewrites it atomically. The mirroring rule itself was
+  extracted into one function (`_card_task_diff`) used by both paths — as
+  two copies it would have diverged on the first change.
+
+  The scan is gated on the raw file text containing the project id, so
+  boards with no linked card are never parsed. Measured at 0.43 ms of a
+  0.9 ms save with 7 boards and 47 KB of board files; a data directory
+  with no kanban at all pays one `readdir`.
+
+  It also applies with the kanban never opened in this session: the cards
+  are on disk whether or not anyone looked at them.
+- Kanban: an accented board name no longer produces a mangled file name.
+  `_slugify` dropped anything outside `[a-z0-9_-]`, so `"cálculo"` became
+  the slug `clculo` and `"estatística"` became `estatstica` — typing the
+  same name once with and once without the accent silently produced **two
+  different boards**. Found as a real pair (`kanban-calculo.json` and
+  `kanban-clculo.json`) in a live data directory. Accents are now
+  transliterated (`Unicode.normalize(…; stripmark = true)`, stdlib), so
+  `"cálculo"` and `"calculo"` are the same board, and names that were
+  entirely accented — previously rejected as invalid — work.
+
+  Boards created before the fix are not stranded: a name resolves to the
+  new slug unless that file does not exist *and* the old mangled one
+  does, in which case the old file keeps answering to the name that
+  created it. When both files exist the correctly-spelled one wins.
 - An accented project name no longer produces a mangled `.perth.jl` file
   name. `"Análise estatística"` became `an-lise-estat-stica.perth.jl` —
   the same swallowed-accent bug as the kanban board slug, in the path
@@ -25,29 +71,6 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   wake against a destroyed `document` and take the whole process down —
   reported with a stack pointing at whichever block happened to yield
   next, which is a bad afternoon for whoever hits it.
-
-### Added
-- `.gitattributes` freezing line endings as stored (`* -text`). The
-  repository is mostly CRLF, and a clone on a machine with
-  `core.autocrlf=true` — Git's default on Windows, which the README
-  already documents using — would rewrite every file at checkout. It
-  does not stop an editor from writing the wrong ending inside a file;
-  that still shows up as a diff, which is where it belongs.
-
-- Kanban: an accented board name no longer produces a mangled file name.
-  `_slugify` dropped anything outside `[a-z0-9_-]`, so `"cálculo"` became
-  the slug `clculo` and `"estatística"` became `estatstica` — typing the
-  same name once with and once without the accent silently produced **two
-  different boards**. Found as a real pair (`kanban-calculo.json` and
-  `kanban-clculo.json`) in a live data directory. Accents are now
-  transliterated (`Unicode.normalize(…; stripmark = true)`, stdlib), so
-  `"cálculo"` and `"calculo"` are the same board, and names that were
-  entirely accented — previously rejected as invalid — work.
-
-  Boards created before the fix are not stranded: a name resolves to the
-  new slug unless that file does not exist *and* the old mangled one
-  does, in which case the old file keeps answering to the name that
-  created it. When both files exist the correctly-spelled one wins.
 
 ## [0.7.0] - 2026-08-13
 

@@ -798,45 +798,160 @@ kanban_alias!(ip::AbstractString, name::AbstractString) =
     _kanban_commit!(Dict{String,Any}("type" => "setAlias",
                                      "ip" => String(ip), "name" => String(name)))
 
-# Espelha um projeto salvo nas cartas vinculadas a ele (hook _ON_SAVE do
-# storage). Cada campo só gera op quando o valor difere, então o eco da
-# direção contrária converge em um passo. Ops de sync não entram no log de
-# atividades (quiet) e não reecoam para o gantt (sync=true).
-function _kanban_sync_from_project(p::Project)
-    KANBAN[] === nothing && return nothing      # kanban nunca usado: nada a fazer
+# O que num card vinculado está diferente da tarefa, como pares
+# (campo => valor novo). Uma função só, usada pelas DUAS direções de
+# escrita: o board carregado (que vira op de verdade, com broadcast para
+# quem está olhando) e os boards que só existem em disco. Sem isto a regra
+# de espelhamento teria duas cópias, que divergiriam na primeira mudança.
+#
+# Cada campo só entra quando o valor difere, e é isso que faz o eco da
+# direção contrária convergir em um passo, sem ping-pong.
+function _card_task_diff(p::Project, card, t::GanttTask)
+    out = Pair{String,Any}[]
+    # nome <-> 1ª linha do texto (preserva descrição/tags das demais)
+    lines = split(String(card["text"]), '\n')
+    String(first(lines)) == t.name ||
+        push!(out, "text" => join([t.name; lines[2:end]], "\n"))
+    String(get(card, "assignee", "")) == t.assignee ||
+        push!(out, "assignee" => t.assignee)
+    due = string(end_date(p, t))
+    String(get(card, "due", "")) == due || push!(out, "due" => due)
+    done = t.progress >= 100
+    Bool(get(card, "done", false)) == done || push!(out, "done" => done)
+    return out
+end
+
+# A diferença virando op, para o board carregado
+function _sync_op(field::AbstractString, id::AbstractString, val)
+    field == "text" &&
+        return Dict{String,Any}("type" => "editCard", "id" => id, "text" => val)
+    field == "assignee" &&
+        return Dict{String,Any}("type" => "setAssignee", "id" => id, "name" => val)
+    field == "due" &&
+        return Dict{String,Any}("type" => "setDue", "id" => id, "due" => val)
+    return Dict{String,Any}("type" => "setDone", "id" => id, "done" => val)
+end
+
+# A mesma diferença aplicada direto no Dict do card, para board em disco.
+# Espelha _kanban_apply! campo a campo — inclusive apagar a chave quando o
+# valor fica vazio e carimbar done_at, que é o que alimenta o
+# auto-arquivamento por idade. Divergir daqui faria o board de disco ficar
+# num formato que o board carregado nunca produz.
+function _apply_card_diff!(card, diff)
+    for (field, val) in diff
+        if field == "text"
+            card["text"] = _cap_text(String(val))
+        elseif field == "assignee"
+            s = strip(String(val))
+            isempty(s) ? delete!(card, "assignee") : (card["assignee"] = String(s))
+        elseif field == "due"
+            s = strip(String(val))
+            isempty(s) ? delete!(card, "due") : (card["due"] = String(s))
+        elseif field == "done"
+            card["done"] = Bool(val)
+            Bool(val) ? (card["done_at"] = _kanban_now()) : delete!(card, "done_at")
+        end
+    end
+    return card
+end
+
+# Espelha o projeto nos boards que NÃO estão carregados agora.
+#
+# Sem isto, um card vinculado a uma tarefa do gantt só acompanha o projeto
+# enquanto o board dele for o board ativo: editar a tarefa com outro board
+# aberto deixava o card velho para SEMPRE — voltar para o board só relê o
+# arquivo, que já estava desatualizado. E como o kanban tem um board por
+# vez, bastava ter dois boards para a ponte parar de valer no segundo.
+#
+# Não precisa carregar board nenhum para consertar: estes arquivos não têm
+# cliente conectado (o único board com clientes é o ativo), então não há o
+# que transmitir nem log a escrever — é ler, aplicar e regravar.
+#
+# Porta barata: sem o id do projeto no texto cru do arquivo não existe card
+# vinculado ali, e a maioria dos boards cai fora sem passar por JSON.
+function _sync_boards_on_disk(p::Project, dir::AbstractString,
+                              active::AbstractString)
+    files = try
+        [joinpath(dir, f) for f in readdir(dir)
+         if startswith(f, "kanban") && endswith(f, ".json")]
+    catch
+        return 0
+    end
     byid = Dict(t.id => t for t in p.tasks)
-    ops = Any[]
-    _with_kanban(st -> begin
-        for c in _kcols(st), card in c["cards"]
+    touched = 0
+    for file in files
+        file == active && continue          # o ativo vai pelo caminho das ops
+        raw = try
+            read(file, String)
+        catch
+            continue
+        end
+        occursin(p.id, raw) || continue
+        board = try
+            _plain(JSON3.read(raw))
+        catch err
+            @warn "Perth kanban: ignoring unreadable board file" file error = err
+            nothing
+        end
+        (board === nothing || !haskey(board, "columns")) && continue
+        changed = false
+        # o arquivo (archive) fica de fora, como no board carregado: card
+        # arquivado é trabalho encerrado, não espelho de tarefa viva
+        for c in board["columns"]::Vector{Any}, card in c["cards"]
             String(get(card, "project", "")) == p.id || continue
             t = get(byid, String(get(card, "task", "")), nothing)
-            t === nothing && continue           # tarefa excluída: card fica
-            # nome <-> 1ª linha do texto (preserva descrição/tags das demais)
-            lines = split(String(card["text"]), '\n')
-            if String(first(lines)) != t.name
-                newtext = join([t.name; lines[2:end]], "\n")
-                push!(ops, Dict{String,Any}("type" => "editCard",
-                    "id" => card["id"], "text" => newtext))
-            end
-            if String(get(card, "assignee", "")) != t.assignee
-                push!(ops, Dict{String,Any}("type" => "setAssignee",
-                    "id" => card["id"], "name" => t.assignee))
-            end
-            due = string(end_date(p, t))
-            if String(get(card, "due", "")) != due
-                push!(ops, Dict{String,Any}("type" => "setDue",
-                    "id" => card["id"], "due" => due))
-            end
-            done = t.progress >= 100
-            if Bool(get(card, "done", false)) != done
-                push!(ops, Dict{String,Any}("type" => "setDone",
-                    "id" => card["id"], "done" => done))
-            end
+            t === nothing && continue       # tarefa excluída: card fica
+            diff = _card_task_diff(p, card, t)
+            isempty(diff) && continue
+            _apply_card_diff!(card, diff)
+            changed = true
         end
-    end)
+        changed || continue
+        # gravação atômica, como _kanban_persist: se alguém trocar para
+        # este board no meio, lê o arquivo inteiro velho ou o inteiro novo,
+        # nunca um pela metade — e o velho se corrige no próximo save,
+        # quando ele passa a ser o board ativo
+        tmp = file * ".tmp"
+        try
+            open(io -> JSON3.write(io, board), tmp, "w")
+            mv(tmp, file; force = true)
+            touched += 1
+        catch err
+            @warn "Perth kanban: could not sync board file" file error = err
+        end
+    end
+    return touched
+end
+
+# Espelha um projeto salvo nas cartas vinculadas a ele (hook _ON_SAVE do
+# storage), em TODOS os boards — o carregado por ops (que os navegadores
+# conectados recebem ao vivo) e os demais direto no arquivo. Ops de sync
+# não entram no log de atividades (quiet) e não reecoam para o gantt
+# (sync=true).
+function _kanban_sync_from_project(p::Project)
+    ops = Any[]
+    if KANBAN[] !== nothing
+        byid = Dict(t.id => t for t in p.tasks)
+        _with_kanban(st -> begin
+            for c in _kcols(st), card in c["cards"]
+                String(get(card, "project", "")) == p.id || continue
+                t = get(byid, String(get(card, "task", "")), nothing)
+                t === nothing && continue       # tarefa excluída: card fica
+                for (field, val) in _card_task_diff(p, card, t)
+                    push!(ops, _sync_op(field, String(card["id"]), val))
+                end
+            end
+        end)
+    end
     for op in ops
         _kanban_commit!(op; actor = "gantt", quiet = true, sync = true)
     end
+    # os boards em disco valem mesmo com o kanban nunca aberto nesta sessão:
+    # os cards existem lá independentemente de alguém ter olhado. Quem nunca
+    # usou o kanban não tem arquivo kanban*.json, e a varredura custa um
+    # readdir do diretório em que o projeto acabou de ser gravado.
+    dir = KANBAN[] === nothing ? _state().data_dir : KANBAN[].data_dir
+    _sync_boards_on_disk(p, dir, KANBAN[] === nothing ? "" : KANBAN[].file)
     return nothing
 end
 
@@ -853,6 +968,11 @@ connected browser — and dragging it out reopens it.
 Tasks that already have a linked card on the board are skipped, so the
 function is idempotent; pass `replace = true` to remove previously linked
 cards first. Returns the number of cards created.
+
+The link holds across boards: editing a task in the Gantt updates its
+card even when that card sits on a board nobody has open — the board
+file is rewritten in place. Switching boards is not a way to lose the
+mirror.
 """
 function kanban_from_project!(p::Project; replace::Bool = false)
     if replace
