@@ -21,6 +21,16 @@ set_baseline!
 clear_baseline!
 has_baseline
 slippage
+set_estimate!
+clear_estimate!
+has_estimate
+expected_duration
+pert
+pert!
+pert_finish
+finish_probability
+pert_date
+pert_simulate
 set_calendar!
 set_parent!
 tasktable

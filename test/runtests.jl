@@ -1,6 +1,7 @@
 using Test
 using Dates
 using Logging          # ← acrescente (para NullLogger / with_logger)
+using Random           # sementes fixas na simulação de Monte Carlo (PERT)
 using Perth
 import JSON3
 import HTTP
@@ -576,6 +577,230 @@ end
         clear_baseline!(p)
         @test !has_baseline(a) && p.baseline_at === nothing
         @test_throws ArgumentError slippage(p, a.id)
+        delete_project(p.id)
+    end
+
+    @testset "PERT: estimativa de três pontos" begin
+        p = create_project("PERT")
+        a = add_task!(p, "A"; start = Date(2026, 9, 1), duration = 5)
+
+        @test !has_estimate(a)
+        @test expected_duration(a) == 5.0        # sem estimativa: a duração atual
+        @test isempty(pert(p))
+
+        # te = (4 + 4*6 + 14)/6 = 7 ; σ = (14 - 4)/6
+        set_estimate!(p, a.id, 4, 6, 14)
+        @test has_estimate(a)
+        @test expected_duration(a) ≈ 7.0
+        @test a.duration == 7                    # apply = true por padrão
+        row = only(pert(p))
+        @test row.expected ≈ 7.0 && row.sd ≈ 10 / 6 && row.variance ≈ (10 / 6)^2
+
+        # apply = false registra a estimativa sem mexer no plano
+        set_estimate!(p, a.id, 2, 2, 2; apply = false)
+        @test a.duration == 7 && expected_duration(a) ≈ 2.0
+        @test pert!(p) === p && a.duration == 2   # pert! é quem aplica
+
+        # ordem imposta empurrando para cima: o otimista é o piso
+        set_estimate!(p, a.id, 8, 5, 6)
+        @test (a.optimistic, a.most_likely, a.pessimistic) == (8, 8, 8)
+        # estimativa parcial: o que falta vem da duração atual (8, após o apply)
+        set_estimate!(p, a.id, 0, 0, 20)
+        @test (a.optimistic, a.most_likely, a.pessimistic) == (8, 8, 20)
+        @test a.duration == 10                   # te = (8 + 4*8 + 20)/6
+
+        # marco não recebe duração do PERT (ocupa o próprio dia)
+        m = add_task!(p, "Marco"; start = Date(2026, 9, 20), milestone = true)
+        set_estimate!(p, m.id, 3, 5, 9)
+        @test m.duration == 1
+
+        clear_estimate!(p, a.id)
+        @test !has_estimate(a) && a.duration == 10  # tirar a estimativa não move o plano
+
+        delete_project(p.id)
+    end
+
+    @testset "PERT: término probabilístico" begin
+        p = create_project("PERT fim")
+        a = add_task!(p, "A"; start = Date(2026, 9, 1), duration = 1)
+        b = add_task!(p, "B"; start = Date(2026, 9, 1), duration = 1,
+                      dependencies = [a.id])
+        set_estimate!(p, a.id, 4, 6, 14)         # te 7, var (10/6)^2
+        set_estimate!(p, b.id, 2, 3, 10)         # te 4, var (8/6)^2
+        schedule!(p)
+
+        f = pert_finish(p)
+        @test f.expected == Date(2026, 9, 11)    # 7 + 4 dias corridos a partir de 1/9
+        @test f.variance ≈ (10 / 6)^2 + (8 / 6)^2
+        @test f.sd_days ≈ sqrt(f.variance)
+        @test f.critical == 2 && f.estimated == 2
+
+        # Φ no ponto esperado = 50%; monotônica e nos limites
+        @test finish_probability(p, f.expected) ≈ 0.5 atol = 1e-6
+        @test finish_probability(p, f.expected + Day(30)) > 0.999
+        @test finish_probability(p, f.expected - Day(30)) < 0.001
+        @test finish_probability(p, f.expected + Day(2)) >
+              finish_probability(p, f.expected + Day(1))
+
+        # pert_date é a inversa: a data do P80 devolve ~80%
+        d80 = pert_date(p, 0.8)
+        @test d80 > f.expected
+        @test finish_probability(p, d80) ≈ 0.8 atol = 0.15   # arredondado a dias
+        @test pert_date(p, 0.5) == f.expected
+
+        # sem estimativa nenhuma: σ = 0, e a resposta é a certeza do plano
+        q = create_project("Sem estimativa")
+        add_task!(q, "T"; start = Date(2026, 9, 1), duration = 3)
+        fq = pert_finish(q)
+        @test fq.sd_days == 0.0
+        @test finish_probability(q, fq.expected) == 1.0
+        @test finish_probability(q, fq.expected - Day(1)) == 0.0
+        @test pert_date(q, 0.99) == fq.expected
+
+        @test pert_finish(create_project("Vazio")).critical == 0   # projeto vazio não quebra
+
+        delete_project(p.id); delete_project(q.id)
+    end
+
+    @testset "PERT: as estimativas não gravam nada até pert!" begin
+        # a análise roda o motor com durações substitutas (ver _cpm), então
+        # perguntar não pode mexer no projeto
+        p = create_project("PERT puro")
+        a = add_task!(p, "A"; start = Date(2026, 9, 1), duration = 3)
+        set_estimate!(p, a.id, 6, 10, 20; apply = false)
+        @test a.duration == 3
+        f = pert_finish(p)
+        @test f.expected == Date(2026, 9, 11)     # 11 dias esperados, não 3
+        @test a.duration == 3                     # e a tarefa continua como estava
+        pert_simulate(p; n = 50)
+        @test a.duration == 3
+        delete_project(p.id)
+    end
+
+    @testset "PERT: simulação de Monte Carlo" begin
+        p = create_project("PERT sim")
+        a = add_task!(p, "A"; start = Date(2026, 9, 1), duration = 1)
+        b = add_task!(p, "B"; start = Date(2026, 9, 1), duration = 1,
+                      dependencies = [a.id])
+        set_estimate!(p, a.id, 4, 6, 14)
+        set_estimate!(p, b.id, 2, 3, 10)
+        schedule!(p)
+
+        s = pert_simulate(p; n = 4000, rng = MersenneTwister(42))
+        @test s.runs == 4000
+        @test s.p10 <= s.p50 <= s.p80 <= s.p90
+        # cadeia em série, sem caminhos paralelos: não há merge bias, então a
+        # simulação e a fórmula têm de concordar
+        f = pert_finish(p)
+        @test abs(Dates.value(s.p50 - f.expected)) <= 1
+        @test abs(s.sd_days - f.sd_days) < 0.5
+        # a semente manda: mesmo rng, mesmo resultado
+        @test pert_simulate(p; n = 500, rng = MersenneTwister(1)).p80 ==
+              pert_simulate(p; n = 500, rng = MersenneTwister(1)).p80
+
+        # merge bias: seis frentes paralelas do mesmo tamanho. A fórmula olha
+        # UMA cadeia crítica; o projeto só acaba quando a ÚLTIMA das seis
+        # acaba, então a simulação tem de cair depois — é o viés inteiro.
+        q = create_project("PERT paralelo")
+        ini = add_task!(q, "início"; start = Date(2026, 9, 1), duration = 1)
+        fim = add_task!(q, "fim"; start = Date(2026, 9, 2), duration = 1)
+        deps = String[]
+        for i in 1:6
+            t = add_task!(q, "frente $i"; start = Date(2026, 9, 2), duration = 10,
+                          dependencies = [ini.id])
+            set_estimate!(q, t.id, 6, 10, 20)
+            push!(deps, t.id)
+        end
+        update_task!(q, fim.id; dependencies = deps)
+        schedule!(q)
+        fq = pert_finish(q)
+        sq = pert_simulate(q; n = 4000, rng = MersenneTwister(7))
+        @test fq.critical == 8                       # as seis frentes empatam
+        # σ de UMA frente, não das seis somadas (o que inflaria com o nº de frentes)
+        @test fq.sd_days ≈ 14 / 6 atol = 1e-9
+        @test sq.p50 > fq.expected                   # o viés, medido
+
+        # sem estimativa nenhuma não há o que sortear: uma passada só
+        r = create_project("PERT sem sorteio")
+        add_task!(r, "T"; start = Date(2026, 9, 1), duration = 4)
+        @test pert_simulate(r; n = 9999).runs == 1
+        @test pert_simulate(create_project("PERT vazio")).runs == 0
+
+        delete_project(p.id); delete_project(q.id); delete_project(r.id)
+    end
+
+    @testset "PERT: persistência e tabelas" begin
+        p = create_project("PERT io")
+        a = add_task!(p, "A"; start = Date(2026, 9, 1), duration = 5)
+        b = add_task!(p, "B"; start = Date(2026, 9, 1), duration = 5)
+        set_estimate!(p, a.id, 4, 6, 14)
+
+        # roundtrip .perth.jl (o leitor é o avaliador restrito, sem eval)
+        dir = mktempdir()
+        q = Perth.load(Perth.save(p, joinpath(dir, "pert.perth.jl")); register = false)
+        qa = only(filter(t -> t.name == "A", q.tasks))
+        qb = only(filter(t -> t.name == "B", q.tasks))
+        @test (qa.optimistic, qa.most_likely, qa.pessimistic) == (4, 6, 14)
+        @test !has_estimate(qb)                  # sem estimativa não vai pro arquivo
+        src = read(joinpath(dir, "pert.perth.jl"), String)
+        @test count("optimistic", src) == 1
+
+        # roundtrip JSON em disco (o formato interno)
+        r = Perth.project(p.id)
+        @test (r.tasks[1].optimistic, r.tasks[1].pessimistic) == (4, 14)
+
+        # tasktable / add_tasks!
+        rows = tasktable(p)
+        @test rows[1].optimistic == 4 && rows[1].expected ≈ 7.0
+        @test rows[2].optimistic === missing && rows[2].expected === missing
+        s = create_project("PERT tabela")
+        add_tasks!(s, [(name = "X", duration = 2, optimistic = 1, most_likely = 4,
+                        pessimistic = 7)])
+        sx = only(s.tasks)
+        @test has_estimate(sx) && expected_duration(sx) ≈ 4.0
+        @test sx.duration == 2                   # a tabela registra, pert! é que aplica
+
+        delete_project(p.id); delete_project(s.id)
+    end
+
+    @testset "PERT: rotas REST" begin
+        router = Perth._build_router()
+        p = create_project("PERT web")
+        a = add_task!(p, "A"; start = Date(2026, 9, 1), duration = 3)
+        b = add_task!(p, "B"; start = Date(2026, 9, 1), duration = 3,
+                      dependencies = [a.id])
+
+        # sem estimativa nenhuma, /cpm não inventa uma seção de PERT
+        r = JSON3.read(String(router(HTTP.Request("GET",
+                "/api/projects/$(p.id)/cpm")).body))
+        @test r.pert === nothing
+
+        # aplicar sem nada estimado é 409, não um no-op silencioso
+        resp = router(HTTP.Request("POST", "/api/projects/$(p.id)/pert"))
+        @test resp.status == 409
+        @test occursin("three-point estimate", String(resp.body))
+
+        set_estimate!(p, a.id, 4, 6, 14; apply = false)
+        set_estimate!(p, b.id, 2, 3, 10; apply = false)
+        @test a.duration == 3                       # nada aplicado ainda
+
+        r = JSON3.read(String(router(HTTP.Request("GET",
+                "/api/projects/$(p.id)/cpm")).body))
+        @test r.pert.expected == "2026-09-11"       # com as durações esperadas
+        @test r.pert.estimated == 2
+        @test r.pert.sd_days > 0
+        @test Date(r.pert.p80) > Date(r.pert.expected)
+        @test r.finish == "2026-09-06"              # o CPM segue no plano real
+
+        resp = router(HTTP.Request("POST", "/api/projects/$(p.id)/pert"))
+        @test resp.status == 200
+        back = JSON3.read(String(resp.body))
+        @test sort([t.duration for t in back.tasks]) == [4, 7]
+        @test Perth.project(p.id).tasks[1].duration == 7   # persistido
+        log = JSON3.read(String(router(HTTP.Request("GET", "/api/activity")).body))
+        @test any(e -> occursin("applied 2 PERT estimates", e.text), log)
+
+        @test router(HTTP.Request("POST", "/api/projects/naoexiste/pert")).status == 404
         delete_project(p.id)
     end
 

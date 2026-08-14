@@ -104,7 +104,10 @@ ready for `DataFrame(tasktable(p))`, `CSV.write`, etc. Columns: `id`,
 (calendar-aware), `deadline`, `deadline_slip` (calendar days past it;
 `missing` without a deadline), `pinned`, `progress`, `assignee`,
 `dependencies`, `color`, `notes`, `milestone`, `baseline_start`,
-`baseline_finish`, `slip_days` (`missing` without a baseline).
+`baseline_finish`, `slip_days` (`missing` without a baseline),
+`optimistic`, `most_likely`, `pessimistic` and `expected` — the PERT
+three-point estimate and the duration it implies (all `missing` on a
+task without an estimate).
 """
 function tasktable(p::Project)
     rows = NamedTuple[]
@@ -125,6 +128,10 @@ function tasktable(p::Project)
             baseline_finish = bfin,
             slip_days = bfin === missing ? missing :
                         Dates.value(end_date(p, t) - bfin),
+            optimistic = has_estimate(t) ? t.optimistic : missing,
+            most_likely = has_estimate(t) ? t.most_likely : missing,
+            pessimistic = has_estimate(t) ? t.pessimistic : missing,
+            expected = has_estimate(t) ? expected_duration(t) : missing,
         ))
     end
     return rows
@@ -155,9 +162,13 @@ Append tasks to `p` from any Tables.jl source (`DataFrame`, `CSV.File`,
 a vector of `NamedTuple`s, …). Required column: `name`. Optional
 columns: `start` (`Date` or ISO string), `duration`, `progress`,
 `assignee`, `notes`, `color`, `milestone`, `deadline`, `pinned`,
-`parent` and `dependencies` (a vector of ids, or a `";"`/`","`-separated
-string). Persists once at the end — invalid parents and dependency
-references are pruned on save.
+`optimistic`, `most_likely`, `pessimistic` (the PERT three-point
+estimate), `parent` and `dependencies` (a vector of ids, or a
+`";"`/`","`-separated string). Persists once at the end — invalid
+parents and dependency references are pruned on save.
+
+The estimate is recorded, not applied: `duration` stays whatever the
+table says until [`pert!`](@ref) runs.
 """
 function add_tasks!(p::Project, table)
     Tables.istable(table) ||
@@ -179,6 +190,9 @@ function add_tasks!(p::Project, table)
             parent = String(_cell(row, :parent, "")),
             deadline = _as_deadline(_cell(row, :deadline, nothing)),
             pinned = Bool(_cell(row, :pinned, false)),
+            optimistic = Int(_cell(row, :optimistic, 0)),
+            most_likely = Int(_cell(row, :most_likely, 0)),
+            pessimistic = Int(_cell(row, :pessimistic, 0)),
         )
         _normalize!(t)
         push!(p.tasks, t)

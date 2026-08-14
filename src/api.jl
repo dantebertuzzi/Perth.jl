@@ -296,6 +296,16 @@ function _fs_complete(req::HTTP.Request)
 end
 
 # Análise CPM do projeto: caminho crítico, folga e término, para a UI
+# Término probabilístico junto do CPM: a UI já pede /cpm a cada mudança, e
+# as duas análises saem do mesmo motor — não vale uma segunda ida à rede.
+# `nothing` quando ninguém estimou nada, que é o estado da maioria dos
+# projetos e o sinal para a barra de status não mostrar coisa nenhuma.
+function _pert_payload(p::Project)
+    any(has_estimate, p.tasks) || return nothing
+    f = pert_finish(p)
+    return (; f.expected, f.sd_days, f.estimated, p80 = pert_date(p, 0.8))
+end
+
 function _get_cpm(req::HTTP.Request)
     id = HTTP.getparams(req)["id"]
     _with_state(st -> begin
@@ -310,7 +320,7 @@ function _get_cpm(req::HTTP.Request)
         try
             c = _cpm(_leaf_view(p))
             _json((; cycle = false, finish = c.finish, calendar = p.calendar,
-                     tasks = slack(p)))
+                     tasks = slack(p), pert = _pert_payload(p)))
         catch err
             # Calendário de dias úteis sem BusinessDays carregado no servidor
             err isa ErrorException && return _error(err.msg; status = 409)
@@ -331,6 +341,22 @@ function _post_schedule(req::HTTP.Request)
         err isa ErrorException && return _error(err.msg; status = 409)
         rethrow()
     end
+    return _json(p)
+end
+
+# Aplica as estimativas de três pontos (pert!) e devolve o projeto —
+# irmão de _post_schedule: a UI recarrega o resultado do motor em vez de
+# recalcular te no navegador.
+function _post_pert(req::HTTP.Request)
+    id = HTTP.getparams(req)["id"]
+    p = _with_state(st -> get(st.projects, id, nothing))
+    p === nothing && return _error("not found"; status = 404)
+    n = count(t -> has_estimate(t) && !t.milestone, p.tasks)
+    n == 0 && return _error("no task in this project has a three-point estimate";
+                            status = 409)
+    pert!(p)
+    _with_state(st -> _log_activity!(st, _actor(req), "edit",
+        "applied $(n) PERT estimate$(n == 1 ? "" : "s") — $(p.name)"))
     return _json(p)
 end
 
@@ -510,6 +536,7 @@ function _build_router()
     HTTP.register!(router, "PUT",    "/api/projects/{id}/path",   _handled(_put_path))
     HTTP.register!(router, "GET",    "/api/projects/{id}/cpm",    _handled(_get_cpm))
     HTTP.register!(router, "POST",   "/api/projects/{id}/schedule", _handled(_post_schedule))
+    HTTP.register!(router, "POST",   "/api/projects/{id}/pert",    _handled(_post_pert))
     HTTP.register!(router, "GET",    "/api/projects",             _handled(_list_projects))
     HTTP.register!(router, "POST",   "/api/projects",             _handled(_create_project))
     HTTP.register!(router, "GET",    "/api/projects/{id}",        _handled(_get_project))

@@ -64,6 +64,7 @@
           <button data-action="redo">Redo <kbd>Ctrl+Shift+Z</kbd></button>
           <hr>
           <button data-action="auto-schedule">Auto-schedule (push successors) <kbd>S</kbd></button>
+          <button data-action="apply-pert" title="Every three-point estimate becomes a duration: (optimistic + 4×most likely + pessimistic) / 6">Apply PERT estimates</button>
           <hr>
           <button data-action="set-baseline">Set baseline (snapshot plan)</button>
           <button data-action="clear-baseline">Clear baseline</button>
@@ -344,6 +345,18 @@
         <label class="wide checkbox">
           <input type="checkbox" id="f-milestone"> Milestone
         </label>
+        <div class="wide pert-box" id="f-pert-box">
+          <span class="pert-title" title="PERT three-point estimate: the expected duration is (o + 4m + p)/6">Estimate (PERT)</span>
+          <span class="pert-fields">
+            <label>optimistic<input type="number" id="f-optimistic" min="0" step="1"></label>
+            <label>most likely<input type="number" id="f-most-likely" min="0" step="1"></label>
+            <label>pessimistic<input type="number" id="f-pessimistic" min="0" step="1"></label>
+          </span>
+          <span class="pert-result">
+            <span class="pert-out" id="f-pert-out"></span>
+            <button type="button" id="f-pert-apply" hidden>use as duration</button>
+          </span>
+        </div>
         <p class="wide summary-hint" id="f-summary-hint" hidden>
           Summary task: start, duration and progress roll up from its subtasks.
         </p>

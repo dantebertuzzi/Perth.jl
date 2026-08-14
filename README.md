@@ -44,6 +44,13 @@ computation live in Julia:
   detection, forward/backward pass, per-task slack, `critical_path`, and
   `schedule!` — which pushes successors while treating manual dates as
   *start-no-earlier-than* constraints. Works headless, no server needed.
+- **PERT** (`pert.jl`): three-point estimates (optimistic / most likely /
+  pessimistic) per task, `pert!` turning them into durations, and a
+  probabilistic finish — `pert_finish`, `finish_probability(p, date)`,
+  `pert_date(p, 0.8)` for the P80. Plus `pert_simulate`, a Monte Carlo
+  over the whole schedule that sees the *merge bias* the textbook
+  formula is blind to. No extra dependency: PERT feeds `duration` and
+  reuses the CPM engine above. See *Estimating under uncertainty*.
 - **Business-day calendars** via a BusinessDays.jl package extension:
   `set_calendar!(p, "Brazil")` and durations become working days —
   weekends and Brazilian national holidays are skipped by the whole
@@ -64,6 +71,8 @@ julia> schedule!(p)              # push successors, resolve the timeline
 julia> critical_path(p)          # ids with zero slack
 julia> slack(p) |> DataFrame     # slack analysis
 julia> deadline_slip(p)          # commitments already blown, in days
+julia> pert(p) |> DataFrame      # three-point estimates, with σ per task
+julia> pert_date(p, 0.8)         # the date you can actually promise
 julia> workload(p) |> DataFrame  # who is loaded on which day
 julia> icalendar(p, "plan.ics")  # milestones + deadlines for a calendar app
 julia> using BusinessDays; set_calendar!(p, "Brazil")   # durations in business days
@@ -109,6 +118,13 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   bar is noise in an agenda. Events don't mark the day busy, and their
   UIDs are stable, so re-importing updates them instead of piling up
   duplicates.
+- **Three-point estimates**: the task modal has an *Estimate (PERT)* row
+  — optimistic / most likely / pessimistic — with the expected duration
+  and σ computed as you type, and a *use as duration* button that only
+  shows up when the two differ. *Edit → Apply PERT estimates* does the
+  whole project at once. Once anything is estimated, the status bar
+  carries the **P80** finish (hover for the expected date and σ). See
+  *Estimating under uncertainty* below.
 - **Baseline tracking**: *Edit → Set baseline* snapshots the plan;
   ghost bars show it under the current bars and slipped tasks get a red
   `+Nd` badge. `set_baseline!(p)` / `slippage(p)` from the REPL.
@@ -249,6 +265,62 @@ their solid surfaces and the image fills the space around them. Each
 browser can hide it locally from the settings panel (*Hide background*) —
 a rendering preference, like *Hide other cursors*, not a way to keep the
 image private.
+
+## Estimating under uncertainty (PERT)
+
+A duration is a guess. PERT's idea, from the US Navy in 1958, is that
+nobody knows how long a task takes but everyone can bet on three
+numbers — optimistic `o`, most likely `m`, pessimistic `p` — and that
+those three carry both an expected duration and how sure you are:
+
+```
+te = (o + 4m + p) / 6            σ = (p − o) / 6
+```
+
+```julia
+set_estimate!(p, t.id, 4, 6, 14)   # duration becomes 7 (te), rounded
+pert(p) |> DataFrame               # per task: te, σ, variance
+pert!(p)                           # apply every estimate at once
+schedule!(p)                       # then push successors around them
+
+pert_finish(p)                     # (expected = 2026-10-04, sd_days = 3.6, …)
+finish_probability(p, Date(2026, 10, 10))   # 0.95
+pert_date(p, 0.8)                  # 2026-10-07 — the date you can promise
+```
+
+**PERT feeds `duration`, it does not fork the engine.** That is the
+whole design: once `pert!` has run, CPM, critical path, slack,
+deadlines, business-day calendars and the UI all work exactly as before,
+with no idea PERT exists. And nothing is written until you ask —
+`pert_finish` and friends run the same engine with substitute durations,
+so you can ask what the estimates *imply* without touching the plan.
+
+### The number the formula won't tell you
+
+`pert_finish` is the textbook formula, and the textbook formula has a
+known blind spot: it propagates variance along the critical path only.
+When a project has several fronts merging into one milestone, the
+project waits for the **last** of them — so the expected finish is
+systematically optimistic, no matter how good the estimates are. It's
+called the *merge bias*, and it is the reason PERT has a bad reputation
+it half deserves.
+
+Since the CPM engine is pure and cheap, Perth can just answer the
+question properly: `pert_simulate` draws a duration for every task from
+its Beta-PERT distribution (the one `te` is exactly the mean of),
+re-runs the whole schedule, and does it ten thousand times.
+
+```julia
+julia> pert_finish(p)          # six parallel fronts, all the same size
+(expected = Date("2026-09-13"), sd_days = 2.33, …)
+
+julia> pert_simulate(p; n = 10_000)
+(runs = 10000, p50 = Date("2026-09-16"), p80 = Date("2026-09-18"), …)
+```
+
+Three days the formula cannot see, and they are the honest ones. Ten
+thousand schedules take milliseconds here — which is a fair answer to
+*why a Gantt package in Julia*.
 
 ## Kanban: a shared board for the office
 
@@ -446,6 +518,8 @@ src/
                  calendar-days fallback), deadlines and pinned dates
   wbs.jl         parent/child hierarchy, summary rollup
   insights.jl    baseline slippage, overallocation, workload, S-curve
+  pert.jl        three-point estimates, probabilistic finish, Monte Carlo
+                 over the CPM engine (no extra dependency)
   icalendar.jl   .ics export of milestones and deadlines
   juliafile.jl   .perth.jl writer + restricted AST reader (no eval)
   show.jl        REPL Unicode Gantt, inline SVG for notebooks

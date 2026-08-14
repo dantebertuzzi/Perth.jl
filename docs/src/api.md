@@ -10,6 +10,15 @@ revision for cheap change polling; project CRUD lives under
 [`icalendar`](@ref)) and `/api/projects/{id}/chart?fmt=png|pdf|svg`
 (needs a Makie backend).
 
+`GET /api/projects/{id}/cpm` carries the CPM analysis (finish, per-task
+slack, critical flags) and, when any task has a three-point estimate, a
+`pert` object with `expected`, `sd_days`, `estimated` and `p80` — the
+status bar's probabilistic finish, on the request the UI already makes.
+It is `null` when nothing has been estimated. `POST
+/api/projects/{id}/pert` applies the estimates ([`pert!`](@ref):
+`duration` becomes `(o + 4m + p)/6`) and answers with the updated
+project, like `/schedule`; 409 when no task carries an estimate.
+
 `/api/projects/{id}/workload` is [`workload`](@ref) shaped for drawing:
 a contiguous day window (`start`, `days`) and, per person, a dense
 `load` vector with the number of simultaneous tasks on each day of the
