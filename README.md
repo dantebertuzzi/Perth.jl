@@ -17,12 +17,14 @@ Perth.run()          # opens http://localhost:8123
 p = create_project("Registry office renovation")
 add_task!(p, "Digitize archive"; start = Date(2026, 8, 1), duration = 15)
 add_task!(p, "Indexing"; start = Date(2026, 8, 16), duration = 10,
-          dependencies = [p.tasks[1].id])
+          dependencies = [p.tasks[1].id],
+          deadline = Date(2026, 8, 31))   # a commitment: never moves the task
 
 tasks(p)             # Vector of NamedTuples — Tables.jl-compatible
 projects()           # same — pipe straight into a DataFrame
 
 update_task!(p, p.tasks[1].id; progress = 60)
+update_task!(p, p.tasks[1].id; pinned = true)   # contract date: schedule! leaves it alone
 Perth.stop()
 ```
 
@@ -54,11 +56,14 @@ computation live in Julia:
   return rows ready for DataFrames.
 
 ```julia
-julia> p                       # Unicode Gantt in the REPL
-julia> schedule!(p)            # push successors, resolve the timeline
-julia> critical_path(p)        # ids with zero slack
-julia> slack(p) |> DataFrame   # slack analysis
-julia> set_calendar!(p, "Brazil")   # durations in business days
+julia> p                         # Unicode Gantt in the REPL
+julia> schedule!(p)              # push successors, resolve the timeline
+julia> critical_path(p)          # ids with zero slack
+julia> slack(p) |> DataFrame     # slack analysis
+julia> deadline_slip(p)          # commitments already blown, in days
+julia> workload(p) |> DataFrame  # who is loaded on which day
+julia> icalendar(p, "plan.ics")  # milestones + deadlines for a calendar app
+julia> using BusinessDays; set_calendar!(p, "Brazil")   # durations in business days
 julia> using CairoMakie; save("timeline.png", ganttplot(p))
 ```
 
@@ -147,7 +152,8 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   hides the menubar/toolbar/task table and requests browser fullscreen,
   leaving just the timeline for showing the plan on a projector; `Esc`
   or the floating corner button exits
-- Keyboard shortcuts: `N`, `Del`, `Enter`, `1/2/3`, `T`, `S`, `C`, `D`, `P`, `Esc`
+- Keyboard shortcuts: `N`, `Del`, `Enter`, `1/2/3`, `T`, `S`, `C`, `R`,
+  `D`, `P`, `Esc`, plus `Ctrl+D` (duplicate) and `Ctrl+Z` / `Ctrl+Shift+Z`
 
 ### Sharing the Gantt on the network
 
@@ -192,12 +198,19 @@ Perth prints, so nobody has to type it) — both on the WebSocket and on
 the REST API. Whoever opens the page without it is asked for the key on
 screen, and the browser keeps it for the rest of the session.
 
-The key is a live setting, not a startup-only one: `Perth.key!("…")`
-(and `Perth.kanban_key!` on the board) sets, changes or drops it with
-the server up, and the same control is in the Share / QR dialog on the
-machine running the server. Changing it disconnects whoever holds the
-old key — each is asked for the new one on screen — while dropping it
-disconnects nobody.
+The key is a live setting too, not a startup-only one — same control in
+the Share / QR dialog, for the machine running the server:
+
+```julia
+Perth.run(share = true, key = "obra-2026")   # or set it later, mid-session:
+Perth.key!("obra-2026")    # everyone on the network is asked for the new key
+Perth.key!()               # drop it; nobody is disconnected
+Perth.kanban_key!("…")     # same switch on the board, once it is up
+```
+
+Changing the key disconnects whoever holds the old one — each is asked
+for the new key on screen, not left with a dead page — while dropping it
+disconnects nobody, since nothing they hold became invalid.
 
 **Security:** without `key`, anyone on the network who knows the port
 can open and edit every project — same caveat as the kanban. Never
@@ -209,8 +222,8 @@ A local image can sit behind the UI — both apps, every connected
 browser:
 
 ```julia
-Perth.background!("~/Imagens/escritorio.jpg")
-Perth.background!(opacity = 0.35)   # quanto da imagem aparece (0–1)
+Perth.background!("~/Pictures/office.jpg")
+Perth.background!(opacity = 0.35)   # how much of the image shows through (0–1)
 Perth.background_clear!()
 ```
 
@@ -240,10 +253,12 @@ image private.
 board. It does not touch the Gantt data model — the board is its own
 entity, persisted as `kanban.json` in the Perth data directory.
 
-```
-Perth.kanban()                # this machine only, like Perth.run()
-Perth.kanban(share = true)    # prints the LAN links
-Perth.kanban_share!(false)    # stop transmitting, board still running
+```julia
+Perth.kanban()                       # this machine only, like Perth.run()
+Perth.kanban(share = true)           # prints the LAN links
+Perth.kanban(share = true, key = "…")  # …and requires the key from them
+Perth.kanban_share!(false)           # stop transmitting, board still running
+Perth.kanban_key!("…")               # set/change the key with the board up
 ```
 
 Like the Gantt, sharing flips live — from the REPL with
@@ -300,11 +315,12 @@ code both in the terminal and in that panel.
 True to the Perth philosophy, the REPL operates on the same board and
 broadcasts live to every open browser:
 
-```
-kanban_add_card!("backlog", "Ship v0.3")
+```julia
+kanban_add_card!("backlog", "Ship v0.7")
 kanban_move_card!(id, "doing")
 kanban_alias!("192.168.0.23", "Paulo")
 kanban_cards() |> DataFrame        # (column, id, text) rows
+kanban_chat!("board is ready")     # the chat panel, from the REPL
 Perth.kanban_stop()
 ```
 
@@ -424,26 +440,44 @@ src/
   storage.jl     in-memory state behind a lock, mirrored as JSON on disk,
                  revision counter, REPL-facing API
   schedule.jl    CPM engine + calendar abstraction (hooks with a
-                 calendar-days fallback)
+                 calendar-days fallback), deadlines and pinned dates
+  wbs.jl         parent/child hierarchy, summary rollup
+  insights.jl    baseline slippage, overallocation, workload, S-curve
+  icalendar.jl   .ics export of milestones and deadlines
   juliafile.jl   .perth.jl writer + restricted AST reader (no eval)
   show.jl        REPL Unicode Gantt, inline SVG for notebooks
+  splash.jl      REPL banner and startup panel
   api.jl         REST routes (HTTP.Router) + static files
-  server.jl      Perth.run / Perth.stop, port fallback, browser launch
+  server.jl      Perth.run / Perth.stop, port fallback, browser launch,
+                 the gatekeeper (sharing + access key)
+  presence.jl    presence hub shared by both apps: cursors, chat, QR,
+                 which routes the key protects
+  kanban.jl      the board: its own server, WebSocket ops, permissions
+  background.jl  the UI background image (Perth.background!)
 ext/
   PerthBusinessDaysExt.jl   working-day calendars (weakdep)
-  PerthMakieExt.jl          ganttplot (weakdep)
+  PerthMakieExt.jl          ganttplot / save_chart (weakdep)
+  PerthQRCodersExt.jl       QR code in the terminal and in the dialog (weakdep)
 frontend/
-  index.html, style.css, app.js   vanilla JS, no build step
+  index.html, style.css, app.js   the gantt — vanilla JS, no build step
+  kanban/                         the board, same stack
+  shared/                         ui.css, presence.js, i18n.js,
+                                  draggable.js, sw.js
 ```
 
-The server binds to `Sockets.localhost` only (never `0.0.0.0`) and does
-not block the REPL (`HTTP.serve!`). If port 8123 is busy it tries the
-next ones (8124, 8125, …).
+Both servers bind `0.0.0.0` and decide per connection who gets in (see
+*Sharing the Gantt on the network*), so sharing and the access key are
+live switches; neither blocks the REPL (`HTTP.listen!` — the WebSocket
+upgrade needs the stream). If port 8123 is busy Perth tries the next
+ones (8124, 8125, …).
 
 ## Security & known limitations
 
-- Local server, no authentication: any process on your machine can talk
-  to the API. Do not expose the port on a network.
+- No authentication beyond the access key: any process on your machine
+  can talk to the API (the machine running the server is always exempt),
+  and without `key = "…"` so can any machine on the local network while
+  sharing is on. The key is a shared secret in a URL, good for a LAN,
+  not a login. Never expose the port to the internet.
 - Last write wins: simultaneous edits from the REPL and the UI to the
   same project may overwrite each other.
 - With a business-day calendar, bar widths in the web timeline are
