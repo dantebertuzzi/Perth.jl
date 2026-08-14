@@ -436,6 +436,23 @@ end
         # Resolução de caminho: diretório -> slug do nome; sem .jl -> anexa
         dir = mktempdir()
         @test Perth._resolve_save_path(p, dir) == joinpath(dir, "espelho.perth.jl")
+
+        # Acento no nome do projeto é transliterado, não jogado fora: antes
+        # "Análise estatística" virava "an-lise-estat-stica.perth.jl" — e
+        # este é um nome de arquivo que o usuário vê e convive
+        nome(n) = begin
+            q = create_project(n)
+            out = basename(Perth._resolve_save_path(q, dir))
+            delete_project(q.id)
+            out
+        end
+        @test nome("Análise estatística") == "analise-estatistica.perth.jl"
+        @test nome("Obra do cartório — Bloco B") == "obra-do-cartorio-bloco-b.perth.jl"
+        @test nome("AÇÃO 2026") == "acao-2026.perth.jl"
+        @test nome("münchen/köln") == "munchen-koln.perth.jl"
+        # nome do qual não sobra nada ainda cai no id, como antes
+        @test endswith(nome("  ---  "), ".perth.jl")
+        @test !startswith(nome("  ---  "), "-")
         @test Perth._resolve_save_path(p, joinpath(dir, "plano")) ==
               joinpath(dir, "plano.perth.jl")
         @test_throws ArgumentError Perth._resolve_save_path(

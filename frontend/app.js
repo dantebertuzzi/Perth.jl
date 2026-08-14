@@ -770,6 +770,22 @@ function dateAt(x) {
 /* Renderização                                                         */
 /* ------------------------------------------------------------------ */
 
+/* Tudo que deriva de HOJE — a linha de hoje no gráfico, os destaques
+   "past deadline", o deadlineSlip das bandeiras — é montado dentro de
+   render*(), que roda quando a REVISÃO muda (pollFallback), não quando o
+   relógio anda. Um gantt deixado aberto na parede durante a noite
+   continuava desenhando a linha de ontem até alguém editar alguma coisa.
+   Este timer redesenha logo depois da meia-noite e se reagenda. */
+function renderAtMidnight() {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1,
+                        0, 0, 5);
+  setTimeout(() => {
+    renderAll();
+    renderAtMidnight();
+  }, next - now);
+}
+
 function renderAll() {
   if (!state.current) {
     el.taskRows.innerHTML = "";
@@ -2798,6 +2814,7 @@ function bootFailed(err) {
     isKeyError(err) ? showKeyGate() : bootFailed(err);
   }
   setInterval(pollFallback, POLL_MS);
+  renderAtMidnight();  // a linha de hoje não pode envelhecer sozinha
   refreshShareBtn();   // estado inicial do botão de transmitir da menubar
   refreshBackground(); // fundo da UI, se o REPL tiver apontado uma imagem
 

@@ -1,0 +1,17 @@
+# As quebras de linha valem exatamente como estão gravadas no repositório:
+# sem conversão na entrada nem na saída. O repositório é predominantemente
+# CRLF (src/background.jl e src/splash.jl são LF, e está tudo bem).
+#
+# O que isto evita: um clone numa máquina com core.autocrlf=true — o padrão
+# do Git no Windows, e o README já documenta uso em rede Windows — reescreve
+# o final de TODOS os arquivos no checkout, transformando um `git status`
+# limpo num repositório inteiro modificado.
+#
+# O que isto NÃO evita: um editor ou script gravar o final errado dentro de
+# um arquivo. Isso continua aparecendo como diff, e é assim que deve ser —
+# só que como diff da linha que mudou, não do arquivo inteiro.
+#
+# Uniformizar de verdade (`* text=auto eol=crlf` + `git add --renormalize .`)
+# custaria um commit reescrevendo todo o repositório. Não vale o ruído no
+# histórico por um problema que congelar já resolve.
+* -text

@@ -959,6 +959,11 @@ console.log("gantt · fundo da UI");
 console.log("gantt · prazo e data fixa");
 {
   const { runIn, close } = loadGanttApp();
+  // deixa o init() assíncrono assentar antes de qualquer close(): fechar a
+  // janela com ele ainda pendente deixa um init órfão que acorda contra um
+  // document já destruído e derruba o processo inteiro — com o stack
+  // apontando para o bloco SEGUINTE, que é onde ele por acaso acordou
+  await new Promise((r) => setTimeout(r, 50));
 
   const seed = `
     const mk = (id, name, start, duration, extra) => Object.assign({
@@ -1056,6 +1061,47 @@ console.log("gantt · prazo e data fixa");
              pinned: document.getElementById("f-pinned").disabled };`);
   check(r.deadline === true && r.pinned === true,
         "gantt: resumo desabilita prazo e data fixa (datas derivam dos filhos)");
+
+  close();
+}
+
+console.log("gantt · redesenho na virada do dia");
+{
+  // A linha de hoje, o destaque "past deadline" e o deadlineSlip saem todos
+  // de render*(), que roda quando a REVISÃO muda — não quando o relógio
+  // anda. Sem este timer, um gantt aberto na parede durante a noite segue
+  // desenhando a linha de ontem até alguém editar alguma coisa.
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  // agenda para logo depois da PRÓXIMA meia-noite local, não daqui a 24h
+  let r = runIn(`
+    const real = window.setTimeout;
+    window.__ms = null;
+    window.setTimeout = (fn, ms) => { window.__ms = ms; window.__fn = fn; return 0; };
+    renderAtMidnight();
+    window.setTimeout = real;
+    const now = new Date();
+    const meiaNoite = new Date(now.getFullYear(), now.getMonth(),
+                               now.getDate() + 1, 0, 0, 0) - now;
+    return { ms: window.__ms, meiaNoite };`);
+  check(r.ms > r.meiaNoite && r.ms <= r.meiaNoite + 10000,
+        "gantt: agenda para logo depois da próxima meia-noite");
+  check(r.ms <= 24 * 3600 * 1000,
+        "gantt: e nunca além de um dia (setTimeout longo demais estoura o int32)");
+
+  // ao disparar, redesenha E se reagenda — senão valeria uma noite só
+  r = runIn(`
+    let desenhou = 0, reagendou = 0;
+    const realRender = renderAll, real = window.setTimeout;
+    renderAll = () => { desenhou++; };
+    window.setTimeout = () => { reagendou++; return 0; };
+    window.__fn();                       // simula a virada do dia
+    window.setTimeout = real;
+    renderAll = realRender;
+    return { desenhou, reagendou };`);
+  check(r.desenhou === 1, "gantt: a virada redesenha");
+  check(r.reagendou === 1, "gantt: e se reagenda para a noite seguinte");
 
   close();
 }
