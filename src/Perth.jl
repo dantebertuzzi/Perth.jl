@@ -20,6 +20,7 @@ module Perth
 
 using Dates
 using Sockets
+using Unicode
 using UUIDs
 
 import HTTP

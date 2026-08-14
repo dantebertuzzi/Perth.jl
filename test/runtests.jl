@@ -1470,6 +1470,53 @@ end
         end
     end
 
+    @testset "kanban: nome de board com acento" begin
+        # Regressão de uso real: _slugify jogava fora o caractere acentuado
+        # em vez de transliterá-lo, então "cálculo" virava "clculo" — quem
+        # digitasse o nome com e sem acento ficava com DOIS boards, sem
+        # aviso nenhum. Havia um par assim num diretório de dados de verdade.
+        @test Perth._slugify("cálculo") == "calculo"
+        @test Perth._slugify("cálculo") == Perth._slugify("calculo")
+        @test Perth._slugify("estatística") == "estatistica"
+        @test Perth._slugify("Obra São Paulo") == "obra-sao-paulo"
+        @test Perth._slugify("AÇÃO") == "acao"
+        @test Perth._slugify("münchen") == "munchen"
+        @test Perth._slugify("  Já  Foi  ") == "ja-foi"
+        # nome que era inválido por ser só de acentuados agora funciona
+        @test Perth._slugify("ação") == "acao"
+        @test_throws ArgumentError Perth._slugify("")
+        @test_throws ArgumentError Perth._slugify("!!!")
+
+        # o slug antigo continua sendo o que era: é dele que sai o fallback
+        @test Perth._legacy_slug("cálculo") == "clculo"
+        @test Perth._legacy_slug("") == ""
+
+        # board gravado antes do conserto continua respondendo pelo nome
+        # que o criou, em vez de sumir atrás de um slug novo
+        sdir = mktempdir()
+        @test Perth._board_slug(sdir, "cálculo") == "calculo"   # nada em disco: o certo
+        write(joinpath(sdir, "kanban-clculo.json"), "{\"columns\":[]}")
+        @test Perth._board_slug(sdir, "cálculo") == "clculo"    # só o antigo: acha
+        @test Perth._board_slug(sdir, "clculo") == "clculo"     # pelo slug literal também
+        write(joinpath(sdir, "kanban-calculo.json"), "{\"columns\":[]}")
+        @test Perth._board_slug(sdir, "cálculo") == "calculo"   # os dois: o certo ganha
+        @test Perth._board_slug(sdir, "board") == "board"       # default intocado
+
+        # ponta a ponta: abrir "cálculo" carrega o board gravado como
+        # "clculo", com o conteúdo dele, e não cria um arquivo novo
+        adir = mktempdir()
+        Perth._init_kanban!(adir; name = "cálculo")
+        kanban_add_card!("backlog", "de antes do conserto")
+        antigo = joinpath(adir, "kanban-clculo.json")
+        mv(joinpath(adir, "kanban-calculo.json"), antigo)       # simula o arquivo velho
+        Perth._init_kanban!(adir; name = "cálculo")
+        @test Perth._kanban_state().name == "clculo"
+        @test [c.text for c in kanban_cards()] == ["de antes do conserto"]
+        @test !isfile(joinpath(adir, "kanban-calculo.json"))
+
+        Perth._init_kanban!(mktempdir())   # devolve o estado global do resto da suíte
+    end
+
     @testset "kanban" begin
         ktmp = mktempdir()
         Perth._init_kanban!(ktmp)

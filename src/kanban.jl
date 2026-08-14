@@ -65,13 +65,42 @@ _default_kanban_board() = Dict{String,Any}(
     "aliases" => Dict{String,Any}(),
 )
 
-# Nomes de board viram slugs de arquivo: minúsculas, dígitos, - e _
+# Nomes de board viram slugs de arquivo: minúsculas, dígitos, - e _.
+#
+# Acento é TRANSLITERADO, não descartado: "cálculo" vira "calculo". A
+# versão anterior removia o caractere inteiro junto com o resto do que não
+# fosse [a-z0-9_-], e "cálculo" virava "clculo" — quem digitasse o nome com
+# e sem acento acabava com dois boards diferentes sem nenhum aviso, que foi
+# exatamente o que aconteceu em uso real. Unicode.normalize(stripmark) é
+# stdlib e resolve todo o alfabeto latino de uma vez (ç, ñ, ü, ...).
 function _slugify(name::AbstractString)
-    s = lowercase(strip(String(name)))
+    s = Unicode.normalize(lowercase(strip(String(name))); stripmark = true)
     s = replace(s, r"\s+" => "-")
     s = replace(s, r"[^a-z0-9_-]" => "")
     isempty(s) && throw(ArgumentError("kanban: invalid board name \"$name\""))
     return s
+end
+
+# O slug que a versão anterior geraria. Existe só para não perder board
+# criado antes do conserto: um arquivo gravado como "clculo" continua
+# respondendo pelo nome "cálculo" que o criou (ver _board_slug). Não lança
+# em nome vazio — quem valida isso é o _slugify de verdade.
+function _legacy_slug(name::AbstractString)
+    s = lowercase(strip(String(name)))
+    s = replace(s, r"\s+" => "-")
+    return replace(s, r"[^a-z0-9_-]" => "")
+end
+
+# Nome digitado -> slug do arquivo, honrando o histórico: vale o slug novo,
+# a menos que ele ainda não tenha arquivo e o antigo tenha. Assim o
+# conserto não esconde board nenhum, e quando os DOIS existem (o caso de
+# quem digitou com e sem acento) o novo ganha — é o nome escrito certo.
+function _board_slug(dir::AbstractString, name::AbstractString)
+    slug = _slugify(name)
+    isfile(first(_board_paths(dir, slug))) && return slug
+    old = _legacy_slug(name)
+    (old != slug && !isempty(old) && isfile(first(_board_paths(dir, old)))) && return old
+    return slug
 end
 
 _board_paths(dir::AbstractString, name::AbstractString) = name == "board" ?
@@ -125,7 +154,7 @@ end
 
 function _init_kanban!(data_dir::AbstractString; name::AbstractString = "board")
     mkpath(data_dir)
-    slug = _slugify(name)
+    slug = _board_slug(data_dir, name)
     board, log, chat, file, logfile, chatfile = _load_board_files(data_dir, slug)
     KANBAN[] = KanbanState(board, 0, file, Dict{Int,KanbanClient}(), 0,
                            ReentrantLock(), log, logfile, chat, chatfile,
@@ -138,7 +167,7 @@ end
 # init a cada cliente conectado.
 function _kanban_use_board!(name::AbstractString)
     st = _kanban_state()
-    slug = _slugify(name)
+    slug = _board_slug(st.data_dir, name)
     changed = lock(st.lock) do
         slug == st.name && return false
         _kanban_persist(st)
@@ -1435,7 +1464,11 @@ function kanban(name::AbstractString = "board";
                 key::AbstractString = "",
                 open_browser::Bool = true,
                 data_dir::Union{Nothing,AbstractString} = nothing)
-    slug = _slugify(name)
+    # o diretório precisa ser conhecido antes do slug: é ele que diz se o
+    # nome pertence a um board gravado com o slug antigo (ver _board_slug)
+    dir = data_dir !== nothing ? String(data_dir) :
+          KANBAN[] === nothing ? _state().data_dir : KANBAN[].data_dir
+    slug = _board_slug(dir, name)
     if KANBAN_SERVER[] !== nothing
         if _kanban_state().name != slug
             _kanban_use_board!(slug)
