@@ -917,6 +917,63 @@ console.log("kanban · fundo da UI");
   close();
 }
 
+console.log("kanban · etiqueta de card novo");
+{
+  const { runIn, close } = loadKanbanApp();
+  // `at` é carimbado pelo servidor na criação (_kanban_now, "yyyy-mm-dd HH:MM");
+  // localISO() é a data local do navegador, a mesma que os prazos usam
+  const seed = `state.board = { columns: [{ id: "c1", name: "backlog", cards: [
+      { id: "hoje",     text: "criado hoje",   by: "repl", at: localISO() + " 09:00" },
+      { id: "ontem",    text: "de ontem",      by: "repl", at: "2020-01-01 09:00" },
+      { id: "feito",    text: "feito hoje",    by: "repl", at: localISO() + " 09:00", done: true },
+      { id: "semdata",  text: "board antigo",  by: "repl" },
+      { id: "sozinho",  text: "só o carimbo",  at: localISO() + " 10:00" }
+    ] }], archive: [], aliases: {} };`;
+  const has = (id) => `!!document.querySelector('.card[data-card="${id}"] .card-new')`;
+
+  let r = runIn(`${seed} render();
+    return { hoje: ${has("hoje")}, ontem: ${has("ontem")},
+             feito: ${has("feito")}, semdata: ${has("semdata")},
+             sozinho: ${has("sozinho")},
+             texto: document.querySelector('.card[data-card="hoje"] .card-new').textContent,
+             titulo: document.querySelector('.card[data-card="hoje"] .card-new').title };`);
+  check(r.hoje === true, "card criado hoje ganha a etiqueta");
+  check(r.ontem === false, "card de outro dia não ganha");
+  check(r.feito === false, "concluído hoje não ganha — a etiqueta some ao concluir");
+  check(r.semdata === false, "card sem carimbo `at` (board antigo) fica sem etiqueta");
+  check(r.sozinho === true, "carimbo sozinho já monta o rodapé para a etiqueta");
+  check(r.texto === "new" && /today/.test(r.titulo), "a etiqueta é uma palavra, com o motivo no title");
+
+  // não é botão: clicar não pode selecionar/filtrar nem virar ação
+  r = runIn(`${seed} render();
+    const el = document.querySelector('.card[data-card="hoje"] .card-new');
+    return { tag: el.tagName, filtro: state.filter };`);
+  check(r.tag === "SPAN" && !r.filtro, "a etiqueta é texto, não um controle");
+
+  // esconder é preferência local: classe no <html>, sem re-render e sem
+  // tocar no board (o carimbo `at` continua lá para as outras máquinas)
+  r = runIn(`${seed} render();
+    const t = document.getElementById("hide-new-toggle");
+    t.checked = true;
+    t.dispatchEvent(new Event("change"));
+    return { classe: document.documentElement.classList.contains("hide-new-badges"),
+             guardado: localStorage.getItem("perth-kanban-hide-new"),
+             nodom: ${has("hoje")},
+             carimbo: state.board.columns[0].cards[0].at };`);
+  check(r.classe === true, "esconder marca a classe no <html>");
+  check(r.guardado === "on", "e a preferência persiste no localStorage");
+  check(r.nodom === true && !!r.carimbo,
+        "o CSS é que esconde: o nó e o carimbo do board continuam intactos");
+
+  r = runIn(`const t = document.getElementById("hide-new-toggle");
+    t.checked = false;
+    t.dispatchEvent(new Event("change"));
+    return document.documentElement.classList.contains("hide-new-badges");`);
+  check(r === false, "desmarcar traz a etiqueta de volta sem recarregar");
+
+  close();
+}
+
 console.log("gantt · fundo da UI");
 {
   const { runIn, simulate, close } = loadGanttApp();

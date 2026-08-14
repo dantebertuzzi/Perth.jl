@@ -15,6 +15,17 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   does not stop an editor from writing the wrong ending inside a file;
   that still shows up as a diff, which is where it belongs.
 
+- Kanban: cards created **today** are marked `new`, next to the creator
+  stamp in the card footer. No new data — the server has always stamped
+  `at` on creation, and restoring a card from the archive keeps the
+  original stamp, so an old card never comes back looking new. The mark
+  is deliberately quiet: a single word in the accent colour, no border,
+  no background, not clickable (the card footer already carries up to
+  three bordered pills — assignee, due date, archive — and a fourth box
+  would turn it into a row of buttons). It disappears the moment the
+  card is done, and each browser can switch it off in the settings panel
+  (*hide new-card badges*), like the cursors and the background image.
+
 ### Fixed
 - Kanban: the Gantt→kanban bridge now mirrors into **every** board, not
   just the one currently loaded. A card linked to a Gantt task only
@@ -60,12 +71,13 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   the save box builds when you point it at a folder, and a file name you
   see and live with. A name that reduces to nothing still falls back to
   the project id.
-- Gantt: the chart now redraws just after midnight. Everything derived
-  from *today* — the today line, the `past deadline` highlight, the
-  deadline flags' slip count — is built inside `render*()`, which runs
-  when the revision changes, not when the clock moves: a Gantt left open
-  on an office wall overnight kept drawing yesterday's today line until
-  somebody edited something.
+- Both apps now redraw just after midnight. Everything derived from
+  *today* — the Gantt's today line and `past deadline` highlight, the
+  kanban's due-date pills going `soon`/`overdue` and its new `new` mark —
+  is built inside `render*()`, which runs when something changes, not
+  when the clock moves. A Gantt left open on an office wall overnight
+  kept drawing yesterday's today line, and a board left open kept showing
+  yesterday's "today", until somebody touched them.
 - Tests: the `gantt · prazo e data fixa` block closed its jsdom window
   without letting the async `init()` settle. The orphaned `init()` would
   wake against a destroyed `document` and take the whole process down —
