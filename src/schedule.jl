@@ -174,11 +174,20 @@ end
 # CPM completo. Retorna NamedTuple de vetores alinhados a p.tasks:
 # es/ef (early start/finish), ls/lf (late start/finish), slack em dias.
 # Datas manuais funcionam como restrição "não antes de" (start-no-earlier-than).
-function _cpm(p::Project)
+#
+# `durations` substitui a duração de cada tarefa sem tocar no projeto: é
+# por onde o PERT roda o mesmo motor com as durações esperadas (e a
+# simulação de Monte Carlo, milhares de vezes com durações sorteadas) sem
+# gravar nada e sem uma segunda implementação do CPM. Marcos continuam
+# ocupando um dia, venha a duração de onde vier.
+function _cpm(p::Project, durations::Union{Nothing,AbstractVector{<:Integer}} = nothing)
     order, succs = _toposort(p)
     cal = _cal(p)
     n = length(p.tasks)
     idx = Dict(t.id => i for (i, t) in enumerate(p.tasks))
+    eff = durations === nothing ?
+        [_effdur(t) for t in p.tasks] :
+        [p.tasks[i].milestone ? 1 : max(Int(durations[i]), 1) for i in 1:n]
 
     # arestas tipadas por PREDECESSOR: succ_edges[j] = [(i, dep), ...]
     succ_edges = [Tuple{Int,NamedTuple}[] for _ in 1:n]
@@ -202,13 +211,13 @@ function _cpm(p::Project)
                 s = max(s, _shift(cal, es[j], dep.lag))
             elseif dep.type === :FF      # termina junto (+lag): recua ao início
                 s = max(s, _start_of(cal,
-                        _shift(cal, ef[j], dep.lag), _effdur(t)))
+                        _shift(cal, ef[j], dep.lag), eff[i]))
             else                         # FS (+lag)
                 s = max(s, _shift(cal, _day_after(cal, ef[j]), dep.lag))
             end
         end
         es[i] = _snap(cal, s)
-        ef[i] = _end_of(cal, es[i], _effdur(t))
+        ef[i] = _end_of(cal, es[i], eff[i])
     end
 
     # `init` de maximum é a semente da redução, não um default para vetor
@@ -228,7 +237,7 @@ function _cpm(p::Project)
     for i in reverse(order)              # backward pass (ciente de tipo/lag)
         for (k, dep) in succ_edges[i]
             lim = if dep.type === :SS    # restrição no início: converte p/ fim
-                _end_of(cal, _shift(cal, ls[k], -dep.lag), _effdur(p.tasks[i]))
+                _end_of(cal, _shift(cal, ls[k], -dep.lag), eff[i])
             elseif dep.type === :FF
                 _shift(cal, lf[k], -dep.lag)
             else                         # FS
@@ -236,7 +245,7 @@ function _cpm(p::Project)
             end
             lf[i] = min(lf[i], lim)
         end
-        ls[i] = _start_of(cal, lf[i], _effdur(p.tasks[i]))
+        ls[i] = _start_of(cal, lf[i], eff[i])
     end
 
     slack = [_gap(cal, ef[i], lf[i]) for i in 1:n]

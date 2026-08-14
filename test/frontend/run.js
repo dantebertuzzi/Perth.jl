@@ -1163,6 +1163,119 @@ console.log("gantt · redesenho na virada do dia");
   close();
 }
 
+console.log("gantt · estimativa de três pontos (PERT)");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));   // deixa o init() assentar
+
+  const seed = `
+    const mk = (id, name, start, duration, extra) => Object.assign({
+      id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+      optimistic: 0, most_likely: 0, pessimistic: 0 }, extra || {});
+    state.current = { id: "p1", name: "P", tasks: [
+      mk("t1", "Estimada", "2026-03-02", 5,
+         { optimistic: 4, most_likely: 6, pessimistic: 14 }),
+      mk("t2", "Sem estimativa", "2026-03-02", 3),
+      mk("t3", "Marco", "2026-03-10", 1, { milestone: true }) ] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  const fields = (o, m, p) => `
+    document.getElementById("f-optimistic").value = "${o}";
+    document.getElementById("f-most-likely").value = "${m}";
+    document.getElementById("f-pessimistic").value = "${p}";
+    document.getElementById("f-optimistic").dispatchEvent(new Event("input"));`;
+
+  // o modal lê os três números e mostra te = (4 + 4*6 + 14)/6 = 7 e σ = 10/6
+  let r = runIn(`${seed} openModal("t1");
+    return { o: document.getElementById("f-optimistic").value,
+             m: document.getElementById("f-most-likely").value,
+             p: document.getElementById("f-pessimistic").value,
+             out: document.getElementById("f-pert-out").textContent,
+             btn: document.getElementById("f-pert-apply").hidden };`);
+  check(r.o === "4" && r.m === "6" && r.p === "14", "gantt: o modal mostra a estimativa");
+  check(/7/.test(r.out) && /1\.7/.test(r.out),
+        "gantt: e a prévia calcula a duração esperada e o σ");
+  check(r.btn === false, "gantt: com te (7) diferente da duração (5), oferece aplicar");
+
+  // aplicar escreve na duração e some — o botão só existe enquanto há diferença
+  r = runIn(`document.getElementById("f-pert-apply").click();
+    return { dur: document.getElementById("f-duration").value,
+             btn: document.getElementById("f-pert-apply").hidden };`);
+  check(r.dur === "7" && r.btn === true,
+        "gantt: aplicar escreve te na duração e o botão se recolhe");
+
+  // a prévia repete a coerção do servidor: o otimista é o piso
+  r = runIn(`${fields(8, 5, 6)}
+    return document.getElementById("f-pert-out").textContent;`);
+  check(/8/.test(r) && /σ 0/.test(r),
+        "gantt: prévia coerente com _normalize_estimate! (8,5,6 -> 8,8,8)");
+
+  // estimativa parcial: o que falta vem da duração em vigor (7, após aplicar)
+  r = runIn(`${fields("", "", 20)}
+    return { dur: document.getElementById("f-duration").value,
+             out: document.getElementById("f-pert-out").textContent };`);
+  check(r.dur === "7" && /9\.2/.test(r.out),
+        "gantt: parcial completa pela duração ((7 + 4*7 + 20)/6 = 9.2)");
+
+  r = runIn(`${fields("", "", "")}
+    return { out: document.getElementById("f-pert-out").textContent,
+             none: document.getElementById("f-pert-out").className,
+             btn: document.getElementById("f-pert-apply").hidden };`);
+  check(/no estimate/.test(r.out) && /none/.test(r.none) && r.btn === true,
+        "gantt: sem os três números não há prévia nem botão");
+
+  // grava como digitado: normalizar é do servidor, não do navegador
+  r = runIn(`${fields(2, 9, 3)} submitModal();
+    const t = state.current.tasks.find((x) => x.id === "t1");
+    return [t.optimistic, t.most_likely, t.pessimistic];`);
+  check(r.join(",") === "2,9,3", "gantt: o modal grava os três campos crus");
+
+  r = runIn(`openModal("t2");
+    ${fields(1, 2, 3)} submitModal();
+    const t = state.current.tasks.find((x) => x.id === "t2");
+    return [t.optimistic, t.most_likely, t.pessimistic, t.duration];`);
+  check(r.join(",") === "1,2,3,3",
+        "gantt: estimar não muda a duração sozinho (quem aplica é pert!)");
+
+  // marco ocupa o próprio dia: não faz sentido oferecer te como duração
+  r = runIn(`openModal("t3"); ${fields(3, 5, 9)}
+    return document.getElementById("f-pert-apply").hidden;`);
+  check(r === true, "gantt: marco não recebe duração do PERT");
+
+  // resumo (tem filha): a estimativa é de quem faz o trabalho
+  r = runIn(`state.current.tasks.push(Object.assign({}, state.current.tasks[1],
+      { id: "t4", name: "Filha", parent: "t2" }));
+    renderAll();
+    openModal("t2");
+    return ["f-optimistic", "f-most-likely", "f-pessimistic"]
+             .map((id) => document.getElementById(id).disabled);`);
+  check(r.join(",") === "true,true,true",
+        "gantt: resumo desabilita a estimativa (datas derivam dos filhos)");
+
+  // barra de status: só o P80, o resto no title
+  r = runIn(`closeModal(false);
+    state.cpm.pert = { expected: "2026-03-11", sd_days: 2.13, estimated: 2,
+                       p80: "2026-03-13" };
+    renderStatus();
+    const el = document.getElementById("status-left");
+    return { text: el.textContent, title: el.title };`);
+  check(/P80 2026-03-13/.test(r.text), "gantt: a barra de status mostra o P80");
+  check(!/2\.13/.test(r.text) && /2026-03-11/.test(r.title) && /2\.1/.test(r.title),
+        "gantt: esperado e σ ficam no tooltip, fora da barra");
+
+  r = runIn(`state.cpm.pert = null; renderStatus();
+    const el = document.getElementById("status-left");
+    return { text: el.textContent, title: el.getAttribute("title") };`);
+  check(!/P80/.test(r.text) && r.title === null,
+        "gantt: sem estimativa no projeto, a barra não mostra nada disso");
+
+  close();
+}
+
 console.log("gantt · painel de recursos");
 {
   const { runIn, close } = loadGanttApp();

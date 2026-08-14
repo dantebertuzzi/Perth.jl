@@ -26,6 +26,46 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   card is done, and each browser can switch it off in the settings panel
   (*hide new-card badges*), like the cursors and the background image.
 
+- **PERT: three-point estimates and a probabilistic finish** (`pert.jl`).
+  Each task can carry `optimistic` / `most_likely` / `pessimistic`
+  (`set_estimate!`, or the *Estimate (PERT)* row in the task modal),
+  from which come the expected duration `(o + 4m + p)/6` and σ
+  `(p − o)/6`. `pert!` (Edit → *Apply PERT estimates*) turns estimates
+  into durations; `pert(p)` is the table with σ and variance per task;
+  `pert_finish`, `finish_probability(p, date)` and `pert_date(p, 0.8)`
+  answer *when does this actually land*. The UI carries the P80 in the
+  status bar once anything is estimated, with the expected date and σ in
+  the tooltip.
+
+  The design decision is that **PERT feeds `duration` and does not fork
+  the engine**: after `pert!`, CPM, critical path, slack, deadlines,
+  business-day calendars and the whole UI keep working unchanged. The
+  analysis functions write nothing — `_cpm` now accepts a substitute
+  duration vector, so they run the real engine on hypothetical numbers.
+
+  No new dependency: the normal CDF is a rational approximation
+  (Abramowitz & Stegun 26.2.17) and its inverse is bisection over it —
+  cheaper than pulling in SpecialFunctions or Distributions for one
+  function.
+- `pert_simulate`: Monte Carlo over the whole schedule — draw every
+  estimated duration from its Beta-PERT (the distribution `te` is
+  exactly the mean of, so it and the formula answer about the *same*
+  distribution), re-run the CPM forward pass, ten thousand times.
+  This is the answer to believe when it disagrees with `pert_finish`:
+  the textbook formula propagates variance along the critical path only,
+  so it is systematically optimistic on projects where several fronts
+  merge (the classic *merge bias*), and the simulation measures exactly
+  that gap. Beta sampling is two Marsaglia–Tsang gamma variates, also
+  dependency-free.
+- The PERT fields ride along everywhere a task already goes: JSON
+  storage, the `.perth.jl` interchange format (written only when the
+  three are set), `tasktable` (plus an `expected` column) and
+  `add_tasks!`.
+- REST: `GET /api/projects/{id}/cpm` gained a `pert` object (`null`
+  until something is estimated) so the status bar costs no extra
+  round-trip, and `POST /api/projects/{id}/pert` applies the estimates,
+  mirroring `/schedule`.
+
 ### Fixed
 - Kanban: the Gantt→kanban bridge now mirrors into **every** board, not
   just the one currently loaded. A card linked to a Gantt task only

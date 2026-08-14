@@ -35,6 +35,12 @@ A single task (or milestone) on the Gantt chart.
   computes where it *would* go, so a pin the plan can no longer honour
   shows up as an `early_start` later than `start` in [`slack`](@ref)
   instead of the task silently moving.
+- `optimistic::Int` / `most_likely::Int` / `pessimistic::Int`: the PERT
+  three-point estimate, in the same days as `duration`. All three `0`
+  (the default) means *no estimate*; see [`set_estimate!`](@ref) and
+  [`pert`](@ref). They never move the task on their own — the expected
+  duration `(o + 4m + p)/6` only reaches `duration` through
+  [`pert!`](@ref), the same way [`schedule!`](@ref) is what moves dates.
 """
 Base.@kwdef mutable struct GanttTask
     id::String = _short_id()
@@ -53,6 +59,10 @@ Base.@kwdef mutable struct GanttTask
     baseline_duration::Int = 0
     deadline::Union{Nothing,Date} = nothing
     pinned::Bool = false
+    # Estimativa de três pontos (PERT); os três zerados = sem estimativa
+    optimistic::Int = 0
+    most_likely::Int = 0
+    pessimistic::Int = 0
 end
 
 """
@@ -126,6 +136,27 @@ function _normalize!(t::GanttTask)
     else
         t.baseline_duration = max(t.baseline_duration, 1)
     end
+    _normalize_estimate!(t)
+    return t
+end
+
+# Estimativa de três pontos coerente (definida aqui porque _normalize! roda
+# em todo salvamento; a análise em si vive em pert.jl).
+#
+# Estimativa parcial não é erro: quem preencheu só o pessimista está dizendo
+# "pode ir até aí", e o resto vem da duração atual. A ordem é imposta
+# empurrando para cima — o otimista é o piso, nunca o meio — em vez de
+# ordenar os três, que trocaria valores de campo silenciosamente.
+function _normalize_estimate!(t::GanttTask)
+    if t.optimistic <= 0 && t.most_likely <= 0 && t.pessimistic <= 0
+        t.optimistic = t.most_likely = t.pessimistic = 0   # sem estimativa
+        return t
+    end
+    t.most_likely = t.most_likely > 0 ? t.most_likely : max(t.duration, 1)
+    t.optimistic = t.optimistic > 0 ? t.optimistic : t.most_likely
+    t.pessimistic = t.pessimistic > 0 ? t.pessimistic : t.most_likely
+    t.most_likely = max(t.most_likely, t.optimistic)
+    t.pessimistic = max(t.pessimistic, t.most_likely)
     return t
 end
 

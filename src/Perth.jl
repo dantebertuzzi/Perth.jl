@@ -19,6 +19,7 @@ Perth.stop()
 module Perth
 
 using Dates
+using Random
 using Sockets
 using Unicode
 using UUIDs
@@ -37,6 +38,8 @@ export GanttTask, Project,
     deadline_slip,
     set_parent!, subtasks, is_summary, ordered_tasks,
     set_baseline!, clear_baseline!, has_baseline, slippage,
+    set_estimate!, clear_estimate!, has_estimate, expected_duration,
+    pert, pert!, pert_finish, finish_probability, pert_date, pert_simulate,
     tasktable, add_tasks!, overallocations, workload, icalendar,
     ganttplot, save_chart,
     kanban_columns, kanban_cards,
@@ -74,6 +77,7 @@ include("icalendar.jl")
 include("schedule.jl")
 include("wbs.jl")
 include("insights.jl")
+include("pert.jl")
 include("show.jl")
 include("splash.jl")
 include("api.jl")

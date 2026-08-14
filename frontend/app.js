@@ -452,6 +452,8 @@ async function fetchCPM() {
       cycle: r.cycle,
       finish: r.finish,
       calendar: r.calendar || "",
+      // término probabilístico; null quando ninguém estimou nada
+      pert: r.pert || null,
       byId: new Map((r.tasks || []).map((t) => [t.id, t])),
     };
   } catch {
@@ -999,6 +1001,19 @@ function renderStatus() {
   }
   const late = ts.filter((t) => deadlineSlip(t) > 0).length;
   if (late) text += ` · ⚠ ${late} past deadline`;
+  // Término probabilístico: só o P80, que é o número que se promete a
+  // alguém. O resto (esperado, σ, quantas tarefas estimadas) fica no
+  // tooltip — a barra de status não é lugar de tabela.
+  const pert = state.cpm?.pert;
+  if (pert && pert.p80) {
+    text += ` · P80 ${pert.p80}`;
+    el.statusLeft.title =
+      `${T("PERT")}: ${T("expected")} ${pert.expected} · σ ` +
+      `${Math.round(pert.sd_days * 10) / 10} d · ${pert.estimated} ` +
+      T("estimated tasks on the critical path");
+  } else {
+    el.statusLeft.removeAttribute("title");
+  }
   el.statusLeft.textContent = text;
 
   // Barra de progresso do projeto: só folhas (resumos são agregados delas)
@@ -1493,6 +1508,10 @@ function openModal(id) {
   $("#f-milestone").checked = !!t.milestone;
   $("#f-deadline").value = t.deadline || "";
   $("#f-pinned").checked = !!t.pinned;
+  $("#f-optimistic").value = t.optimistic || "";
+  $("#f-most-likely").value = t.most_likely || "";
+  $("#f-pessimistic").value = t.pessimistic || "";
+  renderPertPreview();
 
   // Lista de dependências possíveis (todas as outras tarefas)
   const deps = $("#f-deps");
@@ -1541,9 +1560,11 @@ function openModal(id) {
   psel.value = t.parent && !blocked.has(t.parent) ? t.parent : "";
 
   const isSum = state.wbs?.summary.has(id) ?? false;
-  // Resumo deriva as datas dos filhos: prazo e data fixa não fazem sentido
+  // Resumo deriva as datas dos filhos: prazo, data fixa e estimativa de
+  // três pontos não fazem sentido — quem estima é quem faz o trabalho
   for (const fid of ["f-start", "f-duration", "f-progress", "f-milestone",
-                     "f-deadline", "f-pinned"]) {
+                     "f-deadline", "f-pinned",
+                     "f-optimistic", "f-most-likely", "f-pessimistic"]) {
     $("#" + fid).disabled = isSum;
   }
   $("#f-summary-hint").hidden = !isSum;
@@ -1553,6 +1574,61 @@ function openModal(id) {
   $("#f-name").focus();
   $("#f-name").select();
 }
+
+/* ---------------------------------------------------------------- PERT
+ *
+ * Prévia ao vivo da estimativa de três pontos. A coerção repetida aqui é
+ * a MESMA de _normalize_estimate! (types.jl): sem ela a prévia mentiria,
+ * porque o servidor normaliza no salvamento — o otimista é o piso, e o
+ * que ficou em branco vem da duração atual. te é consequência dos três
+ * números, não um quarto campo: por isso é texto, e só vira botão quando
+ * difere da duração que o plano usa hoje.
+ */
+function pertRaw() {
+  const n = (id) => Math.max(0, parseInt($("#" + id).value, 10) || 0);
+  return { o: n("f-optimistic"), m: n("f-most-likely"), p: n("f-pessimistic") };
+}
+
+function pertPreview() {
+  const raw = pertRaw();
+  if (!raw.o && !raw.m && !raw.p) return null;          // sem estimativa
+  const dur = Math.max(1, parseInt($("#f-duration").value, 10) || 1);
+  let m = raw.m > 0 ? raw.m : dur;
+  const o = raw.o > 0 ? raw.o : m;
+  m = Math.max(m, o);
+  const p = Math.max(raw.p > 0 ? raw.p : m, m);
+  return { o, m, p, te: (o + 4 * m + p) / 6, sd: (p - o) / 6 };
+}
+
+function renderPertPreview() {
+  const out = $("#f-pert-out");
+  const btn = $("#f-pert-apply");
+  const e = pertPreview();
+  const round1 = (x) => String(Math.round(x * 10) / 10);
+  if (!e) {
+    out.textContent = T("no estimate");
+    out.classList.add("none");
+    btn.hidden = true;
+    return;
+  }
+  const days = Math.max(1, Math.round(e.te));
+  out.classList.remove("none");
+  out.textContent = `${T("expected")} ${round1(e.te)} d · σ ${round1(e.sd)}`;
+  btn.hidden = $("#f-duration").disabled ||
+               $("#f-milestone").checked ||
+               days === (parseInt($("#f-duration").value, 10) || 0);
+  btn.dataset.days = String(days);
+}
+
+for (const id of ["f-optimistic", "f-most-likely", "f-pessimistic",
+                  "f-duration", "f-milestone"]) {
+  $("#" + id).addEventListener("input", renderPertPreview);
+}
+$("#f-pert-apply").addEventListener("click", () => {
+  $("#f-duration").value = $("#f-pert-apply").dataset.days;
+  renderPertPreview();
+  $("#f-duration").focus();
+});
 
 function closeModal(discardNew) {
   if (discardNew && state.editingNew && state.selected) {
@@ -1586,6 +1662,12 @@ function submitModal() {
     t.milestone = $("#f-milestone").checked;
     t.deadline = $("#f-deadline").value || null;
     t.pinned = $("#f-pinned").checked;
+    // a estimativa é gravada como foi digitada; a coerção (otimista como
+    // piso, branco vindo da duração) é do servidor, em _normalize_estimate!
+    const est = pertRaw();
+    t.optimistic = est.o;
+    t.most_likely = est.m;
+    t.pessimistic = est.p;
   }
   t.color = $("#f-color").value;
   t.cost = Math.max(0, parseFloat($("#f-cost").value) || 0);
@@ -2363,6 +2445,27 @@ async function autoSchedule() {
   }
 }
 
+// Aplica as estimativas de três pontos: duração = te, no motor (pert!).
+// Mesmo caminho do auto-schedule — o servidor decide e devolve o projeto,
+// o navegador não recalcula te por conta própria.
+async function applyPert() {
+  if (!state.current) return;
+  pushUndo();
+  await saveNow();
+  try {
+    state.current = await api(`/api/projects/${state.current.id}/pert`, {
+      method: "POST",
+    });
+    _closeUndoEntry();
+    noteBase();
+    state.knownRev = await fetchRev();
+    await fetchAnalytics();
+    renderAll();
+  } catch (err) {
+    alert(`${T("Apply PERT estimates")}: ${err.message}`);
+  }
+}
+
 function toggleCritical() {
   state.showCritical = !state.showCritical;
   renderTable();
@@ -2432,6 +2535,7 @@ const ACTIONS = {
     window.open(withKey(`/api/projects/${state.current.id}/export.ics`)),
   "export-chart": exportChart,
   "auto-schedule": autoSchedule,
+  "apply-pert": applyPert,
   "toggle-critical": toggleCritical,
   "toggle-theme": toggleTheme,
   "presentation": togglePresentation,
