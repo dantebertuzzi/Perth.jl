@@ -282,8 +282,12 @@ not a presence opt-out: everyone else still sees yours.
 
 Cards carry a done state (✓ on hover) and, once done, an **archive**
 button; the archive panel (Board → Archived cards…) can restore or
-permanently delete them. Every card is stamped with the IP of the machine
-that created it, and the **host** — the browser on the server machine, or
+permanently delete them. A card created today is marked **new** next to
+its creator stamp — the mark is a word, not a badge, it goes away the
+moment the card is done, and it can be switched off per browser
+(settings → *hide new-card badges*), so a busy day doesn't turn the
+board into a wall of labels. Every card is stamped with the IP of the
+machine that created it, and the **host** — the browser on the server machine, or
 the REPL — can map IPs to names (`192.168.0.23` → `Paulo`) via
 Board → Rename machines… or `kanban_alias!`; the mapping applies to
 cursors, presence chips and card stamps on everyone's screen. `Ctrl+Z` /

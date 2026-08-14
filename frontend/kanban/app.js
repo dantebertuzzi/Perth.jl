@@ -876,10 +876,22 @@ function cardEl(card) {
     el.append(list, bar);
   }
 
-  // rodapé: quem criou (alias do host > IP) + responsável + prazo + arquivar
-  if (card.by || card.done || card.due || card.assignee) {
+  // rodapé: novo hoje + quem criou (alias do host > IP) + responsável +
+  // prazo + arquivar. A etiqueta de novo entra à esquerda, junto do carimbo
+  // de autoria (as duas dizem *de onde veio* o card); as pastilhas com
+  // moldura à direita continuam sendo só o que se pode acionar.
+  const fresh = isNewCard(card);
+  if (card.by || card.done || card.due || card.assignee || fresh) {
     const meta = document.createElement("div");
     meta.className = "card-meta";
+    if (fresh) {
+      const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
+      const tag = document.createElement("span");
+      tag.className = "card-new";
+      tag.textContent = T("new");
+      tag.title = T("added today");
+      meta.append(tag);
+    }
     if (card.by) {
       const by = document.createElement("span");
       by.className = "card-by";
@@ -1601,6 +1613,29 @@ function dueInfo(card) {
   const d = new Date(card.due + "T00:00");
   const label = isNaN(d) ? card.due : d.getDate() + " " + MONTHS[d.getMonth()];
   return { cls, label };
+}
+
+// Card criado hoje. O servidor carimba `at` na criação ("yyyy-mm-dd HH:MM",
+// _kanban_now no kanban.jl) e nunca mais mexe nele — restaurar do arquivo
+// preserva o carimbo original, então card velho não volta a ser "novo".
+// Concluído não conta: "novo" só interessa enquanto ainda há o que fazer
+// com o card, e é o que impede o board de um dia cheio de virar um mural
+// de etiquetas. Card sem `at` (board anterior a este campo) fica sem nada.
+const isNewCard = (card) =>
+  !card.done && !!card.at && String(card.at).slice(0, 10) === localISO();
+
+// Prazo e etiqueta "new" saem da data de HOJE, mas só são montados em
+// render() — que roda em cima de op, não de relógio. Um board deixado
+// aberto durante a virada do dia mostraria o "hoje" de ontem até alguém
+// mexer nele; este timer redesenha logo depois da meia-noite e se reagenda.
+function renderAtMidnight() {
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1,
+                        0, 0, 5);
+  setTimeout(() => {
+    render();
+    renderAtMidnight();
+  }, next - now);
 }
 
 // apelido definido pelo host tem precedência sobre o nome auto-escolhido
@@ -2956,6 +2991,20 @@ hideCursorsToggle.addEventListener("change", () => {
   applyHideCursors();
 });
 
+// Etiqueta de card novo: preferência local deste navegador, como os cursores
+// acima. É classe no <html> em vez de estado lido por cardEl, para o toggle
+// valer na hora — sem re-render, e sem cardEl depender de um elemento do
+// painel que ele não deveria conhecer.
+const hideNewToggle = $("#hide-new-toggle");
+const applyHideNew = () =>
+  document.documentElement.classList.toggle("hide-new-badges", hideNewToggle.checked);
+hideNewToggle.checked = localStorage.getItem("perth-kanban-hide-new") === "on";
+applyHideNew();
+hideNewToggle.addEventListener("change", () => {
+  localStorage.setItem("perth-kanban-hide-new", hideNewToggle.checked ? "on" : "off");
+  applyHideNew();
+});
+
 /* ============================== fundo da UI (Perth.background!)
  *
  * A imagem é setting do servidor e vale para os dois apps; esconder é
@@ -2992,3 +3041,4 @@ hideBgToggle.addEventListener("change", () => {
 refreshBackground();
 connect();
 render();
+renderAtMidnight();

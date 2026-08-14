@@ -325,6 +325,20 @@ kbd {
   overflow-wrap: normal;
   word-break: normal;
 }
+/* etiqueta de card criado hoje: texto e mais nada — sem moldura, sem fundo,
+   sem ícone. O rodapé do card já pode ter três pastilhas com borda
+   (responsável, prazo, arquivar); uma quarta caixinha faria dele uma
+   fileira de botões. Aqui a cor faz sozinha o trabalho de chamar o olho
+   num board todo cinza, e o peso visual fica em ~nada. Também não é
+   clicável de propósito: é um fato sobre o card, não uma ação. */
+.card-new {
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--purple);
+}
+.hide-new-badges .card-new { display: none; }
+
 .card-archive {
   font-size: 10px;
   padding: 1px 8px;

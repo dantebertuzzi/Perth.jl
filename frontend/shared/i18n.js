@@ -134,6 +134,10 @@ window.PerthI18n = (function () {
       // fundo da UI (Perth.background!)
       "Hide background": "Esconder o fundo",
       "hide background image": "esconder a imagem de fundo",
+      // etiqueta de card criado hoje (kanban)
+      "new": "novo",
+      "added today": "criado hoje",
+      "hide new-card badges": "esconder a etiqueta de card novo",
       // transmitir (share): diálogo de compartilhamento e avisos
       "Transmit to your network": "Transmitir para a sua rede",
       "Transmitting — click to stop": "Transmitindo — clique para parar",
@@ -375,6 +379,10 @@ window.PerthI18n = (function () {
       // fundo da UI (Perth.background!)
       "Hide background": "Ocultar el fondo",
       "hide background image": "ocultar la imagen de fondo",
+      // etiqueta de card criado hoje (kanban)
+      "new": "nueva",
+      "added today": "creada hoy",
+      "hide new-card badges": "ocultar la etiqueta de tarjeta nueva",
       // transmitir (share): diálogo de compartilhamento e avisos
       "Transmit to your network": "Transmitir a tu red",
       "Transmitting — click to stop": "Transmitiendo — clic para parar",
@@ -611,6 +619,10 @@ window.PerthI18n = (function () {
       // fundo da UI (Perth.background!)
       "Hide background": "Masquer le fond",
       "hide background image": "masquer l'image de fond",
+      // etiqueta de card criado hoje (kanban)
+      "new": "nouveau",
+      "added today": "ajouté aujourd'hui",
+      "hide new-card badges": "masquer le badge des nouvelles cartes",
       // transmitir (share): diálogo de compartilhamento e avisos
       "Transmit to your network": "Diffuser sur votre réseau",
       "Transmitting — click to stop": "Diffusion en cours — cliquez pour arrêter",
@@ -847,6 +859,10 @@ window.PerthI18n = (function () {
       // fundo da UI (Perth.background!)
       "Hide background": "隐藏背景",
       "hide background image": "隐藏背景图片",
+      // etiqueta de card criado hoje (kanban)
+      "new": "新",
+      "added today": "今天创建",
+      "hide new-card badges": "隐藏新卡片标记",
       // transmitir (share): diálogo de compartilhamento e avisos
       "Transmit to your network": "向局域网广播",
       "Transmitting — click to stop": "正在广播 — 点击停止",

@@ -5,6 +5,27 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- Kanban: cards created **today** are marked `new`, next to the creator
+  stamp in the card footer. No new data — the server has always stamped
+  `at` on creation, and restoring a card from the archive keeps the
+  original stamp, so an old card never comes back looking new. The mark
+  is deliberately quiet: a single word in the accent colour, no border,
+  no background, not clickable (the card footer already carries up to
+  three bordered pills — assignee, due date, archive — and a fourth box
+  would turn it into a row of buttons). It disappears the moment the
+  card is done, and each browser can switch it off in the settings panel
+  (*hide new-card badges*), like the cursors and the background image.
+
+### Fixed
+- Kanban: the board now redraws just after midnight. Everything derived
+  from *today* — the due-date pills going `soon`/`overdue`, and now the
+  `new` mark — was only ever built inside `render()`, which runs on
+  board operations, not on the clock: a board left open overnight kept
+  showing yesterday's "today" until somebody touched it.
+
 ## [0.7.0] - 2026-08-13
 
 ### Security
