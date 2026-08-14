@@ -41,7 +41,7 @@ export GanttTask, Project,
     kanban_columns, kanban_cards,
     kanban_add_card!, kanban_move_card!, kanban_remove_card!,
     kanban_alias!, kanban_aliases, kanban_log,
-    kanban_chat!, kanban_chat_log, kanban_share!,
+    kanban_chat!, kanban_chat_log, kanban_share!, kanban_key!,
     kanban_from_project!, kanban_boards, kanban_board!, kanban_reset!
 
 # Re-exporta o vocabulário de datas que a API do Perth usa o tempo todo,

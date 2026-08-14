@@ -192,6 +192,13 @@ Perth prints, so nobody has to type it) — both on the WebSocket and on
 the REST API. Whoever opens the page without it is asked for the key on
 screen, and the browser keeps it for the rest of the session.
 
+The key is a live setting, not a startup-only one: `Perth.key!("…")`
+(and `Perth.kanban_key!` on the board) sets, changes or drops it with
+the server up, and the same control is in the Share / QR dialog on the
+machine running the server. Changing it disconnects whoever holds the
+old key — each is asked for the new one on screen — while dropping it
+disconnects nobody.
+
 **Security:** without `key`, anyone on the network who knows the port
 can open and edit every project — same caveat as the kanban. Never
 expose the port to the internet.

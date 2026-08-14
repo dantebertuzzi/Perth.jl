@@ -175,6 +175,18 @@ function handleMessage(msg) {
       refreshShare();
       break;
     }
+    case "key": {
+      // a chave foi trocada (aqui, no REPL ou em outra aba do host): quem
+      // é de fora já foi desconectado, então isto só alcança o host — os
+      // links do diálogo mudam junto com a chave
+      if (msg.log) {
+        state.log.push(msg.log);
+        state.log.length > 500 && state.log.shift();
+        if (state.openModal === "activity") showActivity();
+      }
+      refreshShare();
+      break;
+    }
     case "init": {
       state.denied = false;
       state.rev = msg.rev;
@@ -2380,6 +2392,69 @@ function refreshShare() {
     });
 }
 
+// Linha da chave de acesso no diálogo de Share (só o host a vê) — gêmea da
+// do gantt. Aplicar uma chave nova derruba quem está na rede: a chave
+// antiga passou a ser a errada, e cada um é reperguntado na tela.
+function shareKeyRow(body, info) {
+  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
+  const wrap = document.createElement("div");
+  const row = document.createElement("div");
+  row.className = "share-key";
+  const label = document.createElement("span");
+  label.textContent = T(info.keyed ? "Access key required" : "No access key");
+  const input = document.createElement("input");
+  input.type = "password";
+  input.className = "share-key-input";
+  input.placeholder = T(info.keyed ? "new access key" : "access key");
+
+  const apply = (key, btn) => {
+    btn.disabled = true;
+    fetch(`/api/key${keyQS()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key }),
+    })
+      .then((r) => r.json())
+      .then((next) => {
+        if (next.error) throw new Error(next.error);
+        renderShare(body, next);   // links e QR mudam junto com a chave
+      })
+      .catch((err) => {
+        btn.disabled = false;
+        showToast(err.message);
+      });
+  };
+
+  const set = document.createElement("button");
+  set.className = "primary";
+  set.textContent = T("apply");
+  set.addEventListener("click", () => {
+    const v = input.value.trim();
+    v && apply(v, set);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") set.click();
+    e.stopPropagation();
+  });
+  row.append(label, input, set);
+
+  if (info.keyed) {
+    const drop = document.createElement("button");
+    drop.className = "danger";
+    drop.textContent = T("remove");
+    drop.addEventListener("click", () => apply("", drop));
+    row.append(drop);
+  }
+
+  const hint = document.createElement("div");
+  hint.className = "alias-hint";
+  hint.textContent = info.keyed
+    ? T("The links below already carry the key. Changing it disconnects everyone on the network — they are asked for the new one.")
+    : T("Without a key, anyone on the network who knows the port can open and edit this board.");
+  wrap.append(row, hint);
+  return wrap;
+}
+
 function renderShare(body, info) {
   const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   body.textContent = "";
@@ -2416,6 +2491,10 @@ function renderShare(body, info) {
     row.append(label, btn);
     body.append(row);
   }
+
+  // Chave de acesso: só o host troca. Fora do `can_share` de propósito —
+  // com o alcance preso no socket (host fixo) a chave continua valendo.
+  if (info.host) body.append(shareKeyRow(body, info));
 
   for (const u of info.urls) {
     const row = document.createElement("div");
@@ -2468,6 +2547,14 @@ function showKeyGate() {
     const v = input.value.trim();
     if (!v) return;
     sessionStorage.setItem("perth-kanban-key", v);
+    // o ?key= do link tem prioridade na carga, então um valor velho
+    // voltaria no F5 depois de o host trocar a chave — some da barra
+    const q = new URLSearchParams(location.search);
+    if (q.has("key")) {
+      q.delete("key");
+      const rest = q.toString();
+      history.replaceState(null, "", location.pathname + (rest ? "?" + rest : ""));
+    }
     state.denied = false;
     closeModal();
     connect();

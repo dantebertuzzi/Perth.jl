@@ -1190,9 +1190,68 @@ function _kanban_share_toggle(req::HTTP.Request, ip::AbstractString)
     return _json(_kanban_share_payload(ip))
 end
 
+"""
+    kanban_key!(key = "") -> Bool
+
+Set (or drop, with `""`) the access key of the running kanban board,
+live — no restart, no [`Perth.kanban_stop`](@ref). Returns whether a key
+is required from now on. Twin of [`Perth.key!`](@ref) for the board:
+machines on the network must send the key (the links Perth prints carry
+it), the machine running the server never needs it, and changing it
+disconnects everyone on the network, who are then asked for the new key
+on screen. Dropping the key disconnects nobody.
+
+The same control is in the UI (Board → Share / QR…), available only
+from the machine running the server.
+"""
+function kanban_key!(key::AbstractString = ""; actor::AbstractString = "repl")
+    KANBAN_SERVER[] === nothing &&
+        throw(ArgumentError("Perth kanban is not running — Perth.kanban() first"))
+    new = _cap_text(strip(String(key)))
+    KANBAN_KEY[] == new && return !isempty(new)
+    KANBAN_KEY[] = new
+    # a chave antiga virou inválida; tirar a chave não invalida ninguém
+    # (ver key!) — derrubar só pediria na tela uma chave que não existe mais
+    isempty(new) || _kanban_drop_remote!(; reason = "key")
+    st = _kanban_state()
+    entry = Dict{String,Any}(
+        "at" => _kanban_now(), "ip" => String(actor), "type" => "key",
+        "text" => isempty(new) ? "removed the access key" : "changed the access key",
+        "notify" => false)
+    lock(st.lock) do
+        push!(st.log, entry)
+        length(st.log) > _KANBAN_LOG_CAP && popfirst!(st.log)
+    end
+    _kanban_log_append(st.logfile, entry)
+    _kanban_broadcast(JSON3.write((; type = "key", keyed = !isempty(new), log = entry)))
+    @info(isempty(new) ?
+          "Perth kanban: access key removed — anyone on the network can open the board." :
+          "Perth kanban: access key set — new links: " * join(_kanban_urls(), " "))
+    return !isempty(new)
+end
+
+# POST /api/key {"key": "…"} — só do host, como o toggle da transmissão
+function _kanban_key_set(req::HTTP.Request, ip::AbstractString)
+    _kanban_is_host(ip) ||
+        return _error("only the machine running Perth can change this"; status = 403)
+    key = try
+        String(get(JSON3.read(String(req.body)), "key", ""))
+    catch
+        return _error("expected {\"key\": \"…\"}"; status = 400)
+    end
+    try
+        kanban_key!(key; actor = ip)
+    catch err
+        err isa ArgumentError && return _error(err.msg; status = 409)
+        rethrow()
+    end
+    return _json(_kanban_share_payload(ip))
+end
+
 # Derruba as conexões de máquinas remotas, preservando as do host — irmã de
-# _hub_drop_remote! (presence.jl) para o dicionário de clientes do kanban
-function _kanban_drop_remote!()
+# _hub_drop_remote! (presence.jl) para o dicionário de clientes do kanban.
+# `reason` escolhe o diálogo do outro lado — ver _hub_drop_remote!.
+function _kanban_drop_remote!(; reason::AbstractString = "share_off")
     st = _kanban_state()
     gone = lock(st.lock) do
         out = KanbanClient[]
@@ -1204,7 +1263,7 @@ function _kanban_drop_remote!()
         out
     end
     for c in gone
-        _presence_deny(c.ws, "share_off")
+        _presence_deny(c.ws, reason)
         _kanban_broadcast(JSON3.write(Dict("type" => "leave", "id" => c.id)))
     end
     return length(gone)
@@ -1269,6 +1328,8 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
             return req.method == "POST" ? _kanban_share_toggle(req, ip) :
                    _json(_kanban_share_payload(ip))
         end
+        path == "/api/key" && req.method == "POST" &&
+            return _kanban_key_set(req, ip)
         path == "/api/background" && return _json(_bg_payload())
         path == "/api/boards" && return _kanban_boards_info()
         if path == "/api/apps"

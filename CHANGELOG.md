@@ -16,13 +16,25 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   the key with the image URL.
 
 ### Added
+- **The access key is now a live setting**, like sharing already was:
+  `Perth.key!("…")` on the gantt and `Perth.kanban_key!("…")` on the
+  board set it, change it or drop it (`key!()`) with the server up — no
+  restart, no lost port. The same control sits in the Share / QR dialog,
+  for the machine running the server only, next to the transmit switch:
+  the warning about running open on the network is finally something you
+  can act on without stopping everything. Changing the key disconnects
+  the machines holding the old one, each landing on the "access key"
+  dialog to type the new one; dropping it disconnects nobody. The links
+  and the QR code in the dialog update with the key.
 - Gantt: the access key can be typed in the UI. Opening a keyed server
   without `?key=` used to end in `startup error: access key required`
   in the status bar and nothing else — the link with the key in it was
   the only way in, so a bookmark, the PWA's `start_url` or a link
   passed on without the query left you stuck. It now asks for the key
   (the dialog the kanban already had) and keeps it in `sessionStorage`,
-  so a reload without the query still works.
+  so a reload without the query still works. Typing a key also clears
+  `?key=` from the address bar — on load the URL wins over the session,
+  so a stale one would come back on the next reload.
 
 ### Fixed
 - Kanban: the WebSocket refusal for a missing key now carries

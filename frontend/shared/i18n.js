@@ -170,6 +170,17 @@ window.PerthI18n = (function () {
       "access key": "chave de acesso",
       "enter": "entrar",
       "enter board": "entrar no quadro",
+      "Access key required": "Chave de acesso exigida",
+      "No access key": "Sem chave de acesso",
+      "new access key": "nova chave",
+      "apply": "aplicar",
+      "remove": "remover",
+      "The links below already carry the key. Changing it disconnects everyone on the network — they are asked for the new one.":
+        "Os links abaixo já levam a chave. Trocá-la desconecta todo mundo na rede — cada um é perguntado pela nova.",
+      "Without a key, anyone on the network who knows the port can open and edit these projects.":
+        "Sem chave, qualquer um na rede que saiba a porta pode abrir e editar estes projetos.",
+      "Without a key, anyone on the network who knows the port can open and edit this board.":
+        "Sem chave, qualquer um na rede que saiba a porta pode abrir e editar este quadro.",
       "wrong key — try again": "chave incorreta — tente de novo",
       "could not load share info":
         "não foi possível carregar os dados de compartilhamento",
@@ -400,6 +411,17 @@ window.PerthI18n = (function () {
       "access key": "clave de acceso",
       "enter": "entrar",
       "enter board": "entrar al tablero",
+      "Access key required": "Clave de acceso requerida",
+      "No access key": "Sin clave de acceso",
+      "new access key": "nueva clave",
+      "apply": "aplicar",
+      "remove": "quitar",
+      "The links below already carry the key. Changing it disconnects everyone on the network — they are asked for the new one.":
+        "Los enlaces de abajo ya llevan la clave. Cambiarla desconecta a todos en la red — a cada uno se le pide la nueva.",
+      "Without a key, anyone on the network who knows the port can open and edit these projects.":
+        "Sin clave, cualquiera en la red que sepa el puerto puede abrir y editar estos proyectos.",
+      "Without a key, anyone on the network who knows the port can open and edit this board.":
+        "Sin clave, cualquiera en la red que sepa el puerto puede abrir y editar este tablero.",
       "wrong key — try again": "clave incorrecta — inténtalo de nuevo",
       "could not load share info": "no se pudo cargar la información de compartir",
       "not sharing": "sin transmisión",
@@ -625,6 +647,17 @@ window.PerthI18n = (function () {
       "access key": "clé d'accès",
       "enter": "entrer",
       "enter board": "entrer dans le tableau",
+      "Access key required": "Clé d'accès exigée",
+      "No access key": "Sans clé d'accès",
+      "new access key": "nouvelle clé",
+      "apply": "appliquer",
+      "remove": "retirer",
+      "The links below already carry the key. Changing it disconnects everyone on the network — they are asked for the new one.":
+        "Les liens ci-dessous portent déjà la clé. La changer déconnecte tout le monde sur le réseau — la nouvelle leur est demandée.",
+      "Without a key, anyone on the network who knows the port can open and edit these projects.":
+        "Sans clé, quiconque sur le réseau connaît le port peut ouvrir et modifier ces projets.",
+      "Without a key, anyone on the network who knows the port can open and edit this board.":
+        "Sans clé, quiconque sur le réseau connaît le port peut ouvrir et modifier ce tableau.",
       "wrong key — try again": "clé incorrecte — réessayez",
       "could not load share info": "impossible de charger les infos de partage",
       "not sharing": "pas de diffusion",
@@ -849,6 +882,17 @@ window.PerthI18n = (function () {
       "access key": "访问密钥",
       "enter": "进入",
       "enter board": "进入看板",
+      "Access key required": "需要访问密钥",
+      "No access key": "没有访问密钥",
+      "new access key": "新密钥",
+      "apply": "应用",
+      "remove": "移除",
+      "The links below already carry the key. Changing it disconnects everyone on the network — they are asked for the new one.":
+        "下面的链接已带上密钥。更换密钥会断开网络上所有人的连接 — 他们会被要求输入新密钥。",
+      "Without a key, anyone on the network who knows the port can open and edit these projects.":
+        "没有密钥，网络上任何知道端口的人都能打开并编辑这些项目。",
+      "Without a key, anyone on the network who knows the port can open and edit this board.":
+        "没有密钥，网络上任何知道端口的人都能打开并编辑此看板。",
       "wrong key — try again": "密钥错误 — 请重试",
       "could not load share info": "无法加载分享信息",
       "not sharing": "未广播",

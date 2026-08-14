@@ -6,6 +6,7 @@ Project
 Perth.run
 Perth.stop
 Perth.share!
+Perth.key!
 Perth.background!
 Perth.background
 Perth.background_clear!

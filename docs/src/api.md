@@ -28,6 +28,9 @@ for the key when the link came without one.
 out, a QR matrix for the LAN link, and whether the caller is the host.
 `POST /api/share` with `{"on": true|false}` flips it live; only the
 machine running the server may call it (403 otherwise, 409 if the server
-was started with an explicit `host`). While sharing is off, every other
+was started with an explicit `host`). `POST /api/key` with
+`{"key": "…"}` sets the access key the same way (`""` drops it) and
+answers with the `/api/share` payload, since the links carry the key;
+also host-only, 409 with the server down. While sharing is off, every other
 route answers 403 to any machine but this one. The kanban server exposes
 the same two endpoints on its own port.
