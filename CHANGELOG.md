@@ -5,6 +5,24 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- Kanban: an accented board name no longer produces a mangled file name.
+  `_slugify` dropped anything outside `[a-z0-9_-]`, so `"cálculo"` became
+  the slug `clculo` and `"estatística"` became `estatstica` — typing the
+  same name once with and once without the accent silently produced **two
+  different boards**. Found as a real pair (`kanban-calculo.json` and
+  `kanban-clculo.json`) in a live data directory. Accents are now
+  transliterated (`Unicode.normalize(…; stripmark = true)`, stdlib), so
+  `"cálculo"` and `"calculo"` are the same board, and names that were
+  entirely accented — previously rejected as invalid — work.
+
+  Boards created before the fix are not stranded: a name resolves to the
+  new slug unless that file does not exist *and* the old mangled one
+  does, in which case the old file keeps answering to the name that
+  created it. When both files exist the correctly-spelled one wins.
+
 ## [0.7.0] - 2026-08-13
 
 ### Security
