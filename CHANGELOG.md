@@ -8,6 +8,20 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Security
+- **What reaches the host machine is now host-only.** With sharing on, any
+  guest on the network could set a project's mirror path, browse the host's
+  directory tree and start the kanban process. The mirror is the worst of the
+  three: `_resolve_save_path` accepts any path ending in `.jl` verbatim, so a
+  guest could point it at `~/.julia/config/startup.jl` and have the host
+  overwrite that file on its next save — the `.jl` requirement, which looks
+  like a guard, is exactly what puts the most sensitive target in reach.
+  These three are not project edits, they are access to the machine, and they
+  now answer 403 to anyone but the machine running Perth, like the sharing
+  toggle and the access key already did. Editing projects is untouched: that
+  is a different question, and a read-only switch is the right shape for it.
+  The path box disappears for guests rather than sitting there to fail — it
+  also displayed a host path, which is the same thing `/api/fs` stopped
+  handing out.
 - **A project file could overwrite an unrelated file on disk.** `file_path` is
   the mirror path of *this* machine, and the writer never puts it in a
   `.perth.jl` — the format's own comment says so. The reader did not enforce

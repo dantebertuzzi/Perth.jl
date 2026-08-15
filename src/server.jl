@@ -292,9 +292,28 @@ end
 # abaixo): :not_shared (transmissão desligada), :need_key (rota de dados sem
 # a chave) ou :ok. Vive fora do handler para poder ser testado com um IP
 # remoto de mentira — do loopback, que é isento, o teste seria sempre :ok.
-function _gantt_gate(path::AbstractString, ip::AbstractString, qp)
+# Ações cuja consequência SAI do aplicativo e alcança a máquina que hospeda:
+# escrever arquivo em caminho arbitrário (o espelho .perth.jl), ler a árvore
+# de diretórios e iniciar um processo. Não são edição de projeto — são acesso
+# à máquina —, e por isso só do host, como o toggle de transmissão e a chave.
+#
+# O espelho é o mais grave dos três: _resolve_save_path aceita literalmente
+# qualquer caminho terminado em .jl, então um convidado apontaria o espelho
+# para ~/.julia/config/startup.jl e a máquina anfitriã sobrescreveria o
+# arquivo no salvamento seguinte. A exigência do .jl, que parece proteção, é
+# justamente o que põe o alvo mais sensível ao alcance.
+function _gantt_host_only(path::AbstractString, method::AbstractString)
+    startswith(path, "/api/fs/") && return true            # lista diretórios
+    path == "/api/launch/kanban" && return true            # inicia processo
+    return method == "PUT" && startswith(path, "/api/projects/") &&
+           endswith(path, "/path")                         # espelho em disco
+end
+
+function _gantt_gate(path::AbstractString, ip::AbstractString, qp;
+                     method::AbstractString = "GET")
     _gantt_share_ok(ip) || return :not_shared
     (_key_protected(path) && !_keyok(ip, qp, GANTT_KEY[])) && return :need_key
+    (_gantt_host_only(path, method) && !_presence_is_host(ip)) && return :host_only
     return :ok
 end
 
@@ -323,12 +342,15 @@ function _gantt_handler(router)
             # o router não vê o stream: propaga o IP p/ o log de atividades
             HTTP.setheader(http.message, "X-Perth-Peer" => ip)
             path = HTTP.URI(http.message.target).path
-            verdict = _gantt_gate(path, ip, qp)
+            verdict = _gantt_gate(path, ip, qp; method = http.message.method)
             if verdict === :not_shared
                 HTTP.streamhandler(_ -> _error("this Perth server is not sharing to the network";
                                                status = 403))(http)
             elseif verdict === :need_key
                 HTTP.streamhandler(_ -> _error("access key required"; status = 403))(http)
+            elseif verdict === :host_only
+                HTTP.streamhandler(_ -> _error(
+                    "only the machine running Perth can do this"; status = 403))(http)
             elseif path == "/api/share"
                 # fica fora do router de propósito: o toggle é do host, e só
                 # aqui o IP real da conexão é conhecido (header é do cliente)

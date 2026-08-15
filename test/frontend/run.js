@@ -801,6 +801,30 @@ console.log("kanban · transmitir (share)");
   close();
 }
 
+/* Espelho em disco e navegador de pastas são só-host (o servidor recusa com
+ * 403 — ver _gantt_host_only). Num convidado a caixa inteira some: deixá-la
+ * ali seria oferecer um controle que sempre falha, e ela ainda mostraria um
+ * caminho da máquina anfitriã. */
+console.log("gantt · a caixa de caminho é só do host");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  let r = runIn(`renderShareBtn({ host: false, can_share: true, shared: true });
+    return document.getElementById("filebox").hidden;`);
+  check(r === true, "gantt: convidado não vê a caixa de caminho");
+
+  r = runIn(`renderShareBtn({ host: true, can_share: true, shared: true });
+    return document.getElementById("filebox").hidden;`);
+  check(r === false, "gantt: a máquina que roda o Perth vê");
+
+  // sem informação nenhuma (ex.: /api/share falhou), some — o padrão seguro
+  r = runIn(`renderShareBtn(null); return document.getElementById("filebox").hidden;`);
+  check(r === true, "gantt: sem saber quem é, esconde em vez de arriscar");
+
+  close();
+}
+
 console.log("gantt · transmitir (share)");
 {
   const { runIn, simulate, close } = loadGanttApp();

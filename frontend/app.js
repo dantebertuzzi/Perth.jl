@@ -1907,6 +1907,12 @@ function showShare() {
 // direto, sem passar pelo diálogo. Escondido para quem não pode alternar —
 // máquina remota, ou servidor preso a um `host` fixo (can_share = false).
 function renderShareBtn(info) {
+  // Espelho em disco e navegador de pastas são só do host — o servidor recusa
+  // com 403 (ver _gantt_host_only). Num convidado a caixa inteira some, em vez
+  // de ficar ali para falhar: ela também mostraria um caminho da máquina
+  // anfitriã, que é a mesma informação que /api/fs deixou de entregar.
+  el.filebox.hidden = !(info && info.host);
+
   const btn = $("#share-toggle");
   if (!btn) return;
   const usable = !!(info && info.can_share && info.host);
