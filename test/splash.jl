@@ -244,6 +244,21 @@ _forced(f) = withenv(f, "PERTH_SPLASH" => "always")
         end
     end
 
+    # ── de quem é o teclado ──────────────────────────────────────────
+    #
+    # O seletor lê a entrada padrão. Se alguém já está ALIMENTANDO a sessão —
+    # VS Code "executar arquivo no REPL", `julia -i` com pipe, include em
+    # lote —, esses bytes são CÓDIGO, não tecla, e ler o primeiro os corrompe.
+    # Aconteceu de verdade antes desta guarda: "using Perth" seguido de
+    # println(...) chegava junto, o seletor engolia o "p" e o REPL recebia
+    # "rintln(...)". Medido num pty: entrada ociosa dá 0 bytes pendentes,
+    # entrada alimentada deu 22.
+    @testset "de quem é o teclado" begin
+        @test Perth._teclado_livre(0)          # ninguém alimentando: é gente
+        @test !Perth._teclado_livre(1)         # já tem byte esperando
+        @test !Perth._teclado_livre(22)        # o caso medido no pty
+    end
+
     # menu() fora de sessão interativa não pode BLOQUEAR esperando tecla:
     # cai na dica e volta. Sem isto, um Pkg.test que o chamasse travaria.
     @testset "menu sem terminal" begin

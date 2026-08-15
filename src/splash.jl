@@ -583,10 +583,27 @@ inside any package that depends on this one — a prompt that waits forever
 would hang all of those with no way out. Waiting a few seconds and stepping
 aside costs nothing to whoever was not looking.
 """
+# `pendentes` = bytes já esperando na entrada. Zero significa entrada ociosa,
+# isto é, gente. Qualquer coisa acima disso é código de quem chamou. As
+# frentes embutidas entram aqui porque dirigem a sessão por outro canal e
+# podem mandar código a qualquer instante, sem depender de quando se mede.
+_teclado_livre(pendentes::Integer) =
+    pendentes == 0 &&
+    !isdefined(Main, :VSCodeServer) &&      # extensão Julia do VS Code
+    !isdefined(Main, :PlutoRunner)          # notebook Pluto
+
 function _pick(io::IO = stdout; version = _version(), timeout::Real = 6)
     _fancy(io) || return nothing
     # sem terminal de onde ler tecla, o navegável não faz sentido
     _isatty(stdin) || return _hint(io; version)
+
+    # Alguém já está ALIMENTANDO esta sessão — VS Code "executar arquivo no
+    # REPL", `julia -i` com pipe, include em lote. Os bytes na entrada são
+    # CÓDIGO de quem chamou, não tecla de gente: o seletor comeria o primeiro
+    # deles. Verificado antes desta guarda: "using Perth" seguido de
+    # println(...) chegava junto, o seletor engolia o "p" e o REPL recebia
+    # "rintln(...)". Entrada ociosa mede 0 bytes; alimentada, o resto do bloco.
+    _teclado_livre(try bytesavailable(stdin) catch; 1 end) || return _hint(io; version)
 
     term  = REPL.Terminals.TTYTerminal(get(ENV, "TERM", "xterm"), stdin, io, stderr)
     sel, escolha, raw = 1, 0, false
