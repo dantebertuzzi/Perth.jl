@@ -454,6 +454,64 @@ function _export_ics(req::HTTP.Request)
         body)
 end
 
+# Painel de avisos: um lugar só para o que o plano tem de errado.
+#
+# Nada aqui é cálculo novo — o motor já sabia de tudo isto, espalhado: o ciclo
+# virava exceção ao reprogramar, o prazo estourado virava um "+8d" na barra, a
+# sobrecarga acendia no painel de recursos, e o atraso contra o baseline só
+# aparecia em slippage() no REPL. Faltava reunir.
+#
+# Ordem é por gravidade, e a gravidade é a do PLANO, não a do gosto: ciclo
+# impede programar qualquer coisa; prazo estourado é compromisso quebrado;
+# sobrecarga e atraso são avisos de que a coisa vai apertar.
+function _get_warnings(req::HTTP.Request)
+    id = HTTP.getparams(req)["id"]
+    _with_state(st -> begin
+        haskey(st.projects, id) || return _error("not found"; status = 404)
+        p = st.projects[id]
+        avisos = Dict{String,Any}[]
+
+        # Campos, não frases. Quem monta a frase é o navegador, que sabe o
+        # idioma de quem está lendo — texto pronto daqui sairia em inglês no
+        # meio de uma tela traduzida, que é o defeito que a varredura de i18n
+        # existe para impedir do outro lado.
+        add!(kind, sev; campos...) =
+            push!(avisos, merge(Dict{String,Any}("kind" => kind, "severity" => sev),
+                                Dict{String,Any}(String(k) => v for (k, v) in campos)))
+
+        has_cycle(p) && add!("cycle", "error"; task_id = "")
+
+        for r in deadline_slip(p)
+            add!("deadline", "error"; task_id = r.id, task = r.name,
+                 days = r.slip_days, at = string(r.deadline))
+        end
+
+        # Vencida de verdade: passou do fim e não terminou. Resumo é
+        # continente, não trabalho; marco só conta feito com 100%.
+        hoje = Dates.today()
+        for t in p.tasks
+            _has_children(p, t.id) && continue
+            t.progress >= 100 && continue
+            fim = end_date(p, t)
+            fim < hoje || continue
+            add!("overdue", "warning"; task_id = t.id, task = t.name, at = string(fim))
+        end
+
+        for r in overallocations(p)
+            add!("overallocation", "warning"; task_id = r.task1, who = r.assignee,
+                 task = r.task1_name, other = r.task2_name,
+                 from = string(r.from), to = string(r.to))
+        end
+
+        for r in slippage(p)
+            r.slip_days > 0 || continue
+            add!("slippage", "warning"; task_id = r.id, task = r.name, days = r.slip_days)
+        end
+
+        _json((; warnings = avisos))
+    end)
+end
+
 function _get_scurve(req::HTTP.Request)
     id = HTTP.getparams(req)["id"]
     p = _with_state(st -> get(st.projects, id, nothing))
@@ -533,6 +591,7 @@ function _build_router()
     HTTP.register!(router, "GET",    "/api/projects/{id}/export.ics", _handled(_export_ics))
     HTTP.register!(router, "GET",    "/api/projects/{id}/chart",  _handled(_export_chart))
     HTTP.register!(router, "GET",    "/api/projects/{id}/scurve", _handled(_get_scurve))
+    HTTP.register!(router, "GET",    "/api/projects/{id}/warnings", _handled(_get_warnings))
     HTTP.register!(router, "GET",    "/api/projects/{id}/workload", _handled(_get_workload))
     HTTP.register!(router, "GET",    "/api/fs/complete",          _handled(_fs_complete))
     HTTP.register!(router, "GET",    "/api/fs/list",              _handled(_fs_list))

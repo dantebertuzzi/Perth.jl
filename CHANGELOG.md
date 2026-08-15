@@ -5,6 +5,39 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **A warnings panel** — one place for everything wrong with the plan. The
+  engine already knew all of it, scattered: a dependency cycle surfaced as an
+  exception when scheduling, a blown deadline as a `+8d` on the bar, an
+  overload only in the resource pane, and drift against the baseline only from
+  `slippage()` in the REPL. Nothing new is computed; it is gathered. The chip
+  in the toolbar sits next to the zoom buttons and appears **only when there is
+  something to report** — a permanent counter reading zero is furniture — and
+  turns red when a problem stops the plan from being scheduled at all, rather
+  than merely squeezing it. At rest it is just the symbol and the count; the
+  frame appears on hover, like the path box and the kanban's filter. A boxed
+  chip competed with the Day/Week/Month group beside it, reading as one more
+  view mode.
+  Clicking a row closes the panel and takes you to the task: naming a problem
+  without going to it is half an answer.
+- The route returns **fields, not sentences**. A sentence composed in Julia
+  would arrive in English in the middle of a translated screen — the very
+  defect the i18n scan prevents on the other side — so the browser builds the
+  wording from `task`, `days`, `at`, `who`, and the kind label carries the
+  meaning.
+- **Tests that run in a real browser** (`test/browser`), covering what jsdom
+  cannot see: layout geometry and the real input-event chain. Every case in
+  there is a defect that shipped and was caught by eye, not by the 342 jsdom
+  checks — the PERT band changing width as you type, a double-click on a bar
+  that never became a double-click, a search that lit up a name whose bar was
+  months off screen, a locked field that did not look locked. No new
+  dependency: headless Chrome driven over the DevTools protocol through Node's
+  built-in WebSocket. With no browser on the machine the file declares itself
+  skipped and exits 0 — a test that says it did not run, rather than one that
+  pretends to be green.
+
 ## [0.8.4] - 2026-08-15
 
 ### Fixed
@@ -17,8 +50,9 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   dozens of LF lines in the middle. Counting bytes is.
 
 ### Added
-- **Find a task by name in the gantt** — the box next to *Highlight*, or `/`,
-  the same key the kanban uses. Non-matching tasks dim, in the table and in
+- **Find a task by name in the gantt** — the box sits in the task table's own
+  header, in place of the column label, since it is that column it filters and
+  the placeholder says so; `/` focuses it, the same key the kanban uses. Non-matching tasks dim, in the table and in
   the chart, because search reuses the highlight machinery that was already
   there. Accents and case do not matter: typing `integracao` finds
   *Integração por partes*, which is the point in a 141-task project — needing

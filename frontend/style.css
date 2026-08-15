@@ -912,9 +912,20 @@ body.presenting .res-pane { display: none; }
 /* Busca de tarefa na barra de ferramentas. Mesmo desenho do filtro do kanban
    (ver .mb-search lá): em repouso é só texto, a moldura aparece no hover e no
    foco. A contagem fica colada, para dizer se vale continuar digitando. */
-.task-search { position: relative; display: flex; align-items: center; gap: 6px; }
+/* A busca mora no CABEÇALHO da coluna de tarefas, no lugar do rótulo: é a
+   coluna que ela filtra, e o placeholder já diz o que a coluna é. Fora dali
+   ela disputava espaço com a barra de ferramentas e empurrava o vizinho ao
+   crescer. */
+.tt-head .task-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: -6px;          /* alinha o texto do campo com o da coluna */
+}
 #task-search {
-  width: 190px;
+  flex: 1;
+  min-width: 0;
   height: 26px;
   padding: 2px 9px;
   font-family: var(--mono);
@@ -927,7 +938,6 @@ body.presenting .res-pane { display: none; }
 #task-search::placeholder { color: var(--muted); opacity: .55; }
 #task-search:hover { border-color: var(--line); background: var(--field); }
 #task-search:focus {
-  width: 240px;
   color: var(--ink);
   background: var(--field);
   border-color: var(--line);
@@ -937,8 +947,76 @@ body.presenting .res-pane { display: none; }
 /* busca sem nenhum resultado: a moldura avisa, sem apagar o que foi digitado */
 #task-search.empty-hit { border-color: var(--red); color: var(--red); }
 .ts-count {
+  flex: 0 0 auto;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* Ficha de avisos: só aparece quando há o que avisar (ver renderWarningsChip).
+   Âmbar para o que aperta, vermelho para o que impede — a mesma leitura das
+   barras: aviso não é erro. */
+/* Em repouso é só o símbolo e o número; a moldura aparece no hover. Com
+   caixa permanente ele ficava competindo com o grupo Dia/Semana/Mês ao lado —
+   dois controles com a mesma cara, e o aviso parecendo mais um modo de
+   visualização. Mesmo desenho da caixa de caminho e do filtro do kanban:
+   texto em repouso, moldura quando a mão chega. */
+.warn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--amber);
+  border-color: transparent;
+  background: none;
+}
+/* moldura do hover igual à da caixa de caminho e à do filtro do kanban: cor
+   de linha e fundo de campo. Tinta da própria cor ficava invisível no tema
+   escuro — testado na tela, não no papel. */
+.warn-chip:hover { border-color: var(--line); background: var(--field); }
+/* o glifo lê menor que letra no mesmo tamanho, e é ele que chama o olho */
+.warn-ico { font-size: 16px; line-height: 1; }
+.warn-chip.error { color: var(--red); }
+
+
+/* Painel: uma linha por problema, clicável, que leva até a tarefa */
+.warn-list { display: flex; flex-direction: column; gap: 4px; max-height: 58vh; overflow-y: auto; }
+.warn-list.none { color: var(--muted); font-size: 12.5px; }
+/* A gravidade vive na ETIQUETA, não numa barra à esquerda: a barra flutuava
+   solta na linha e virava mobília. A etiqueta já diz o que é — colori-la diz
+   o quanto pesa, sem acrescentar elemento nenhum. Mesmo vocabulário das
+   outras marcas do app (o "+8d" da barra, o "new" do card). */
+.warn-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: none;
+}
+.warn-row:not(:disabled):hover { background: var(--sel); border-color: var(--line); }
+.warn-row:disabled { cursor: default; }
+.warn-kind {
+  flex: 0 0 auto;
+  min-width: 7.5em;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 13%, transparent);
+}
+.warn-row.error .warn-kind {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 13%, transparent);
+}
+.warn-text { flex: 1; font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
