@@ -1934,7 +1934,7 @@ async function toggleShare() {
     renderShareBtn(next);
     if (shareBody && shareBody.isConnected) renderShare(shareBody, next);
   } catch (err) {
-    alert(err.message);
+    PerthToast.error(err.message);
   }
 }
 
@@ -1971,7 +1971,7 @@ function shareKeyRow(body, info) {
       renderShare(body, next);   // links e QR mudam junto com a chave
     } catch (err) {
       btn.disabled = false;
-      alert(err.message);
+      PerthToast.error(err.message);
     }
   };
 
@@ -2029,7 +2029,7 @@ function renderShare(body, info) {
         renderShareBtn(next);          // o botão da menubar acompanha
       } catch (err) {
         btn.disabled = false;
-        alert(err.message);
+        PerthToast.error(err.message);
       }
     });
     row.append(label, btn);
@@ -2306,7 +2306,7 @@ async function exportChart() {
     const res = await fetch(withKey(`/api/projects/${state.current.id}/chart?fmt=png`));
     if (!res.ok) {
       const b = await res.json().catch(() => ({}));
-      alert(b.error || `HTTP ${res.status}`);
+      PerthToast.error(b.error || `HTTP ${res.status}`);
       return;
     }
     const blob = await res.blob();
@@ -2316,7 +2316,7 @@ async function exportChart() {
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (err) {
-    alert(err.message);
+    PerthToast.error(err.message);
   }
 }
 
@@ -2505,7 +2505,7 @@ el.importFile.addEventListener("change", async () => {
     state.knownRev = await fetchRev();
     await loadProjects(p.id);
   } catch (err) {
-    alert(`${T("Import failed")}: ${err.message}`);
+    PerthToast.error(`${T("Import failed")}: ${err.message}`);
   }
 });
 
@@ -2566,7 +2566,7 @@ async function autoSchedule() {
     await fetchAnalytics();
     renderAll();
   } catch (err) {
-    alert(`${T("Auto-schedule failed")}: ${err.message}`);
+    PerthToast.error(`${T("Auto-schedule failed")}: ${err.message}`);
   }
 }
 
@@ -2587,7 +2587,7 @@ async function applyPert() {
     await fetchAnalytics();
     renderAll();
   } catch (err) {
-    alert(`${T("Apply PERT estimates")}: ${err.message}`);
+    PerthToast.error(`${T("Apply PERT estimates")}: ${err.message}`);
   }
 }
 
@@ -3100,7 +3100,7 @@ function bootFailed(err) {
       location.href = `${location.protocol}//${location.hostname}:${info.kanban}/` +
         (qs ? "?" + qs : "");
     } catch (err) {
-      alert(err.message);
+      PerthToast.error(err.message);
     }
   });
 

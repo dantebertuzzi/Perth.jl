@@ -52,6 +52,22 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   `T()`, with the seventeen distinct strings added to all four dictionaries.
 
 ### Changed
+- **Every failed action reports in a toast, not an `alert()`.** Ten alerts —
+  nine in the gantt, one in the kanban — froze the whole page until someone
+  clicked, carried no theme, and put untranslated browser buttons on screen.
+  What `alert()` did get right was making a failure impossible to miss, so an
+  error toast lasts twice as long as an informational one and carries a close
+  button instead of blinking away. It announces itself through `aria-live`
+  without stealing focus, which is the opposite of what the alert did.
+- The toast is **one** component now, not two. The kanban already had its own
+  — `showToast`, the `#toasts` stack, the presence notification tinted with
+  each machine's colour — while the gantt had nothing. Rather than ship two
+  notification systems in one product, the kanban's moved to `shared/toast.js`
+  and both apps use it; `showToast` still exists there as a thin adapter. Its
+  stack also moved from the bottom right to the bottom left, because the chat
+  panel opens bottom right in both apps and the two overlapped. The kanban's
+  three errors, which used the informational styling and timing, now read as
+  errors.
 - **Keyboard shortcuts and About are dialogs now, not `alert()`.** Both were
   plain-text browser alerts: no formatting, no translation, and they freeze the
   page while open. They use the same overlay as Activity and the S-curve, with
@@ -73,7 +89,8 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   function. It is now a single module-level constant, like the gantt's.
 
 ### Added
-- **The kanban has a Help menu with its keyboard shortcuts.** It had eight
+- **The kanban has a Help menu with its keyboard shortcuts**, alongside Board
+  and View where the gantt keeps its own. It had eight
   global keys — undo/redo, `/`, N, D, P, Del, Enter, Esc — and nowhere to
   discover them; the only advertised one was `/`, buried in the filter's
   placeholder. The gantt had the entry, the kanban did not, and both menubars

@@ -495,16 +495,10 @@ function applyRestriction(el, action) {
   el.title = reason + ": " + actionLabel(action);
 }
 
+// Delega ao componente compartilhado (shared/toast.js). Era daqui que ele
+// saiu: o gantt não tinha aviso nenhum e reportava tudo por alert().
 function showToast(msg, cls = "toast-denied") {
-  const t = document.createElement("div");
-  t.className = "toast " + cls;
-  t.textContent = msg;
-  toastsEl.append(t);
-  while (toastsEl.children.length > 4) toastsEl.firstChild.remove();
-  setTimeout(() => {
-    t.classList.add("out");
-    setTimeout(() => t.remove(), 260);
-  }, 4200);
+  return cls === "toast-error" ? PerthToast.error(msg) : PerthToast.info(msg);
 }
 
 function deniedToast(action) {
@@ -2131,7 +2125,6 @@ function showPermissions() {
 
 /* ============================================ notificações */
 
-const toastsEl = $("#toasts");
 let unseen = 0;
 
 // Som de alerta (junto do toast). Navegadores bloqueiam áudio antes da
@@ -2163,20 +2156,12 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// Aviso de presença: nome em negrito na cor da máquina, a mesma do cursor
+// remoto. É o único que carrega marcação, por isso tem função própria no
+// componente compartilhado.
 function toast(entry) {
-  const t = document.createElement("div");
-  t.className = "toast";
-  t.style.setProperty("--peer", colorForIp(entry.ip));
-  const who = document.createElement("b");
-  who.textContent = displayFor(entry.ip);
-  who.title = entry.ip;
-  t.append(who, " " + entry.text);
-  toastsEl.append(t);
-  while (toastsEl.children.length > 4) toastsEl.firstChild.remove();
-  setTimeout(() => {
-    t.classList.add("out");
-    setTimeout(() => t.remove(), 260);
-  }, 4200);
+  return PerthToast.peer(displayFor(entry.ip), " " + entry.text,
+                         colorForIp(entry.ip), entry.ip);
 }
 
 /* ============================================ chat geral
@@ -2448,7 +2433,7 @@ function toggleShare() {
       renderShareBtn(next);
       if (state.openModal === "share" && shareBody) renderShare(shareBody, next);
     })
-    .catch((err) => showToast(err.message));
+    .catch((err) => PerthToast.error(err.message));
 }
 
 function refreshShare() {
@@ -2495,7 +2480,7 @@ function shareKeyRow(body, info) {
       })
       .catch((err) => {
         btn.disabled = false;
-        showToast(err.message);
+        PerthToast.error(err.message);
       });
   };
 
@@ -2558,7 +2543,7 @@ function renderShare(body, info) {
         })
         .catch((err) => {
           btn.disabled = false;
-          showToast(err.message);
+          PerthToast.error(err.message);
         });
     });
     row.append(label, btn);
@@ -2800,7 +2785,7 @@ $("#app-switch")?.addEventListener("click", async () => {
     location.href = `${location.protocol}//${location.hostname}:${info.gantt}/` +
       (qs ? "?" + qs : "");
   } catch (err) {
-    alert(err.message || T("could not open the gantt"));
+    PerthToast.error(err.message || T("could not open the gantt"));
   }
 });
 

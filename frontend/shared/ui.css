@@ -660,3 +660,64 @@ html.has-bg .tl-body { background: transparent; }
   color: var(--ink);
   overflow-x: auto;
 }
+
+/* Avisos passageiros (shared/toast.js). Canto inferior ESQUERDO: o direito é
+   do painel de chat nos dois aplicativos, e a barra de status (26–27px) ocupa
+   a faixa de baixo — 42px passa folgado acima dela. */
+.toast-stack {
+  position: fixed;
+  left: 16px;
+  bottom: 42px;
+  z-index: 200;                 /* acima do chat, abaixo do modal (z 100/…) */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  pointer-events: none;         /* a pilha não intercepta cliques; os avisos sim */
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px 9px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(61, 58, 69, .16);
+  font-size: 12.5px;
+  color: var(--ink);
+  animation: toast-in .18s ease-out;
+}
+.toast-error { border-left-color: var(--red); }
+.toast-info  { border-left-color: var(--purple); }
+/* presença: a faixa e o nome saem na cor da máquina, a mesma do cursor
+   remoto — --peer é posto no elemento por PerthToast.peer() */
+.toast-peer  { border-left-color: var(--peer, var(--purple)); }
+.toast-peer b { color: var(--peer, var(--purple)); }
+.toast-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast-close {
+  flex: none;
+  padding: 0 3px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.toast-close:hover { color: var(--ink); }
+.toast.leaving { opacity: 0; transition: opacity .18s ease; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+  .toast.leaving { transition: none; }
+}
+/* tela estreita: a pilha ocupa a largura toda, acima da barra de status */
+@media (max-width: 640px) {
+  .toast-stack { left: 8px; right: 8px; bottom: 34px; max-width: none; }
+}

@@ -1296,6 +1296,7 @@ const _KANBAN_FILES = Dict(
     "/shared/draggable.js" => ("shared/draggable.js", :main),
     "/shared/background.js" => ("shared/background.js", :main),
     "/shared/shortcuts.js" => ("shared/shortcuts.js", :main),
+    "/shared/toast.js" => ("shared/toast.js", :main),
     "/manifest.webmanifest" => ("kanban/manifest.webmanifest", :root),
     "/sw.js" => ("shared/sw.js", :root),
 )

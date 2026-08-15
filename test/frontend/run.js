@@ -70,6 +70,7 @@ function loadKanbanApp() {
   inject(read("frontend/shared/i18n.js"));
   inject(read("frontend/shared/background.js"));
   inject(read("frontend/shared/shortcuts.js"));
+  inject(read("frontend/shared/toast.js"));
   inject(read("frontend/kanban/app.js"));
 
   // Roda `code` como mais um <script> na mesma página — mesmo ambiente
@@ -128,6 +129,7 @@ function loadGanttApp(opts = {}) {
   inject(read("frontend/shared/presence.js"));
   inject(read("frontend/shared/background.js"));
   inject(read("frontend/shared/shortcuts.js"));
+  inject(read("frontend/shared/toast.js"));
   inject(read("frontend/app.js"));
 
   const runIn = (code) => {
@@ -1680,6 +1682,114 @@ console.log("kanban · rótulos criados em JS falam o idioma da tela");
  * página. E o kanban tinha oito teclas globais e nenhum lugar onde
  * descobri-las. Agora os dois abrem a mesma lista (shared/shortcuts.js) no
  * contêiner de cada um. */
+/* Falha de ação era alert(): travava a página até alguém clicar, sem tema e
+ * sem tradução. O que ele fazia de certo era não deixar a falha passar em
+ * branco — por isso o aviso de erro dura o dobro do informativo e traz botão
+ * de fechar, em vez de piscar e sumir. */
+console.log("avisos · o toast substitui o alert() das falhas");
+{
+  const { w, runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  // nenhum alert() sobrou no caminho de erro: um alert em teste trava o jsdom
+  // do mesmo jeito que trava o navegador
+  const fonte = read("frontend/app.js") + read("frontend/kanban/app.js");
+  const sobrou = [...fonte.matchAll(/^\s*alert\(/gm)].length;
+  check(sobrou === 0, "nenhuma falha de ação chama alert() ainda");
+
+  let r = runIn(`PerthToast.clear();
+    PerthToast.error("deu ruim");
+    const t = document.querySelector("#perth-toasts .toast");
+    return { pilha: !!document.getElementById("perth-toasts"),
+             texto: t.querySelector(".toast-text").textContent,
+             classe: t.className, papel: t.getAttribute("role"),
+             vivo: document.getElementById("perth-toasts").getAttribute("aria-live") };`);
+  check(r.pilha && r.texto === "deu ruim", "o aviso aparece com a mensagem");
+  check(/toast-error/.test(r.classe) && r.papel === "alert",
+        "erro se anuncia como alert para leitor de tela");
+  check(r.vivo === "polite", "a pilha é aria-live: anuncia sem roubar o foco");
+
+  r = runIn(`PerthToast.clear(); PerthToast.info("pronto");
+    const t = document.querySelector(".toast");
+    return { classe: t.className, papel: t.getAttribute("role") };`);
+  check(/toast-info/.test(r.classe) && r.papel === "status",
+        "informativo é status, não alerta");
+
+  r = runIn(`PerthToast.clear();
+    for (let i = 0; i < 7; i++) PerthToast.error("erro " + i);
+    const t = [...document.querySelectorAll(".toast-text")].map((x) => x.textContent);
+    return t;`);
+  check(r.length === 4 && r[0] === "erro 3" && r[3] === "erro 6",
+        "a pilha para em 4: entram os novos, sai o mais antigo");
+
+  r = runIn(`PerthToast.clear();
+    PerthToast.error("fecha em mim");
+    document.querySelector(".toast-close").click();
+    return document.querySelector(".toast").className;`);
+  check(/leaving/.test(r), "o botão de fechar tira o aviso na hora");
+
+  r = runIn(`PerthToast.clear();
+    return [PerthToast.error(""), PerthToast.error("   "), PerthToast.error(null),
+            document.querySelectorAll(".toast").length];`);
+  check(r[3] === 0, "erro sem mensagem não vira um aviso vazio na tela");
+
+  // caminho real, ponta a ponta: o fetch do harness rejeita de propósito,
+  // então "Aplicar estimativas PERT" falha de verdade e tem que reportar
+  runIn(`PerthToast.clear();
+    state.current = { id: "p1", name: "P", tasks: [] };
+    applyPert();
+    return 1;`);
+  await new Promise((res) => setTimeout(res, 60));   // deixa a promessa cair
+  r = runIn(`const t = document.querySelector(".toast");
+    return { existe: !!t, texto: t ? t.querySelector(".toast-text").textContent : "",
+             erro: t ? /toast-error/.test(t.className) : false,
+             modal: !!document.querySelector(".modal-backdrop:not([hidden])") };`);
+  check(r.existe && r.erro && /PERT/.test(r.texto),
+        "uma ação que falha de verdade reporta num aviso, com o nome da ação");
+  check(/fetch disabled/.test(r.texto),
+        "e leva junto a mensagem do erro, como o alert levava");
+
+  close();
+}
+
+/* O kanban já tinha toast; o gantt não tinha nada e usava alert(). Em vez de
+ * dois sistemas de aviso no mesmo produto, o do kanban virou o compartilhado.
+ * Estes testes cobrem o lado que se perde numa unificação: a variante de
+ * presença, que é a única com marcação, e o container antigo, que não pode
+ * ter ficado para trás no HTML. */
+console.log("avisos · o kanban usa o mesmo componente, sem o dele");
+{
+  const { runIn, close } = loadKanbanApp();
+
+  let r = runIn(`PerthToast.clear();
+    toast({ ip: "10.0.0.9", text: "moveu um card", notify: true });
+    const t = document.querySelector(".toast");
+    return { classe: t.className, negrito: t.querySelector("b")?.textContent,
+             titulo: t.querySelector("b")?.title,
+             cor: t.style.getPropertyValue("--peer"),
+             texto: t.querySelector(".toast-text").textContent };`);
+  check(/toast-peer/.test(r.classe) && !!r.negrito,
+        "kanban: a notificação de presença sobreviveu à mudança de componente");
+  check(r.titulo === "10.0.0.9" && /moveu um card/.test(r.texto) && !!r.cor,
+        "kanban: com o nome em negrito, o IP no title e a cor da máquina");
+
+  r = runIn(`PerthToast.clear();
+    showToast("bloqueado pelo host");
+    const a = document.querySelector(".toast").className;
+    PerthToast.clear();
+    showToast("deu erro", "toast-error");
+    return [a, document.querySelector(".toast").className];`);
+  check(/toast-info/.test(r[0]) && /toast-error/.test(r[1]),
+        "kanban: showToast continua existindo, mapeando para o componente novo");
+
+  r = runIn(`return { antigo: !!document.getElementById("toasts"),
+                     novo: !!document.getElementById("perth-toasts") };`);
+  check(r.antigo === false && r.novo === true,
+        "kanban: o container antigo saiu do HTML — sobra um só");
+
+  close();
+}
+
 console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
 {
   const { runIn, close } = loadGanttApp();
@@ -1782,7 +1892,8 @@ console.log("i18n · nenhum literal escapa da tradução");
   };
 
   for (const arquivo of ["frontend/app.js", "frontend/kanban/app.js",
-                         "frontend/shared/presence.js"]) {
+                         "frontend/shared/presence.js",
+                         "frontend/shared/shortcuts.js", "frontend/shared/toast.js"]) {
     const achados = varrer(arquivo);
     if (achados.length) achados.forEach((a) => console.error("      " + a));
     check(achados.length === 0,

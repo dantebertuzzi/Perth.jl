@@ -605,35 +605,9 @@ kbd {
 
 /* compartilhar / QR: CSS movida pra shared/ui.css (gantt também usa agora) */
 
-/* ---------- toasts (notificações) ---------- */
-
-#toasts {
-  position: fixed;
-  right: 14px;
-  bottom: 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 250;
-  pointer-events: none;
-}
-.toast {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--peer, var(--purple));
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 12px;
-  max-width: 320px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
-  animation: toast-in 0.18s ease;
-}
-.toast.out { opacity: 0; transform: translateX(12px); transition: all 0.25s ease; }
-.toast b { color: var(--peer, var(--purple)); }
-@keyframes toast-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
-}
+/* toasts (notificações): CSS movida pra shared/ui.css — o gantt passou a
+   usar o mesmo componente, e dois sistemas de aviso no mesmo produto era
+   um a mais. A pilha também mudou de canto: ver o comentário lá. */
 
 /* chat geral: CSS movida pra shared/ui.css (gantt também usa agora) */
 
@@ -820,6 +794,5 @@ a.card-link:hover { border-bottom-color: var(--blue); }
 
   .modal { width: 94vw; max-width: 94vw; }
 
-  #toasts { right: 8px; left: 8px; bottom: 12px; }
-  .toast { max-width: none; }
+  /* .toast-stack em telas estreitas: ver shared/ui.css */
 }
