@@ -51,8 +51,17 @@ expected_duration(t::GanttTask) = has_estimate(t) ?
 # aproximação clássica "a faixa o..p cobre ~6 σ" — a mesma que dá o 4m/6 de te.
 _task_sd(t::GanttTask) = has_estimate(t) ? (t.pessimistic - t.optimistic) / 6 : 0.0
 
-# Duração inteira que vai para o motor (o CPM conta dias, não frações)
-_expected_days(t::GanttTask) = max(round(Int, expected_duration(t)), 1)
+# Duração inteira que vai para o motor (o CPM conta dias, não frações).
+#
+# Empate arredonda PARA LONGE do zero, não para o par: te = 4.5 vira 5, e
+# não 4. O default do Julia (RoundNearest, empate para o par) daria 4 para
+# 4.5 e 6 para 5.5, o que é surpreendente lado a lado numa tabela — e no
+# caso do 4.5 encolhe o prazo justamente no empate, que é o lado errado
+# para errar. É também o que o `Math.round` do navegador já fazia na
+# prévia do modal, então o servidor era quem destoava: a prévia oferecia
+# 5 e o pert! gravava 4, para sempre.
+_expected_days(t::GanttTask) =
+    max(round(Int, expected_duration(t), RoundNearestTiesAway), 1)
 
 """
     set_estimate!(p::Project, id, optimistic, most_likely, pessimistic;
@@ -60,8 +69,9 @@ _expected_days(t::GanttTask) = max(round(Int, expected_duration(t)), 1)
 
 Give a task its PERT three-point estimate, in the same days as
 `duration`. With `apply = true` (the default) the task's `duration`
-becomes the expected duration `(o + 4m + p)/6`, rounded — pass
-`apply = false` to record the estimate without touching the plan.
+becomes the expected duration `(o + 4m + p)/6`, rounded to whole days
+(a tie rounds up: `4.5` becomes `5`) — pass `apply = false` to record the
+estimate without touching the plan.
 Persists.
 
 The three numbers are pushed into order rather than sorted: the
@@ -109,7 +119,8 @@ end
     pert!(p::Project) -> Project
 
 Apply every three-point estimate on the project: each estimated task's
-`duration` becomes its expected duration `(o + 4m + p)/6`, rounded.
+`duration` becomes its expected duration `(o + 4m + p)/6`, rounded to
+whole days (a tie rounds up, so `te = 4.5` schedules 5 days — never 4).
 Milestones and tasks without an estimate are left alone; WBS summaries
 derive their span from their children as always. Persists.
 
@@ -286,7 +297,8 @@ function pert_date(p::Project, probability::Real)
     q = clamp(Float64(probability), 0.0, 1.0)
     f = pert_finish(p)
     f.sd_days <= 0 && return f.expected
-    return _shift(_cal(p), f.expected, round(Int, _Φinv(q) * f.sd_days))
+    return _shift(_cal(p), f.expected,
+                  round(Int, _Φinv(q) * f.sd_days, RoundNearestTiesAway))
 end
 
 # ---------------------------------------------------------------------------
@@ -320,10 +332,11 @@ _rand_beta(rng, a::Float64, b::Float64) =
 function _sample_duration(rng, t::GanttTask)
     (has_estimate(t) && !t.milestone) || return _effdur(t)
     o, m, q = Float64(t.optimistic), Float64(t.most_likely), Float64(t.pessimistic)
-    q <= o && return max(round(Int, o), 1)            # degenerada: sem incerteza
+    q <= o && return max(round(Int, o, RoundNearestTiesAway), 1)   # degenerada
     α = 1 + 4 * (m - o) / (q - o)
     β = 1 + 4 * (q - m) / (q - o)
-    return max(round(Int, o + (q - o) * _rand_beta(rng, α, β)), 1)
+    return max(round(Int, o + (q - o) * _rand_beta(rng, α, β),
+                      RoundNearestTiesAway), 1)
 end
 
 """
@@ -375,7 +388,7 @@ function pert_simulate(p::Project; n::Integer = 10_000,
     sd_days = sqrt(sum((d - mean_days)^2 for d in days) / n)
     quant(q) = finishes[clamp(ceil(Int, q * n), 1, n)]
     return (; runs = n, mean_days, sd_days,
-            expected = base + Dates.Day(round(Int, mean_days)),
+            expected = base + Dates.Day(round(Int, mean_days, RoundNearestTiesAway)),
             p10 = quant(0.10), p50 = quant(0.50),
             p80 = quant(0.80), p90 = quant(0.90))
 end

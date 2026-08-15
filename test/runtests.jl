@@ -626,6 +626,21 @@ end
         @test (a.optimistic, a.most_likely, a.pessimistic) == (8, 8, 20)
         @test a.duration == 10                   # te = (8 + 4*8 + 20)/6
 
+        # Empate arredonda PARA CIMA, não para o par. O default do Julia
+        # (RoundNearest) daria 4 para te = 4.5 e 6 para te = 5.5 — vizinhos
+        # que discordam na tabela, e o 4.5 encolhendo o prazo justamente no
+        # empate. O Math.round do navegador já fazia assim na prévia do
+        # modal, então era o servidor que destoava.
+        for (o, m, q, esperado) in [(3, 4, 8, 5),    # te 4.5
+                                    (4, 5, 9, 6),    # te 5.5
+                                    (5, 6, 10, 7),   # te 6.5
+                                    (2, 4, 6, 4)]    # te 4.0, sem empate
+            e = add_task!(p, "empate $(o)$(m)$(q)"; start = Date(2026, 9, 1))
+            set_estimate!(p, e.id, o, m, q)
+            @test expected_duration(e) == esperado - 0.5 || expected_duration(e) == 4.0
+            @test e.duration == esperado
+        end
+
         # marco não recebe duração do PERT (ocupa o próprio dia)
         m = add_task!(p, "Marco"; start = Date(2026, 9, 20), milestone = true)
         set_estimate!(p, m.id, 3, 5, 9)
