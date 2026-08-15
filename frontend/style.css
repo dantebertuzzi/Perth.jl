@@ -410,7 +410,10 @@ body.presenting .task-table { display: none; }
 .tl-cell.today-cell { color: var(--red); font-weight: 700; }
 
 .tl-body { flex: 1; overflow: auto; position: relative; background: var(--paper); }
-#chart { display: block; }
+/* Arrastar barra não pode virar seleção de texto dos rótulos. Isto é o que
+   substitui o preventDefault() que o attachDrag tinha no pointerdown — e que
+   matava o duplo clique junto (ver o comentário lá). */
+#chart { display: block; user-select: none; }
 
 /* elementos SVG */
 .grid-line { stroke: var(--line); stroke-width: 1; opacity: .55; }

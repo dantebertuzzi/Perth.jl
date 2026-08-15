@@ -8,6 +8,19 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Fixed
+- **Double-clicking a bar in the chart opens the task again.** It had two
+  independent causes stacked on top of each other, both in `attachDrag`.
+  First, `pointerdown` called `preventDefault()`, which suppresses the
+  compatibility mouse events — with no `mousedown` the browser never forms a
+  `click`, so it never forms a `dblclick` either, and the `dblclick` listener
+  sitting right there was dead code. Second, a click that did not drag
+  selected the task from `pointerup`, which runs *before* `mouseup`: the
+  re-render destroyed the node mid-gesture, so the `mousedown`/`mouseup` pair
+  no longer shared an element. Selecting now happens in a real `click`
+  listener, and text selection during a drag is held off by `user-select:
+  none` on the chart instead of by cancelling the event. The task table never
+  had either problem, which is why double-clicking a row always worked.
+
 - Twenty-three labels built in JavaScript were stuck in English in every
   language: the gantt's `copy` / `copied!` / `loading…` / `no subfolders` /
   `no project open` and the empty dependency list, and the kanban's `+ card`,

@@ -111,6 +111,10 @@ function loadGanttApp(opts = {}) {
   w.fetch = opts.fetch || (() => Promise.reject(new Error("fetch disabled in test")));
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   w.structuredClone = structuredClone;
+  // o jsdom só define rAF com pretendToBeVisual; o arrasto de barra
+  // re-renderiza dentro de um. Síncrono aqui: determinístico e sem callback
+  // pendente sobrando depois do close() da janela.
+  w.requestAnimationFrame = (fn) => { fn(); return 0; };
   delete w.CSS;                 // idem loadKanbanApp: espelha o jsdom do CI
   w.console.error = () => {};   // init() loga o fetch rejeitado de propósito acima; ruído esperado
 
@@ -1710,6 +1714,103 @@ console.log("i18n · nenhum literal escapa da tradução");
   check(pega, "a varredura reconhece um literal sem tradução (auto-teste)");
 
   w.close();
+}
+
+/* Duplo clique na barra abre a tarefa — e isso é frágil de um jeito que não
+ * aparece em teste de unidade nenhum: depende de o navegador conseguir FORMAR
+ * o click. Duas coisas o impediam, e as duas voltam fácil numa refatoração:
+ *
+ *   1. preventDefault() no pointerdown suprime os eventos de mouse de
+ *      compatibilidade; sem mousedown não há click, e sem click não há
+ *      dblclick. O listener de dblclick vira código morto.
+ *   2. selecionar a tarefa no pointerup re-renderiza o gráfico. pointerup
+ *      roda ANTES do mouseup, então o nó que recebeu o mousedown morre no
+ *      meio do gesto e o par deixa de existir no mesmo elemento.
+ *
+ * Os dois testes abaixo miram exatamente essas duas causas, não o sintoma. */
+console.log("gantt · duplo clique na barra abre a tarefa");
+{
+  const { w, runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const seed = `
+    const mk = (id, name, start, duration, extra) => Object.assign({
+      id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+      optimistic: 0, most_likely: 0, pessimistic: 0 }, extra || {});
+    state.current = { id: "p1", name: "P", tasks: [
+      mk("t1", "Barra", "2026-03-02", 5),
+      mk("t2", "Marco", "2026-03-10", 1, { milestone: true }) ] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  // causa 1: o pointerdown não pode ser cancelado
+  let r = runIn(`${seed}
+    const ev = (alvo) => {
+      const e = new MouseEvent("pointerdown",
+        { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true });
+      document.querySelector(alvo).dispatchEvent(e);
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+      return e.defaultPrevented;
+    };
+    return { barra: ev("#chart .bar"), punho: ev("#chart .bar-handle"),
+             marco: ev("#chart .milestone") };`);
+  check(r.barra === false && r.punho === false && r.marco === false,
+        "gantt: pointerdown da barra não é cancelado (senão não há click nem dblclick)");
+
+  // causa 2: um clique parado não pode re-renderizar antes do mouseup —
+  // o nó que recebeu o pointerdown tem que continuar na árvore
+  r = runIn(`${seed}
+    const bar = document.querySelector("#chart .bar");
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    return { naArvore: document.contains(bar), selecionou: state.selected };`);
+  check(r.naArvore === true,
+        "gantt: pointerup de clique parado não re-renderiza (o nó sobrevive ao gesto)");
+  check(r.selecionou === null,
+        "gantt: e a seleção não acontece ali — quem seleciona é o click");
+
+  r = runIn(`document.querySelector("#chart .bar").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }));
+    return state.selected;`);
+  check(r === "t1", "gantt: o click é que seleciona a tarefa");
+
+  // o gesto completo: dblclick chega ao nó e abre o modal
+  r = runIn(`${seed}
+    document.querySelector("#chart .bar").dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true }));
+    return { aberto: !document.getElementById("modal").hidden,
+             nome: document.getElementById("f-name").value };`);
+  check(r.aberto === true && r.nome === "Barra",
+        "gantt: duplo clique na barra abre o modal da tarefa certa");
+
+  r = runIn(`closeModal(false); ${seed}
+    document.querySelector("#chart .milestone").dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true }));
+    return { aberto: !document.getElementById("modal").hidden,
+             nome: document.getElementById("f-name").value };`);
+  check(r.aberto === true && r.nome === "Marco",
+        "gantt: e no losango do marco também");
+
+  // arrastar continua arrastando, e não seleciona no fim do gesto
+  r = runIn(`closeModal(false); ${seed}
+    state.selected = null;
+    const bar = document.querySelector("#chart .bar");
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: 100 + 3 * PPD[state.zoom], clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    const t = state.current.tasks.find((x) => x.id === "t1");
+    document.querySelector("#chart .bar").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }));
+    return { inicio: t.start, selecionou: state.selected };`);
+  check(r.inicio === "2026-03-05", "gantt: arrastar a barra ainda move a tarefa (3 dias)");
+
+  close();
 }
 
 console.log("gantt · modal: título e campos ilegíveis");

@@ -1404,7 +1404,12 @@ function selectTask(id) {
 function attachDrag(node, task, mode) {
   node.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0) return;
-    ev.preventDefault();
+    // Sem preventDefault aqui: cancelar o pointerdown suprime os eventos de
+    // mouse de compatibilidade, e sem mousedown o Chrome nunca produz click
+    // — logo, nunca produz dblclick. O listener de dblclick lá embaixo era
+    // código morto, e abrir a tarefa pela barra não funcionava (na linha da
+    // tabela funcionava, porque lá ninguém cancela nada). Quem impede a
+    // seleção de texto durante o arrasto é user-select:none no #chart.
     pushUndo();
     // Listeners na window: o re-render durante o arrasto destrói o nó
     // original, então não dá para depender de pointer capture nele.
@@ -1437,15 +1442,25 @@ function attachDrag(node, task, mode) {
       if (moved) {
         renderAll();
         markDirty();
-      } else {
-        selectTask(task.id);
       }
+      // Clique parado NÃO é tratado aqui. pointerup roda antes do mouseup, e
+      // selecionar aqui re-renderiza: o nó que recebeu o mousedown morre no
+      // meio do caminho, o par mousedown/mouseup deixa de existir no mesmo
+      // elemento e o Chrome não chega a formar o click — nem, portanto, o
+      // dblclick. Era por isso que abrir a tarefa pela barra não funcionava.
+      // No "click" abaixo o evento já existe; re-renderizar ali é seguro,
+      // e o dblclick ainda é entregue ao nó antigo (já solto da árvore),
+      // que é exatamente como a linha da tabela sempre funcionou.
     };
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   });
 
+  // Sem guarda de "isto foi um arrasto": um gesto que moveu passa pelo
+  // renderAll() acima, que destrói este nó — o click nem chega a se formar
+  // nele. Só clique parado chega aqui.
+  node.addEventListener("click", () => selectTask(task.id));
   node.addEventListener("dblclick", () => openModal(task.id));
 }
 
