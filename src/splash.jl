@@ -503,3 +503,71 @@ function _ready(io::IO = stdout; url::AbstractString, projects::Integer,
     println(io, "     ", _GREY, "Perth.stop()", _RESET, _DIM, " to shut down", _RESET, "\n")
     nothing
 end
+
+# ──────────────────────────────────────────────── dica de entrada (using) ──
+#
+# `using Perth` não dizia o que fazer em seguida: o pacote exporta a API de
+# dados, mas quem abre a interface é Perth.run() / Perth.kanban(), que não são
+# exportados (run colidiria com Base.run). A dica cobre esse vão.
+#
+# É só texto, nunca pergunta nada. Menu interativo no __init__ seria uma
+# armadilha: `using Perth` também roda em script, em teste, dentro de outro
+# pacote e na precompilação — em qualquer um deles um prompt trava o processo
+# sem saída. Quem quiser escolher pelo teclado chama Perth.menu().
+
+"""
+    Perth._hint(io = stdout)
+
+Three-line pointer to the entry points, printed once when the package is
+loaded in an interactive terminal. Obeys `PERTH_SPLASH` like the rest of the
+decoration: `0` silences it.
+"""
+function _hint(io::IO = stdout; version = _version())
+    _fancy(io) || return nothing
+    linhas = (("Perth.run()",    "open the Gantt in your browser"),
+              ("Perth.kanban()", "open the Kanban board"),
+              ("Perth.menu()",   "pick one from a list"))
+    w = maximum(textwidth(l[1]) for l in linhas)
+    println(io)
+    println(io, "  ", _fg(0x95, 0x58, 0xB2), _BOLD, "perth", _RESET,
+                "  ", _GREY, "Julia-native Gantt · Kanban · CPM", _RESET,
+                "  ", _DIM, "v", version, _RESET)
+    for (chamada, texto) in linhas
+        println(io, "   ", _DIM, "·", _RESET, " ",
+                    _BOLD, rpad(chamada, w), _RESET, "  ", _GREY, texto, _RESET)
+    end
+    println(io)
+    nothing
+end
+
+_version() = try string(pkgversion(@__MODULE__)) catch; "" end
+
+"""
+    Perth.menu()
+
+Interactive picker for the entry points: arrow keys to move, Enter to run,
+`q` to leave. Needs an interactive terminal — elsewhere it prints the same
+list as [`Perth._hint`](@ref) and returns, rather than blocking on input.
+"""
+function menu(io::IO = stdout)
+    if !(isinteractive() && _isatty(io))
+        _hint(io)
+        return nothing
+    end
+    opcoes = ["Gantt — projects, dependencies, critical path",
+              "Kanban — cards on a shared board",
+              "List the projects already saved",
+              "Nothing, thanks"]
+    escolha = REPL.TerminalMenus.request(
+        "Perth — what do you want to open?",
+        REPL.TerminalMenus.RadioMenu(opcoes; charset = :unicode))
+    escolha == 1 && return run()
+    escolha == 2 && return kanban()
+    if escolha == 3
+        ps = projects()
+        isempty(ps) && return println(io, "  ", _DIM,
+            "no projects yet — create_project(\"name\") starts one", _RESET)
+        return ps
+    end
+    nothing                      # 4 ou cancelado (request devolve -1)
+end

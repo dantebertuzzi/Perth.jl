@@ -8,6 +8,18 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **`using Perth` now says what to type next.** The package exports the data
+  API, but the two doors into the UI — `Perth.run()` and `Perth.kanban()` —
+  are not exported (`run` would clash with `Base.run`), so nothing on screen
+  pointed at them. Loading the package in an interactive terminal prints a
+  three-line pointer, and `PERTH_SPLASH=0` silences it along with the rest of
+  the decoration.
+- **`Perth.menu()`**, a keyboard picker for those doors: arrows to move, Enter
+  to open, `q` to leave. Deliberately *not* wired into `using`: the same
+  `using Perth` runs in scripts, in tests, during precompilation and inside
+  other packages, and a prompt in any of those hangs the process with no way
+  out. Outside an interactive terminal it prints the pointer and returns
+  instead of blocking.
 - The UI background accepts **AVIF**, still or animated (`avif` and `avis`
   brands). It is the same risk class as the WebP already accepted — a raster
   codec the browser decodes — unlike SVG, which stays out for the reason

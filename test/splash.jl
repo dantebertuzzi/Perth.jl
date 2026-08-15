@@ -202,6 +202,42 @@ _forced(f) = withenv(f, "PERTH_SPLASH" => "always")
         end
     end
 
+    # ── dica de entrada (o que aparece ao dar `using Perth`) ───────────
+    #
+    # O guarda de verdade (interativo? precompilando?) vive no __init__ e não
+    # dá para exercitar daqui — o que dá, e é o que importa não regredir, é
+    # que a dica nomeia as três portas de entrada e que ela cala junto com o
+    # resto da decoração.
+    @testset "dica de entrada" begin
+        _forced() do
+            buf = IOContext(IOBuffer(), :color => true)
+            @test Perth._hint(buf; version = "9.9.9") === nothing
+            txt = _nofx(String(take!(buf.io)))
+            @test occursin("Perth.run()", txt)
+            @test occursin("Perth.kanban()", txt)
+            @test occursin("Perth.menu()", txt)
+            @test occursin("9.9.9", txt)
+            # três linhas de porta de entrada, uma de cabeçalho
+            @test count(l -> occursin("Perth.", l), split(txt, "\n")) == 3
+        end
+
+        withenv("PERTH_SPLASH" => nothing) do
+            buf = IOBuffer()
+            @test Perth._hint(buf) === nothing
+            @test isempty(take!(buf))
+        end
+    end
+
+    # menu() fora de sessão interativa não pode BLOQUEAR esperando tecla:
+    # cai na dica e volta. Sem isto, um Pkg.test que o chamasse travaria.
+    @testset "menu sem terminal" begin
+        _forced() do
+            buf = IOContext(IOBuffer(), :color => true)
+            @test Perth.menu(buf) === nothing
+            @test occursin("Perth.run()", _nofx(String(take!(buf.io))))
+        end
+    end
+
     # O acento do painel assume glifo de largura 1; se algum terminal
     # renderizar "●" como largura dupla, a moldura desalinha — troque por "•".
     @testset "largura dos glifos" begin

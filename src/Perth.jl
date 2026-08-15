@@ -86,4 +86,18 @@ include("server.jl")
 include("kanban.jl")
 include("background.jl")
 
+# Dica de entrada. Guardas, em ordem: precompilação (jl_generating_output),
+# sessão não-interativa (script, teste, pacote que depende deste) e, dentro
+# de _hint, o mesmo PERTH_SPLASH que silencia o resto da decoração. Nunca
+# deixa uma exceção escapar: falhar aqui impediria o `using` de terminar.
+function __init__()
+    ccall(:jl_generating_output, Cint, ()) == 0 || return nothing
+    isinteractive() || return nothing
+    try
+        _hint()
+    catch
+    end
+    return nothing
+end
+
 end # module
