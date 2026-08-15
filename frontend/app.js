@@ -43,6 +43,8 @@ const state = {
   cpm: null,           // análise CPM do servidor {cycle, finish, byId: Map}
   showCritical: false,
   highlight: null,      // {kind: "assignee"|"status"|"type", value} ou null
+  search: "",           // busca por nome de tarefa (ver matchesSearch)
+  searchAt: 0,          // ocorrência atual, percorrida com Enter
   wbs: null,            // {kids: Map, depth: Map, summary: Set} — computado a cada render
   overalloc: { pairs: [], ids: new Set() },
   resources: null,      // carga por responsável vinda do servidor (workload)
@@ -201,6 +203,8 @@ const el = {
   fbHint: $("#fb-hint"),
   fbChoose: $("#fb-choose"),
   highlightSelect: $("#highlight-select"),
+  taskSearch: $("#task-search"),
+  taskSearchCount: $("#task-search-count"),
   resPane: $("#res-pane"),
   resNames: $("#res-names"),
   resBody: $("#res-body"),
@@ -332,7 +336,22 @@ function deadlineSlip(t) {
 }
 
 /* Filtro de destaque: tarefas que não casam são esmaecidas (classe .dim) */
+/* Busca sem acento e sem caixa: quem procura "escavacao" tem que achar
+   "Escavação" — num projeto de 141 tarefas, exigir o acento certo é exigir
+   que a pessoa já saiba onde está o que ela procura. */
+const _semAcento = (s) => (s || "").normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+function matchesSearch(t) {
+  if (!state.search) return true;
+  return _semAcento(t.name).includes(state.search);
+}
+
+/* Uma função só decide quem fica aceso — tabela, barras e painel de recursos
+   já consultam esta. Busca e destaque se somam em vez de se anular: dá para
+   filtrar as tarefas da Ana E procurar "laudo" dentro delas. */
 function taskMatchesHighlight(t) {
+  if (!matchesSearch(t)) return false;
   const h = state.highlight;
   if (!h) return true;
   if (h.kind === "assignee") return (t.assignee || "").trim() === h.value;
@@ -2737,6 +2756,98 @@ $("#btn-today").addEventListener("click", scrollToToday);
 $$(".zoom-group button").forEach((b) =>
   b.addEventListener("click", () => setZoom(b.dataset.zoom)));
 
+/* Busca de tarefa.
+ *
+ * Apagar quem não casa reaproveita o destaque inteiro (uma linha em
+ * taskMatchesHighlight). O que a busca acrescenta é chegar lá: num projeto de
+ * 141 tarefas, ver a linha acesa não adianta se ela está a 80 linhas de
+ * distância — então a primeira que casa é rolada para a vista, e a contagem
+ * diz se vale continuar digitando.
+ */
+/* Índices (na ordem da TELA, que o sortTasks define) das tarefas que casam.
+   Recalculado a cada passo em vez de guardado: o projeto pode ter mudado por
+   fora — outra máquina, o REPL, o arquivo espelhado — entre uma tecla e a
+   seguinte, e um índice guardado apontaria para a tarefa errada. */
+function searchHits() {
+  if (!state.current || !state.search) return [];
+  const out = [];
+  state.current.tasks.forEach((t, i) => matchesSearch(t) && out.push(i));
+  return out;
+}
+
+/* Leva à k-ésima ocorrência, dando a volta nas duas pontas. Seleciona a
+   tarefa, e não só rola até ela: numa tela de 141 linhas, "está no meio da
+   tela" ainda deixa procurar com o olho — a linha marcada não. */
+function goToHit(k) {
+  const hits = searchHits();
+  if (!hits.length) return;
+  const n = hits.length;
+  state.searchAt = ((k % n) + n) % n;              // volta nas duas direções
+  const linha = hits[state.searchAt];
+  const t = state.current.tasks[linha];
+  state.selected = t.id;
+  renderTable();
+  renderChart();
+  // Rolar só na vertical não basta: a linha acende na tabela e a BARRA fica
+  // fora da vista, porque ela está no tempo, não na lista. Num projeto de um
+  // ano há meses de distância entre uma tarefa e a seguinte.
+  //
+  // Só mexe na horizontal quando a barra não está visível: percorrer com
+  // Enter ocorrências vizinhas não pode ficar sacudindo a linha do tempo.
+  const ppd = PPD[state.zoom];
+  const x0 = xOf(parseDate(t.start));
+  const x1 = xOf(taskEnd(t)) + ppd;                 // fim inclusive; marco = 1 dia
+  const vis0 = el.tlBody.scrollLeft;
+  const vis1 = vis0 + el.tlBody.clientWidth;
+  const margem = 40;
+  const alvoX = (x0 < vis0 + margem || x1 > vis1 - margem)
+    ? Math.max(0, x0 - el.tlBody.clientWidth / 3)
+    : vis0;
+
+  // Um scrollTo só, e instantâneo. Atribuir scrollTop e scrollLeft em
+  // sequência com scroll-behavior:smooth ligado faz uma animação cancelar a
+  // outra — segurando Enter, o eixo horizontal simplesmente não saía do
+  // lugar. Mesma razão do mirrorX ali em cima.
+  el.tlBody.scrollTo({
+    top: Math.max(0, linha * ROW_H - el.tlBody.clientHeight / 3),
+    left: alvoX,
+    behavior: "instant",
+  });
+  el.taskSearchCount.textContent = `${state.searchAt + 1}/${n}`;
+}
+
+function applySearch() {
+  const bruto = el.taskSearch.value.trim();
+  state.search = _semAcento(bruto);
+  state.searchAt = 0;
+  renderAll();
+  if (!state.current) return;
+  const hits = searchHits();
+  el.taskSearchCount.hidden = !bruto;
+  el.taskSearch.classList.toggle("empty-hit", !!bruto && !hits.length);
+  if (!bruto) return;
+  if (!hits.length) { el.taskSearchCount.textContent = `0/0`; return; }
+  goToHit(0);
+}
+
+el.taskSearch.addEventListener("input", applySearch);
+el.taskSearch.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") {
+    ev.stopPropagation();          // Esc aqui limpa a busca, não fecha nada
+    el.taskSearch.value = "";
+    applySearch();
+    el.taskSearch.blur();
+    return;
+  }
+  // Enter percorre as ocorrências, uma por vez, dando a volta no fim.
+  // Shift+Enter volta — quem passou do ponto não precisa dar a volta inteira.
+  if (ev.key === "Enter") {
+    ev.preventDefault();           // não deixa virar submit de formulário
+    ev.stopPropagation();          // nem abrir o modal pelo atalho global
+    goToHit(state.searchAt + (ev.shiftKey ? -1 : 1));
+  }
+});
+
 el.highlightSelect.addEventListener("change", () => {
   const v = el.highlightSelect.value;
   const i = v.indexOf(":");
@@ -2797,6 +2908,8 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
   switch (ev.key) {
+    // mesma tecla do kanban: quem alterna entre os dois não reaprende
+    case "/": ev.preventDefault(); el.taskSearch.focus(); el.taskSearch.select(); break;
     case "n": case "N": newTask(); break;
     case "Delete": case "Backspace": deleteSelectedTask(); break;
     case "Enter": if (state.selected) openModal(state.selected); break;

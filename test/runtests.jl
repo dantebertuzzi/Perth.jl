@@ -397,6 +397,36 @@ end
         delete_project(p.id)
     end
 
+    # Quebras de linha misturadas dentro do MESMO arquivo.
+    #
+    # O repositório é CRLF (ver .gitattributes: `* -text`, guardar como está).
+    # Qualquer ferramenta que leia e reescreva em modo texto converte o arquivo
+    # inteiro em silêncio, e o diff vira o arquivo todo — ou, pior, metade dele
+    # fica LF e ninguém percebe. Aconteceu quatro vezes no mesmo dia de
+    # trabalho, uma delas chegando ao repositório publicado.
+    #
+    # O comando `file` NÃO serve de guarda: ele diz "CRLF line terminators"
+    # mesmo com dezenas de linhas LF no meio. Contar bytes serve.
+    @testset "quebras de linha consistentes" begin
+        raiz = joinpath(@__DIR__, "..")
+        exts = (".jl", ".js", ".css", ".html", ".md", ".toml")
+        misturados = String[]
+        for (dir, _, arqs) in walkdir(raiz)
+            occursin(r"(^|/)(\.git|node_modules)(/|$)", dir) && continue
+            for a in arqs
+                any(e -> endswith(a, e), exts) || continue
+                caminho = joinpath(dir, a)
+                bytes = read(caminho)
+                crlf = count(i -> bytes[i] == 0x0d && bytes[i+1] == 0x0a,
+                             1:max(length(bytes) - 1, 0))
+                lf = count(==(0x0a), bytes)
+                (crlf > 0 && lf > crlf) && push!(misturados, relpath(caminho, raiz))
+            end
+        end
+        @test isempty(misturados)
+        isempty(misturados) || @info "arquivos com quebras misturadas" misturados
+    end
+
     @testset "formato .perth.jl" begin
         p = create_project("Formato Julia")
         t1 = add_task!(p, "Digitaliza\u00e7\u00e3o \u25c6"; start = Date(2026, 7, 20),
@@ -466,6 +496,62 @@ end
         delete_project(legit.id)
 
         delete_project(p.id)
+    end
+
+    # O espelho já ia do Perth para o disco; isto é a VOLTA — editar o
+    # .perth.jl no editor e o projeto acompanhar. As três propriedades que
+    # sustentam a funcionalidade são testadas pela função de recarga, sem
+    # depender de evento do sistema de arquivos (que é assíncrono e tornaria
+    # a suíte instável): o laço que não pode existir, o arquivo pela metade
+    # que não pode estragar nada, e o que o arquivo não decide.
+    @testset "observador do arquivo espelhado" begin
+        d = mktempdir()
+        p = create_project("Espelho de volta")
+        t = add_task!(p, "Fundação"; start = Date(2026, 3, 2), duration = 5)
+        arq = joinpath(d, "obra.perth.jl")
+        set_file_path!(p, arq)
+        criado, id = p.created_at, p.id
+
+        # nossa própria escrita não recarrega nada: é assim que o laço morre
+        @test Perth._watch_reload!(id, arq) === :same
+        rev0 = Perth._state().rev
+        @test Perth._watch_reload!(id, arq) === :same
+        @test Perth._state().rev == rev0            # nem bumpou revisão
+
+        # edição de fora entra
+        write(arq, replace(read(arq, String), "duration = 5" => "duration = 12"))
+        @test Perth._watch_reload!(id, arq) === :reloaded
+        @test project(id).tasks[1].duration == 12
+        @test Perth._state().rev > rev0             # é isso que avisa o navegador
+
+        # arquivo pela metade (o editor grava em etapas) não estraga nada
+        write(arq, "Project(id = \"x\", name = \"Obra\", tas")
+        @test Perth._watch_reload!(id, arq) === :invalid
+        @test project(id).tasks[1].duration == 12
+
+        # o arquivo não decide identidade — mesma regra do painel de código
+        write(arq, replace(Perth._to_julia_source(project(id)),
+                           "id = \"$(id)\"" => "id = \"sequestrado\""))
+        @test Perth._watch_reload!(id, arq) === :reloaded
+        @test project(id).id == id
+        @test project(id).created_at == criado
+        @test project(id).file_path == arq
+        @test !haskey(Perth._state().projects, "sequestrado")
+
+        # a alça do REPL continua válida depois de uma recarga: o objeto é
+        # mutado no lugar, não trocado. Sem isto, um `p = project("obra")`
+        # aberto viraria órfão e a próxima edição nele ressuscitaria o
+        # estado antigo por cima do arquivo.
+        @test p === Perth._state().projects[id]
+        @test p.tasks[1].duration == 12
+
+        # desvinculado ou apagado, o observador tem que saber parar
+        @test Perth._watch_reload!("nao-existe", arq) === :unlinked
+        @test Perth._watch_reload!(id, joinpath(d, "sumiu.perth.jl")) === :gone
+        set_file_path!(p, nothing)
+        @test Perth._watch_reload!(id, arq) === :unlinked
+
+        delete_project(id)
     end
 
     @testset "espelhamento em arquivo (set_file_path!)" begin

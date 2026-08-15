@@ -196,6 +196,7 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
              share::Bool = false,
              host::Union{Nothing,AbstractString} = nothing,
              key::AbstractString = "",
+             watch::Bool = true,
              banner::Bool = true)
     if SERVER[] !== nothing
         @info "Perth already running — use Perth.stop() first."
@@ -219,6 +220,11 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
 
     # Chat geral: mesmo arquivo append-only do kanban, uma pasta acima —
     # recarrega a cada run() (troca de data_dir muda o histórico visível)
+    # Espelho de volta: quem edita o .perth.jl no editor vê o navegador
+    # acompanhar (ver watch.jl). Desligável com run(watch = false).
+    _WATCH_ON[] = watch
+    watch && _with_state(_watch_sync!)
+
     GANTT_HUB.chatfile = joinpath(_state().data_dir, "chat.jsonl")
     GANTT_HUB.chat = _load_capped_jsonl(GANTT_HUB.chatfile, _HUB_CHAT_CAP, _HUB_CHAT_KEEP)
 
@@ -409,6 +415,7 @@ function stop()
         GANTT_TIMER[] = nothing
     end
     _ON_REV[] = nothing
+    _watch_stop_all!()
     GANTT_KEY[] = ""
     GANTT_SHARED[] = false
     GANTT_CAN_SHARE[] = false
