@@ -134,7 +134,8 @@ kbd {
 .settings-check {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;              /* mesma métrica de .sp-row no gantt: ícone (14) +
+                             gap (12) põe o texto na mesma coluna nos dois */
   margin-top: 12px;
   font-size: 11.5px;
   color: var(--ink);
@@ -143,13 +144,6 @@ kbd {
   -moz-user-select: none;
   user-select: none;
 }
-.settings-check .snd-icon {
-  width: 14px;
-  height: 14px;
-  fill: var(--muted);
-  flex: none;
-}
-.settings-check:hover .snd-icon { fill: var(--ink); }
 /* a etiqueta absorve a folga (.sp-label tem flex:1 no ui.css), então o
    interruptor encosta na direita e as quatro linhas ficam alinhadas
    mesmo quando o texto quebra em duas */

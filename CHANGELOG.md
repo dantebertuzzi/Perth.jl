@@ -117,6 +117,20 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   has `te = 4.5` exactly.
 
 ### Fixed
+- The two settings panels are now the same component. Every row in the
+  Gantt's panel got an icon (the kanban already had them), the icon token
+  moved to `shared/ui.css` as `.sp-icon` — it was `.snd-icon`, "sound
+  icon", named after the single kanban row that had one — and the two
+  options both apps share (*hide other cursors*, *hide background*) use
+  byte-identical drawings. Row metrics were unified at a 12px gap, which
+  the kanban was 4px off from. The kanban's panel button was a person
+  glyph titled "your name on the board", describing what is now one row
+  out of five; it is the Gantt's sliders icon and title.
+- Kanban: the connection label showed `live` where the Gantt showed
+  `ao vivo`. `presence.js`, which the Gantt uses, already ran the label
+  through `PerthI18n`; the kanban's own `setConn` wrote the raw string.
+  The translations existed in all four languages the whole time.
+
 - Kanban: the settings panel now uses the Gantt's toggle
   (`<button class="toggle" aria-pressed>`) instead of checkboxes. A
   checkbox sat immediately after its label, so each one stopped at a

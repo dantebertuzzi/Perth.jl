@@ -145,7 +145,10 @@ function sendOp(op) {
 
 function setConn(live) {
   $("#conn").classList.toggle("live", live);
-  $("#conn-label").textContent = live ? "live" : "reconnecting…";
+  // pelo i18n, como o presence.js faz no gantt: o texto é gerado em JS, e
+  // sem isto o kanban mostrava "live" enquanto o gantt mostrava "ao vivo"
+  const txt = live ? "live" : "reconnecting…";
+  $("#conn-label").textContent = window.PerthI18n ? PerthI18n.t(txt) : txt;
 }
 
 function handleMessage(msg) {
