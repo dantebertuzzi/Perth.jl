@@ -1823,7 +1823,7 @@ function showOverlay(title, bodyEl) {
   const sp = document.createElement("span");
   sp.className = "spacer";
   const close = document.createElement("button");
-  close.textContent = window.PerthI18n ? PerthI18n.t("Cancel") : "Close";
+  close.textContent = window.PerthI18n ? PerthI18n.t("Close") : "Close";
   close.addEventListener("click", () => back.remove());
   actions.append(sp, close);
   box.append(actions);
@@ -2505,7 +2505,7 @@ el.importFile.addEventListener("change", async () => {
     state.knownRev = await fetchRev();
     await loadProjects(p.id);
   } catch (err) {
-    alert(`Import failed: ${err.message}`);
+    alert(`${T("Import failed")}: ${err.message}`);
   }
 });
 
@@ -2566,7 +2566,7 @@ async function autoSchedule() {
     await fetchAnalytics();
     renderAll();
   } catch (err) {
-    alert(`Auto-schedule failed: ${err.message}`);
+    alert(`${T("Auto-schedule failed")}: ${err.message}`);
   }
 }
 
@@ -2664,20 +2664,49 @@ const ACTIONS = {
   "toggle-critical": toggleCritical,
   "toggle-theme": toggleTheme,
   "presentation": togglePresentation,
-  "shortcuts": () => alert(
-    "Shortcuts:\n\n" +
-    "N — new task\nEnter / double-click — edit task\nDel — delete selected task\n" +
-    "Ctrl+D — duplicate selected task\n" +
-    "Ctrl+Z — undo\nCtrl+Shift+Z / Ctrl+Y — redo\n" +
-    "S — auto-schedule\nC — toggle critical path\nR — resource load\nD — toggle dark mode\n" +
-    "P — presentation mode\n" +
-    "1 / 2 / 3 — zoom day / week / month\nT — go to today\nEsc — close / deselect / exit presentation"),
-  "about": () => alert(
-    "Perth — Gantt charts with a Julia backend.\n" +
-    "Data lives on the local server; edit from the REPL too:\n\n" +
-    '  p = project("' + (state.current?.name ?? "my project") + '")\n' +
-    '  add_task!(p, "Task"; start = today(), duration = 5)'),
+  "shortcuts": showShortcuts,
+  "about": showAbout,
 };
+
+/* Atalhos e Sobre eram alert(): sem formatação, sem tradução e travando a
+ * página. Viraram o mesmo overlay da Atividade e da curva-S. A lista em si
+ * é desenhada por shared/shortcuts.js, que o kanban também usa. */
+function showShortcuts() {
+  showOverlay("Keyboard shortcuts", PerthShortcuts.list([
+    ["N", "new task"],
+    ["Enter / duplo clique", "edit task"],
+    ["Del", "delete selected task"],
+    ["Ctrl+D", "duplicate selected task"],
+    ["Ctrl+Z", "undo"],
+    ["Ctrl+Shift+Z / Ctrl+Y", "redo"],
+    ["S", "auto-schedule"],
+    ["C", "toggle critical path"],
+    ["R", "resource load"],
+    ["D", "toggle dark mode"],
+    ["P", "presentation mode"],
+    ["1 / 2 / 3", "zoom day / week / month"],
+    ["T", "go to today"],
+    ["Esc", "close / deselect / exit presentation"],
+  ]));
+}
+
+function showAbout() {
+  const body = document.createElement("div");
+  body.className = "about-box";
+  const p1 = document.createElement("p");
+  p1.textContent = T("Gantt charts with a Julia backend.");
+  const p2 = document.createElement("p");
+  p2.textContent = T("Data lives on the local server; edit from the REPL too:");
+  // Código Julia de exemplo, não texto de tela: só o nome do projeto e o
+  // nome da tarefa de exemplo são traduzíveis
+  const pre = document.createElement("pre");
+  pre.className = "about-code";
+  const projeto = state.current?.name ?? T("my project");
+  pre.textContent = `p = project("${projeto}")\n` +
+    `add_task!(p, "${T("Task")}"; start = today(), duration = 5)`;
+  body.append(p1, p2, pre);
+  showOverlay("About Perth", body);
+}
 
 /* Menus estilo JupyterLab: clique abre, clique fora fecha */
 $$(".menu").forEach((menu) => {

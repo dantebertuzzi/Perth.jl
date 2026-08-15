@@ -623,3 +623,40 @@ html.has-bg body { background: transparent; }
 /* Com fundo ativo, a grande superfície opaca de cada app abre espaço para
    ele: a área do gráfico no gantt (o board do kanban já é transparente). */
 html.has-bg .tl-body { background: transparent; }
+
+/* Lista de atalhos (shared/shortcuts.js), aberta pelos dois aplicativos no
+   contêiner de cada um: overlay no gantt, modal no kanban. Tecla à esquerda
+   numa coluna de largura fixa, descrição alinhada à direita dela — ler a
+   lista é procurar uma tecla, então as teclas é que precisam formar coluna. */
+.shortcut-list { display: flex; flex-direction: column; gap: 2px; }
+.shortcut-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+}
+.shortcut-keys {
+  flex: 0 0 168px;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+/* o kbd do chrome usa margin-left:auto para se encostar à direita nos menus;
+   aqui ele forma coluna à esquerda */
+.shortcut-keys kbd { margin-left: 0; }
+.shortcut-desc { font-size: 12.5px; color: var(--ink); }
+
+/* Sobre: um parágrafo e o trecho de REPL que ele descreve */
+.about-box p { margin: 0 0 10px; font-size: 12.5px; color: var(--ink); }
+.about-code {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--line-soft);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+  overflow-x: auto;
+}

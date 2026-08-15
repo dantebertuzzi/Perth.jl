@@ -69,6 +69,7 @@ function loadKanbanApp() {
   };
   inject(read("frontend/shared/i18n.js"));
   inject(read("frontend/shared/background.js"));
+  inject(read("frontend/shared/shortcuts.js"));
   inject(read("frontend/kanban/app.js"));
 
   // Roda `code` como mais um <script> na mesma página — mesmo ambiente
@@ -126,6 +127,7 @@ function loadGanttApp(opts = {}) {
   inject(read("frontend/shared/i18n.js"));
   inject(read("frontend/shared/presence.js"));
   inject(read("frontend/shared/background.js"));
+  inject(read("frontend/shared/shortcuts.js"));
   inject(read("frontend/app.js"));
 
   const runIn = (code) => {
@@ -1674,6 +1676,67 @@ console.log("kanban · rótulos criados em JS falam o idioma da tela");
   close();
 }
 
+/* Atalhos e Sobre eram alert(): sem formatação, sem tradução, travando a
+ * página. E o kanban tinha oito teclas globais e nenhum lugar onde
+ * descobri-las. Agora os dois abrem a mesma lista (shared/shortcuts.js) no
+ * contêiner de cada um. */
+console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  let r = runIn(`PerthI18n.set("pt"); showShortcuts();
+    const linhas = [...document.querySelectorAll("#perth-overlay .shortcut-row")];
+    return { titulo: document.querySelector("#perth-overlay h2").textContent,
+             linhas: linhas.length,
+             primeira: linhas[0].querySelector(".shortcut-keys").textContent,
+             descricao: linhas[0].querySelector(".shortcut-desc").textContent,
+             duasTeclas: linhas.find((l) => l.textContent.includes("Ctrl+Y"))
+                               .querySelectorAll("kbd").length,
+             fechar: document.querySelector("#perth-overlay .modal-actions button").textContent };`);
+  check(r.titulo === "Atalhos de teclado" && r.linhas === 14,
+        "gantt: Atalhos abre um overlay com as 14 teclas");
+  check(r.primeira === "N" && r.descricao === "nova tarefa",
+        "gantt: tecla de um lado, descrição traduzida do outro");
+  check(r.duasTeclas === 2, "gantt: \"Ctrl+Shift+Z / Ctrl+Y\" vira dois <kbd>, não um");
+  check(r.fechar === "Fechar",
+        "gantt: o overlay é de leitura — o botão fecha, não cancela");
+
+  r = runIn(`document.getElementById("perth-overlay").remove();
+    state.current = { id: "p1", name: "Obra", tasks: [] };
+    showAbout();
+    return { titulo: document.querySelector("#perth-overlay h2").textContent,
+             codigo: document.querySelector(".about-code").textContent,
+             paragrafos: document.querySelectorAll(".about-box p").length };`);
+  check(r.titulo === "Sobre o Perth" && r.paragrafos === 2,
+        "gantt: Sobre abre no mesmo overlay, com texto formatado");
+  check(/p = project\("Obra"\)/.test(r.codigo) && /"Tarefa"/.test(r.codigo),
+        "gantt: o exemplo de REPL usa o projeto aberto, e só o que é texto é traduzido");
+
+  close();
+}
+{
+  const { runIn, close } = loadKanbanApp();
+
+  const r = runIn(`PerthI18n.set("pt");
+    state.board = { columns: [], archive: [], aliases: {} };
+    doAction("shortcuts");
+    const linhas = [...document.querySelectorAll(".shortcut-row")];
+    return { linhas: linhas.length,
+             barra: linhas.find((l) => l.querySelector("kbd").textContent === "/")
+                          .querySelector(".shortcut-desc").textContent,
+             menu: document.querySelector('[data-menu="help"] .menu-title').textContent,
+             entrada: document.querySelector('[data-menu="help"] .menu-drop button')
+                        .textContent.trim() };`);
+  check(r.linhas === 9, "kanban: o mesmo componente lista as 9 teclas dele");
+  check(r.barra === "filtrar cards",
+        "kanban: inclusive a \"/\", que só existia escondida no placeholder do filtro");
+  check(r.menu === "Ajuda" && r.entrada === "Atalhos de teclado",
+        "kanban: e o menu Ajuda passou a existir, traduzido, como no gantt");
+
+  close();
+}
+
 console.log("i18n · nenhum literal escapa da tradução");
 {
   const w = loadPage("frontend/index.html");
@@ -1685,14 +1748,19 @@ console.log("i18n · nenhum literal escapa da tradução");
   // Texto de tela em literal, nas duas formas que o código usa:
   //   .textContent = "…" / .innerHTML = '…' / .title = "…" / .placeholder = "…"
   //   setAttribute("title" | "aria-label" | "placeholder", "…")
-  // T(...) não casa em nenhuma: as duas exigem aspas logo depois da vírgula
+  // T(...) não casa em nenhuma: as duas exigem a aspa logo depois da vírgula
   // ou do "=". title e placeholder contam tanto quanto o texto — são
   // instrução de uso, não decoração.
+  //
+  // Crase entra só sem interpolação: `Olá` é texto solto e tem que falhar,
+  // enquanto `x = ${T("y")}` é a forma normal de compor texto traduzido com
+  // variável, e um trecho de código de exemplo (Julia, no diálogo Sobre)
+  // também é montado assim — não é texto de tela, é código.
   const LITERAL = new RegExp(
     "\\.(?:textContent|innerHTML|title|placeholder)\\s*=\\s*" +
-      "(\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*')" +
+      "(\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*'|`[^`$]*`)" +
     "|setAttribute\\(\\s*[\"'](?:title|aria-label|placeholder)[\"']\\s*,\\s*" +
-      "(\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*')", "g");
+      "(\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*'|`[^`$]*`)", "g");
 
   const varrer = (arquivo) => {
     const src = read(arquivo);
@@ -1724,9 +1792,11 @@ console.log("i18n · nenhum literal escapa da tradução");
   // a varredura precisa mesmo pegar o erro que ela existe para pegar
   const cobaia = `el.textContent = "Definitely untranslated sentence here";` +
                  `el.title = "Definitely untranslated sentence here";` +
-                 `el.setAttribute("aria-label", "Definitely untranslated sentence here");`;
-  const envolvido = `el.textContent = T("Definitely untranslated sentence here");`;
-  const pega = [...cobaia.matchAll(LITERAL)].length === 3 &&
+                 `el.setAttribute("aria-label", "Definitely untranslated sentence here");` +
+                 "el.textContent = \`Definitely untranslated sentence here\`;";
+  const envolvido = `el.textContent = T("Definitely untranslated sentence here");` +
+                    "el.textContent = \`p = project(\${nome})\`;";
+  const pega = [...cobaia.matchAll(LITERAL)].length === 4 &&
                [...envolvido.matchAll(LITERAL)].length === 0;
   check(pega, "a varredura pega literal solto e ignora o que está em T() (auto-teste)");
 

@@ -52,6 +52,17 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   `T()`, with the seventeen distinct strings added to all four dictionaries.
 
 ### Changed
+- **Keyboard shortcuts and About are dialogs now, not `alert()`.** Both were
+  plain-text browser alerts: no formatting, no translation, and they freeze the
+  page while open. They use the same overlay as Activity and the S-curve, with
+  the keys as `<kbd>` chips in a column and the descriptions translated. The
+  About box shows its Julia snippet as code.
+- The read-only overlay's button says *Close*, not *Cancel* — its English
+  fallback always said `Close`, so the `Cancel` key was picked up by mistake.
+  Activity and the S-curve get the correction too.
+- `Import failed`, `Auto-schedule failed` and the kanban's
+  `could not open the gantt` were raw English inside otherwise translated
+  alerts.
 - The kanban's card filter box is drawn like the gantt's save-to path box: at
   rest it is just text in the menubar, and the frame appears on hover and
   focus. The two menubars are the same component, and one field carrying a
@@ -62,6 +73,16 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   function. It is now a single module-level constant, like the gantt's.
 
 ### Added
+- **The kanban has a Help menu with its keyboard shortcuts.** It had eight
+  global keys — undo/redo, `/`, N, D, P, Del, Enter, Esc — and nowhere to
+  discover them; the only advertised one was `/`, buried in the filter's
+  placeholder. The gantt had the entry, the kanban did not, and both menubars
+  are otherwise the same component.
+- `shared/shortcuts.js`, which draws the shortcut list for both apps. What is
+  shared is the drawing only: each app passes its own keys and opens it in its
+  own container, which differ for good reasons. The list inherits each app's
+  typeface — the kanban is a mono UI and the gantt is not — because a dialog
+  should look like the app it belongs to.
 - A test that closes this class of bug rather than another instance of it:
   it scans `app.js`, `kanban/app.js` and `presence.js` for string literals
   assigned to `textContent` / `innerHTML` and fails unless each goes through

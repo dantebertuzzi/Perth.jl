@@ -2800,7 +2800,7 @@ $("#app-switch")?.addEventListener("click", async () => {
     location.href = `${location.protocol}//${location.hostname}:${info.gantt}/` +
       (qs ? "?" + qs : "");
   } catch (err) {
-    alert(err.message || "could not open the gantt");
+    alert(err.message || T("could not open the gantt"));
   }
 });
 
@@ -2924,6 +2924,22 @@ function doAction(action) {
         commit({ type: "resetBoard" });
       break;
     }
+    /* O kanban tinha oito teclas globais e nenhum lugar onde descobri-las —
+       o único anunciado era o "/", dentro do placeholder do filtro. Mesma
+       entrada do gantt, mesma lista desenhada por shared/shortcuts.js. */
+    case "shortcuts":
+      showModal(T("Keyboard shortcuts"), PerthShortcuts.list([
+        ["N", "new card"],
+        ["Enter", "edit selected card"],
+        ["Del", "delete selected card"],
+        ["/", "filter cards"],
+        ["Ctrl+Z", "undo"],
+        ["Ctrl+Shift+Z / Ctrl+Y", "redo"],
+        ["D", "toggle dark mode"],
+        ["P", "presentation mode"],
+        ["Esc", "close / deselect / exit presentation"],
+      ]), "shortcuts");
+      break;
     case "autoarch": {
       if (!state.me?.host) break;
       const v = prompt("Auto-archive done cards after how many days? (0 disables)",
