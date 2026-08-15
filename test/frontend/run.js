@@ -117,6 +117,14 @@ function loadGanttApp(opts = {}) {
   // re-renderiza dentro de um. Síncrono aqui: determinístico e sem callback
   // pendente sobrando depois do close() da janela.
   w.requestAnimationFrame = (fn) => { fn(); return 0; };
+  // jsdom não implementa Element.scrollTo, que o app usa para mover os dois
+  // eixos numa tacada só (ver goToHit). Sem isto, o teste morre de
+  // TypeError num detalhe do jsdom, não num defeito do app.
+  w.Element.prototype.scrollTo = function (o) {
+    if (!o || typeof o !== "object") return;
+    if (o.top !== undefined) this.scrollTop = o.top;
+    if (o.left !== undefined) this.scrollLeft = o.left;
+  };
   delete w.CSS;                 // idem loadKanbanApp: espelha o jsdom do CI
   w.console.error = () => {};   // init() loga o fetch rejeitado de propósito acima; ruído esperado
 

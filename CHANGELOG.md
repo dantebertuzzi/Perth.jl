@@ -27,7 +27,11 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   walks back. The counter reads position over total, like a find box in an
   editor (`4/13`), and each step *selects* the task rather than only scrolling
   to it — on a screen of 141 rows, "somewhere in view" still leaves you
-  hunting with your eyes. Search and Highlight compose instead of cancelling
+  hunting with your eyes. The timeline follows too: a task lives in time, not
+  in the list, so scrolling the rows alone would light up a name whose bar sits
+  months off screen. It only moves horizontally when the bar is actually out
+  of view, so walking through neighbouring matches does not shake the
+  timeline. Search and Highlight compose instead of cancelling
   each other, so you can filter to one person and search within that.
 - **The mirrored `.perth.jl` file now flows back.** Mirroring already went one
   way: every save rewrote the file at `file_path`. Edit that file in your

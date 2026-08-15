@@ -2784,10 +2784,35 @@ function goToHit(k) {
   const n = hits.length;
   state.searchAt = ((k % n) + n) % n;              // volta nas duas direções
   const linha = hits[state.searchAt];
-  state.selected = state.current.tasks[linha].id;
+  const t = state.current.tasks[linha];
+  state.selected = t.id;
   renderTable();
   renderChart();
-  el.tlBody.scrollTop = Math.max(0, linha * ROW_H - el.tlBody.clientHeight / 3);
+  // Rolar só na vertical não basta: a linha acende na tabela e a BARRA fica
+  // fora da vista, porque ela está no tempo, não na lista. Num projeto de um
+  // ano há meses de distância entre uma tarefa e a seguinte.
+  //
+  // Só mexe na horizontal quando a barra não está visível: percorrer com
+  // Enter ocorrências vizinhas não pode ficar sacudindo a linha do tempo.
+  const ppd = PPD[state.zoom];
+  const x0 = xOf(parseDate(t.start));
+  const x1 = xOf(taskEnd(t)) + ppd;                 // fim inclusive; marco = 1 dia
+  const vis0 = el.tlBody.scrollLeft;
+  const vis1 = vis0 + el.tlBody.clientWidth;
+  const margem = 40;
+  const alvoX = (x0 < vis0 + margem || x1 > vis1 - margem)
+    ? Math.max(0, x0 - el.tlBody.clientWidth / 3)
+    : vis0;
+
+  // Um scrollTo só, e instantâneo. Atribuir scrollTop e scrollLeft em
+  // sequência com scroll-behavior:smooth ligado faz uma animação cancelar a
+  // outra — segurando Enter, o eixo horizontal simplesmente não saía do
+  // lugar. Mesma razão do mirrorX ali em cima.
+  el.tlBody.scrollTo({
+    top: Math.max(0, linha * ROW_H - el.tlBody.clientHeight / 3),
+    left: alvoX,
+    behavior: "instant",
+  });
   el.taskSearchCount.textContent = `${state.searchAt + 1}/${n}`;
 }
 
