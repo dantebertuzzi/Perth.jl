@@ -1530,6 +1530,14 @@ end
         @test Perth._bg_sniff(vcat(Vector{UInt8}("GIF89a"), zeros(UInt8, 12))) == "image/gif"
         @test Perth._bg_sniff(vcat(Vector{UInt8}("RIFF"), zeros(UInt8, 4),
                                    Vector{UInt8}("WEBP"), zeros(UInt8, 4))) == "image/webp"
+        # AVIF: imagem parada ("avif") e sequência animada ("avis"). Quem
+        # decide é a marca — a mesma caixa ftyp carrega MP4, que fica de fora.
+        @test Perth._bg_sniff(vcat(zeros(UInt8, 4), Vector{UInt8}("ftypavif"),
+                                   zeros(UInt8, 4))) == "image/avif"
+        @test Perth._bg_sniff(vcat(zeros(UInt8, 4), Vector{UInt8}("ftypavis"),
+                                   zeros(UInt8, 4))) == "image/avif"
+        @test Perth._bg_sniff(vcat(zeros(UInt8, 4), Vector{UInt8}("ftypmp42"),
+                                   zeros(UInt8, 4))) === nothing
         @test Perth._bg_sniff(Vector{UInt8}("<svg xmlns=\"http://www.w3.org/2000/svg\">")) === nothing
         @test Perth._bg_sniff(UInt8[1, 2, 3]) === nothing
 

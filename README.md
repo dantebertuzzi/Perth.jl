@@ -273,7 +273,7 @@ There is no upload endpoint on purpose. Both servers listen on `0.0.0.0`
 so sharing can be toggled live, and an upload would be a *write* surface
 on a LAN-reachable port; pointing at a path grants nothing new, since
 whoever has the REPL already has the disk. Every file is validated by
-content (PNG, JPEG, GIF or WebP, up to 12 MB each), not by extension, so
+content (PNG, JPEG, GIF, WebP or AVIF, up to 12 MB each), not by extension, so
 a mistyped path doesn't become a file published to the network.
 
 The default opacity is deliberately low: panels, cards and bars keep

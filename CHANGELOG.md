@@ -5,6 +5,29 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- The UI background accepts **AVIF**, still or animated (`avif` and `avis`
+  brands). It is the same risk class as the WebP already accepted — a raster
+  codec the browser decodes — unlike SVG, which stays out for the reason
+  documented next to the sniffer. The check is still by content: an `ftyp`
+  box with any other brand, MP4 included, is refused. Verified with a real
+  240-frame sequence: it is served as `image/avif` and animates as the
+  background.
+
+### Notes
+- Animated backgrounds, as measured in Chrome: GIF, animated WebP and animated
+  AVIF all play. APNG is accepted — it carries the PNG signature, so the
+  sniffer reads it as `image/png` — and it animates when the file is opened on
+  its own, but it stayed on the first frame as a CSS background in every
+  sample we took, including with a file whose first frame lasts one second and
+  whose second lasts thirty. A GIF with that same timing, in the same place,
+  advanced normally, so this is not a measurement artefact. Nothing in Perth
+  touches the frames — a single background is applied as a plain `url(...)`,
+  with no canvas or preload in that path — so if animation matters, prefer
+  GIF, WebP or AVIF.
+
 ## [0.8.2] - 2026-08-15
 
 ### Fixed

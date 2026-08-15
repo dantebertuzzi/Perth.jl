@@ -50,6 +50,11 @@ function _bg_sniff(bytes::Vector{UInt8})
     b[1:3] == UInt8[0xFF, 0xD8, 0xFF] && return "image/jpeg"
     (b[1:6] == Vector{UInt8}("GIF87a") || b[1:6] == Vector{UInt8}("GIF89a")) && return "image/gif"
     (b[1:4] == Vector{UInt8}("RIFF") && b[9:12] == Vector{UInt8}("WEBP")) && return "image/webp"
+    # AVIF: caixa ftyp com a marca em 9..12 — "avif" na imagem parada e
+    # "avis" na sequência animada. Mesma classe de risco do WebP (codec
+    # raster decodificado pelo navegador), ao contrário do SVG.
+    (b[5:8] == Vector{UInt8}("ftyp") &&
+     b[9:12] in (Vector{UInt8}("avif"), Vector{UInt8}("avis"))) && return "image/avif"
     return nothing
 end
 
@@ -168,7 +173,7 @@ function _bg_check(path::AbstractString)
         "image is $(round(sz / 1024^2; digits = 1)) MB — the limit is $(_BG_MAX_BYTES ÷ 1024^2) MB"))
     mime = _bg_sniff(read(full, 16))
     mime === nothing && throw(ArgumentError(
-        "$full is not a PNG, JPEG, GIF or WebP image"))
+        "$full is not a PNG, JPEG, GIF, WebP or AVIF image"))
     return full, mime
 end
 
@@ -204,7 +209,7 @@ function _bg_expand_dir(dir::AbstractString)
     end
     isempty(ok) && throw(ArgumentError(
         "no usable image in $full — looked at $(seen) file$(seen == 1 ? "" : "s") " *
-        "(PNG, JPEG, GIF or WebP, up to $(_BG_MAX_BYTES ÷ 1024^2) MB each)"))
+        "(PNG, JPEG, GIF, WebP or AVIF, up to $(_BG_MAX_BYTES ÷ 1024^2) MB each)"))
     return ok, seen
 end
 
@@ -264,7 +269,7 @@ The setting is persisted in `settings.json` in the Perth data directory.
 Clear it with [`Perth.background_clear!`](@ref); read it back with
 [`Perth.background`](@ref) / [`Perth.backgrounds`](@ref).
 
-Accepted formats are PNG, JPEG, GIF and WebP, checked by content rather
+Accepted formats are PNG, JPEG, GIF, WebP and AVIF, checked by content rather
 than by file extension, up to 12 MB each.
 
 !!! note
