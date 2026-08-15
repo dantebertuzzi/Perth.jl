@@ -2300,7 +2300,12 @@ function setBaselineUI() {
     t.baseline_start = t.start;
     t.baseline_duration = t.milestone ? 1 : Math.max(t.duration, 1);
   }
-  state.current.baseline_at = new Date().toISOString().slice(0, 19);
+  // hora LOCAL, como o set_baseline! do Julia grava (Dates.now()):
+  // toISOString é UTC, e o mesmo campo ficava com dois significados
+  // conforme a linha de base tivesse sido tirada na UI ou no REPL
+  state.current.baseline_at =
+    new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+      .toISOString().slice(0, 19);
   renderAll();
   markDirty();
   setSaveStatus("saved", "baseline set ✓");

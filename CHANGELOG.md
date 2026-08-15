@@ -106,6 +106,21 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   working.
 
 ### Fixed
+- **Timestamps written by the browser were UTC**, in fields the server
+  fills with local time (`_kanban_now`, `Dates.now()`). The same field
+  meant two different things depending on whether the card was born in a
+  browser or in the REPL, and in a negative UTC offset the browser's
+  stamp landed on the *next day* from late afternoon on. Three places:
+  a card's `at`, its `done_at`, and the Gantt's `baseline_at`.
+
+  Consequences it was causing: a card created at 21:00 in UTC−3 was
+  stamped tomorrow, so the `new` badge never appeared and the creator
+  tooltip was three hours off; `done_at` being ahead made auto-archive
+  by age fire early. The kanban already had `localISO()` compensating
+  for the offset when comparing due dates — the trap was known in one
+  place and missed in the other three. Now `localStamp()` produces
+  exactly what the server produces.
+
 - Kanban: the Gantt→kanban bridge now mirrors into **every** board, not
   just the one currently loaded. A card linked to a Gantt task only
   followed the project while its board was the active one: editing the
