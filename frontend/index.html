@@ -223,6 +223,11 @@
   <div class="toolbar">
     <button id="btn-new-task" class="primary">+ Task</button>
     <select id="highlight-select" title="Highlight tasks by assignee, status or type"></select>
+    <div class="task-search">
+      <input id="task-search" type="search" autocomplete="off" spellcheck="false"
+             placeholder="find a task…  ( / )" aria-label="Find a task by name">
+      <span class="ts-count" id="task-search-count" hidden></span>
+    </div>
     <span class="spacer"></span>
     <div class="zoom-group" role="group" aria-label="Zoom">
       <button data-zoom="day">Day</button>

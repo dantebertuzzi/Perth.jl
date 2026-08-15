@@ -8,6 +8,18 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Find a task by name in the gantt** — the box next to *Highlight*, or `/`,
+  the same key the kanban uses. Non-matching tasks dim, in the table and in
+  the chart, because search reuses the highlight machinery that was already
+  there. Accents and case do not matter: typing `integracao` finds
+  *Integração por partes*, which is the point in a 141-task project — needing
+  the right accent means needing to already know what you are looking for.
+- **Enter walks the matches**, one at a time, wrapping at the end; Shift+Enter
+  walks back. The counter reads position over total, like a find box in an
+  editor (`4/13`), and each step *selects* the task rather than only scrolling
+  to it — on a screen of 141 rows, "somewhere in view" still leaves you
+  hunting with your eyes. Search and Highlight compose instead of cancelling
+  each other, so you can filter to one person and search within that.
 - **The mirrored `.perth.jl` file now flows back.** Mirroring already went one
   way: every save rewrote the file at `file_path`. Edit that file in your
   editor and the browser follows on its own — no REPL round trip, and no more

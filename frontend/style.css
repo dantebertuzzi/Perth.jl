@@ -908,3 +908,37 @@ body.presenting .res-pane { display: none; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Busca de tarefa na barra de ferramentas. Mesmo desenho do filtro do kanban
+   (ver .mb-search lá): em repouso é só texto, a moldura aparece no hover e no
+   foco. A contagem fica colada, para dizer se vale continuar digitando. */
+.task-search { position: relative; display: flex; align-items: center; gap: 6px; }
+#task-search {
+  width: 190px;
+  height: 26px;
+  padding: 2px 9px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+#task-search::placeholder { color: var(--muted); opacity: .55; }
+#task-search:hover { border-color: var(--line); background: var(--field); }
+#task-search:focus {
+  width: 240px;
+  color: var(--ink);
+  background: var(--field);
+  border-color: var(--line);
+  outline: 2px solid var(--purple);
+  outline-offset: -1px;
+}
+/* busca sem nenhum resultado: a moldura avisa, sem apagar o que foi digitado */
+#task-search.empty-hit { border-color: var(--red); color: var(--red); }
+.ts-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
