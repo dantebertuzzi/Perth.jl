@@ -674,7 +674,7 @@ function renderFbPanel(r) {
   if (!r.dirs.length) {
     const empty = document.createElement("div");
     empty.className = "fb-empty";
-    empty.textContent = "no subfolders";
+    empty.textContent = T("no subfolders");
     el.fbDirs.appendChild(empty);
   }
   for (const name of r.dirs) {
@@ -796,7 +796,7 @@ function renderAll() {
     el.tlMonths.innerHTML = "";
     el.tlDays.innerHTML = "";
     el.chart.innerHTML = "";
-    el.statusLeft.textContent = "no project open";
+    el.statusLeft.textContent = T("no project open");
     return;
   }
   computeRange();
@@ -1404,8 +1404,18 @@ function selectTask(id) {
 function attachDrag(node, task, mode) {
   node.addEventListener("pointerdown", (ev) => {
     if (ev.button !== 0) return;
-    ev.preventDefault();
-    pushUndo();
+    // Sem preventDefault aqui: cancelar o pointerdown suprime os eventos de
+    // mouse de compatibilidade, e sem mousedown o Chrome nunca produz click
+    // — logo, nunca produz dblclick. O listener de dblclick lá embaixo era
+    // código morto, e abrir a tarefa pela barra não funcionava (na linha da
+    // tabela funcionava, porque lá ninguém cancela nada). Quem impede a
+    // seleção de texto durante o arrasto é user-select:none no #chart.
+    //
+    // pushUndo() NÃO entra aqui: encostar numa barra não é uma edição. Ele
+    // zera a pilha de refazer e empilha um "antes" sem "depois" (markDirty,
+    // que fecha o par, só roda em edição de verdade) — três cliques de
+    // seleção davam três entradas de nada e matavam o refazer de uma edição
+    // anterior. Vai no primeiro movimento, que é quando a edição começa.
     // Listeners na window: o re-render durante o arrasto destrói o nó
     // original, então não dá para depender de pointer capture nele.
     const ppd = PPD[state.zoom];
@@ -1417,7 +1427,10 @@ function attachDrag(node, task, mode) {
     const onMove = (mv) => {
       const deltaDays = Math.round((mv.clientX - startX) / ppd);
       if (deltaDays === 0 && !moved) return;
-      moved = true;
+      if (!moved) {
+        pushUndo();        // aqui o "antes" ainda é o original: nada mutou
+        moved = true;
+      }
       state.dragging = true;
       if (mode === "move") {
         task.start = fmtISO(addDays(parseDate(origStart), deltaDays));
@@ -1437,15 +1450,25 @@ function attachDrag(node, task, mode) {
       if (moved) {
         renderAll();
         markDirty();
-      } else {
-        selectTask(task.id);
       }
+      // Clique parado NÃO é tratado aqui. pointerup roda antes do mouseup, e
+      // selecionar aqui re-renderiza: o nó que recebeu o mousedown morre no
+      // meio do caminho, o par mousedown/mouseup deixa de existir no mesmo
+      // elemento e o Chrome não chega a formar o click — nem, portanto, o
+      // dblclick. Era por isso que abrir a tarefa pela barra não funcionava.
+      // No "click" abaixo o evento já existe; re-renderizar ali é seguro,
+      // e o dblclick ainda é entregue ao nó antigo (já solto da árvore),
+      // que é exatamente como a linha da tabela sempre funcionou.
     };
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   });
 
+  // Sem guarda de "isto foi um arrasto": um gesto que moveu passa pelo
+  // renderAll() acima, que destrói este nó — o click nem chega a se formar
+  // nele. Só clique parado chega aqui.
+  node.addEventListener("click", () => selectTask(task.id));
   node.addEventListener("dblclick", () => openModal(task.id));
 }
 
@@ -1522,7 +1545,10 @@ function openModal(id) {
   deps.innerHTML = "";
   const others = state.current.tasks.filter((o) => o.id !== id);
   if (!others.length) {
-    deps.innerHTML = '<span class="none">No other tasks in this project.</span>';
+    const none = document.createElement("span");
+    none.className = "none";
+    none.textContent = T("No other tasks in this project.");
+    deps.appendChild(none);
   }
   const depRefs = new Map((t.dependencies || []).map((d) => {
     const pd = parseDep(d);
@@ -1797,7 +1823,7 @@ function showOverlay(title, bodyEl) {
   const sp = document.createElement("span");
   sp.className = "spacer";
   const close = document.createElement("button");
-  close.textContent = window.PerthI18n ? PerthI18n.t("Cancel") : "Close";
+  close.textContent = window.PerthI18n ? PerthI18n.t("Close") : "Close";
   close.addEventListener("click", () => back.remove());
   actions.append(sp, close);
   box.append(actions);
@@ -1871,7 +1897,7 @@ function showShare() {
   shareBody = document.createElement("div");
   const note = document.createElement("div");
   note.className = "empty-note";
-  note.textContent = "loading…";
+  note.textContent = T("loading…");
   shareBody.append(note);
   showOverlay("Share this project", shareBody);
   refreshShare();
@@ -1908,7 +1934,7 @@ async function toggleShare() {
     renderShareBtn(next);
     if (shareBody && shareBody.isConnected) renderShare(shareBody, next);
   } catch (err) {
-    alert(err.message);
+    PerthToast.error(err.message);
   }
 }
 
@@ -1945,7 +1971,7 @@ function shareKeyRow(body, info) {
       renderShare(body, next);   // links e QR mudam junto com a chave
     } catch (err) {
       btn.disabled = false;
-      alert(err.message);
+      PerthToast.error(err.message);
     }
   };
 
@@ -2003,7 +2029,7 @@ function renderShare(body, info) {
         renderShareBtn(next);          // o botão da menubar acompanha
       } catch (err) {
         btn.disabled = false;
-        alert(err.message);
+        PerthToast.error(err.message);
       }
     });
     row.append(label, btn);
@@ -2020,11 +2046,11 @@ function renderShare(body, info) {
     const code = document.createElement("code");
     code.textContent = u;
     const btn = document.createElement("button");
-    btn.textContent = "copy";
+    btn.textContent = T("copy");
     btn.addEventListener("click", () => {
       navigator.clipboard?.writeText(u);
-      btn.textContent = "copied!";
-      setTimeout(() => (btn.textContent = "copy"), 1400);
+      btn.textContent = T("copied!");
+      setTimeout(() => (btn.textContent = T("copy")), 1400);
     });
     row.append(code, btn);
     body.append(row);
@@ -2280,7 +2306,7 @@ async function exportChart() {
     const res = await fetch(withKey(`/api/projects/${state.current.id}/chart?fmt=png`));
     if (!res.ok) {
       const b = await res.json().catch(() => ({}));
-      alert(b.error || `HTTP ${res.status}`);
+      PerthToast.error(b.error || `HTTP ${res.status}`);
       return;
     }
     const blob = await res.blob();
@@ -2290,7 +2316,7 @@ async function exportChart() {
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (err) {
-    alert(err.message);
+    PerthToast.error(err.message);
   }
 }
 
@@ -2479,7 +2505,7 @@ el.importFile.addEventListener("change", async () => {
     state.knownRev = await fetchRev();
     await loadProjects(p.id);
   } catch (err) {
-    alert(`Import failed: ${err.message}`);
+    PerthToast.error(`${T("Import failed")}: ${err.message}`);
   }
 });
 
@@ -2540,7 +2566,7 @@ async function autoSchedule() {
     await fetchAnalytics();
     renderAll();
   } catch (err) {
-    alert(`Auto-schedule failed: ${err.message}`);
+    PerthToast.error(`${T("Auto-schedule failed")}: ${err.message}`);
   }
 }
 
@@ -2561,7 +2587,7 @@ async function applyPert() {
     await fetchAnalytics();
     renderAll();
   } catch (err) {
-    alert(`${T("Apply PERT estimates")}: ${err.message}`);
+    PerthToast.error(`${T("Apply PERT estimates")}: ${err.message}`);
   }
 }
 
@@ -2638,20 +2664,49 @@ const ACTIONS = {
   "toggle-critical": toggleCritical,
   "toggle-theme": toggleTheme,
   "presentation": togglePresentation,
-  "shortcuts": () => alert(
-    "Shortcuts:\n\n" +
-    "N — new task\nEnter / double-click — edit task\nDel — delete selected task\n" +
-    "Ctrl+D — duplicate selected task\n" +
-    "Ctrl+Z — undo\nCtrl+Shift+Z / Ctrl+Y — redo\n" +
-    "S — auto-schedule\nC — toggle critical path\nR — resource load\nD — toggle dark mode\n" +
-    "P — presentation mode\n" +
-    "1 / 2 / 3 — zoom day / week / month\nT — go to today\nEsc — close / deselect / exit presentation"),
-  "about": () => alert(
-    "Perth — Gantt charts with a Julia backend.\n" +
-    "Data lives on the local server; edit from the REPL too:\n\n" +
-    '  p = project("' + (state.current?.name ?? "my project") + '")\n' +
-    '  add_task!(p, "Task"; start = today(), duration = 5)'),
+  "shortcuts": showShortcuts,
+  "about": showAbout,
 };
+
+/* Atalhos e Sobre eram alert(): sem formatação, sem tradução e travando a
+ * página. Viraram o mesmo overlay da Atividade e da curva-S. A lista em si
+ * é desenhada por shared/shortcuts.js, que o kanban também usa. */
+function showShortcuts() {
+  showOverlay("Keyboard shortcuts", PerthShortcuts.list([
+    ["N", "new task"],
+    ["Enter / duplo clique", "edit task"],
+    ["Del", "delete selected task"],
+    ["Ctrl+D", "duplicate selected task"],
+    ["Ctrl+Z", "undo"],
+    ["Ctrl+Shift+Z / Ctrl+Y", "redo"],
+    ["S", "auto-schedule"],
+    ["C", "toggle critical path"],
+    ["R", "resource load"],
+    ["D", "toggle dark mode"],
+    ["P", "presentation mode"],
+    ["1 / 2 / 3", "zoom day / week / month"],
+    ["T", "go to today"],
+    ["Esc", "close / deselect / exit presentation"],
+  ]));
+}
+
+function showAbout() {
+  const body = document.createElement("div");
+  body.className = "about-box";
+  const p1 = document.createElement("p");
+  p1.textContent = T("Gantt charts with a Julia backend.");
+  const p2 = document.createElement("p");
+  p2.textContent = T("Data lives on the local server; edit from the REPL too:");
+  // Código Julia de exemplo, não texto de tela: só o nome do projeto e o
+  // nome da tarefa de exemplo são traduzíveis
+  const pre = document.createElement("pre");
+  pre.className = "about-code";
+  const projeto = state.current?.name ?? T("my project");
+  pre.textContent = `p = project("${projeto}")\n` +
+    `add_task!(p, "${T("Task")}"; start = today(), duration = 5)`;
+  body.append(p1, p2, pre);
+  showOverlay("About Perth", body);
+}
 
 /* Menus estilo JupyterLab: clique abre, clique fora fecha */
 $$(".menu").forEach((menu) => {
@@ -3045,7 +3100,7 @@ function bootFailed(err) {
       location.href = `${location.protocol}//${location.hostname}:${info.kanban}/` +
         (qs ? "?" + qs : "");
     } catch (err) {
-      alert(err.message);
+      PerthToast.error(err.message);
     }
   });
 

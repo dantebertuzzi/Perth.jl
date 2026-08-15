@@ -60,6 +60,13 @@
           <button data-action="resync">Resync with server</button>
         </div>
       </div>
+
+      <div class="menu" data-menu="help">
+        <button class="menu-title">Help</button>
+        <div class="menu-drop">
+          <button data-action="shortcuts">Keyboard shortcuts</button>
+        </div>
+      </div>
     </nav>
 
     <div class="mb-search">
@@ -152,7 +159,6 @@
 
   <div id="cursors"></div>
   <div id="modal-root" hidden></div>
-  <div id="toasts"></div>
 
   <div class="chat-panel" id="chat-panel" hidden>
     <div class="chat-head">
@@ -171,6 +177,8 @@
   <script src="/shared/i18n.js"></script>
   <script src="/shared/draggable.js"></script>
   <script src="/shared/background.js"></script>
+  <script src="/shared/shortcuts.js"></script>
+  <script src="/shared/toast.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

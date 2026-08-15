@@ -53,6 +53,11 @@ function actionLabel(type) {
 
 // Chave de acesso (share protegido): vem no link ?key=... e fica na
 // sessão para sobreviver a navegação/reload
+// Tradução no ponto de uso: texto criado em JS nasce depois da varredura do
+// PerthI18n (que passa uma vez, no set()), então literal solto aqui fica em
+// inglês para sempre. Mesmo T do gantt, um só para o arquivo — eram oito
+// cópias idênticas espalhadas pelas funções.
+const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
 const $  = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 
@@ -490,16 +495,10 @@ function applyRestriction(el, action) {
   el.title = reason + ": " + actionLabel(action);
 }
 
+// Delega ao componente compartilhado (shared/toast.js). Era daqui que ele
+// saiu: o gantt não tinha aviso nenhum e reportava tudo por alert().
 function showToast(msg, cls = "toast-denied") {
-  const t = document.createElement("div");
-  t.className = "toast " + cls;
-  t.textContent = msg;
-  toastsEl.append(t);
-  while (toastsEl.children.length > 4) toastsEl.firstChild.remove();
-  setTimeout(() => {
-    t.classList.add("out");
-    setTimeout(() => t.remove(), 260);
-  }, 4200);
+  return cls === "toast-error" ? PerthToast.error(msg) : PerthToast.info(msg);
 }
 
 function deniedToast(action) {
@@ -771,7 +770,7 @@ function render() {
     name.className = "col-name";
     name.textContent = col.name;
     if (canDo("renameCol")) {
-      name.title = "double-click to rename";
+      name.title = T("double-click to rename");
       name.addEventListener("dblclick", () => renameColInline(col, name));
     } else {
       name.classList.add("locked");
@@ -783,7 +782,7 @@ function render() {
     count.textContent = col.wip ? `${col.cards.length}/${col.wip}` : col.cards.length;
     if (col.wip && col.cards.length > col.wip) {
       count.classList.add("over");
-      count.title = "WIP limit exceeded";
+      count.title = T("WIP limit exceeded");
     }
     head.append(name, count, colMenu(col, ci));
     colEl.append(head);
@@ -807,7 +806,7 @@ function render() {
     foot.className = "col-foot";
     const add = document.createElement("button");
     add.className = "add-card";
-    add.textContent = "+ card";
+    add.textContent = T("+ card");
     add.addEventListener("click", () => openNewCard(col.id));
     applyRestriction(add, "addCard");
     foot.append(add);
@@ -818,7 +817,7 @@ function render() {
 
   const addCol = document.createElement("button");
   addCol.className = "add-col";
-  addCol.textContent = "+ new column";
+  addCol.textContent = T("+ new column");
   addCol.addEventListener("click", newColumn);
   applyRestriction(addCol, "addCol");
   boardEl.append(addCol);
@@ -912,7 +911,6 @@ function cardEl(card) {
     const meta = document.createElement("div");
     meta.className = "card-meta";
     if (fresh) {
-      const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
       const tag = document.createElement("span");
       tag.className = "card-new";
       tag.textContent = T("new");
@@ -922,7 +920,7 @@ function cardEl(card) {
     if (card.by) {
       const by = document.createElement("span");
       by.className = "card-by";
-      by.textContent = "by " + displayFor(card.by);
+      by.textContent = T("by") + " " + displayFor(card.by);
       by.title = card.by + (card.at ? " · " + card.at : "");
       meta.append(by);
     } else {
@@ -934,7 +932,7 @@ function cardEl(card) {
       const as = document.createElement("button");
       as.className = "card-assignee";
       as.textContent = "@" + card.assignee;
-      as.title = "assigned to " + card.assignee + " — click to filter";
+      as.title = T("assigned to") + " " + card.assignee + " — " + T("click to filter");
       as.style.setProperty("--tagc", tagColor(card.assignee.toLowerCase()));
       as.addEventListener("pointerdown", (e) => e.stopPropagation());
       as.addEventListener("click", (e) => {
@@ -948,7 +946,7 @@ function cardEl(card) {
       const chip = document.createElement("button");
       chip.className = "card-due" + (due.cls ? " " + due.cls : "");
       chip.textContent = due.label;
-      chip.title = "due " + card.due + " — click to edit";
+      chip.title = T("due") + " " + card.due + " — " + T("click to edit");
       chip.addEventListener("pointerdown", (e) => e.stopPropagation());
       chip.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -959,8 +957,8 @@ function cardEl(card) {
     if (card.done) {
       const arch = document.createElement("button");
       arch.className = "card-archive";
-      arch.textContent = "archive";
-      arch.title = "move to the archive";
+      arch.textContent = T("archive");
+      arch.title = T("move to the archive");
       arch.addEventListener("pointerdown", (e) => e.stopPropagation());
       arch.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1034,7 +1032,7 @@ function tagEl(val) {
   const c = tagColor(val.toLowerCase());
   tag.style.setProperty("--tagc", c);
   tag.style.setProperty("--tagbg", c + "26");
-  tag.title = "filter by " + val;
+  tag.title = T("filter by") + " " + val;
   tag.addEventListener("click", (e) => {
     e.stopPropagation();
     setFilter(val);
@@ -1081,7 +1079,7 @@ function colMenu(col, ci) {
   wrap.className = "col-menu menu";
   const btn = document.createElement("button");
   btn.textContent = "⋯";
-  btn.title = "column options";
+  btn.title = T("column options");
   const drop = document.createElement("div");
   drop.className = "menu-drop";
 
@@ -1192,7 +1190,7 @@ function editorEl(col, card) {
   const ta = document.createElement("textarea");
   ta.className = "card-editor";
   ta.value = state.editing.draft;
-  ta.placeholder = "type and press Enter — #tags, **bold**, [links](url)…";
+  ta.placeholder = T("type and press Enter — #tags, **bold**, [links](url)…");
   // um card existente pode ter editCard negado mas ainda assim aceitar
   // mudança de prazo/responsável (ops independentes) — só o texto trava
   if (card) applyRestriction(ta, "editCard");
@@ -1227,7 +1225,7 @@ function editorEl(col, card) {
   const row = document.createElement("div");
   row.className = "editor-row";
   const lbl = document.createElement("label");
-  lbl.textContent = "due";
+  lbl.textContent = T("due");
   const date = document.createElement("input");
   date.type = "date";
   date.value = state.editing.due || "";
@@ -1244,10 +1242,10 @@ function editorEl(col, card) {
   row.append(lbl, date);
 
   const lblA = document.createElement("label");
-  lblA.textContent = "assignee";
+  lblA.textContent = T("assignee");
   const who = document.createElement("input");
   who.className = "assignee-input";
-  who.placeholder = "name";
+  who.placeholder = T("name");
   who.maxLength = 24;
   who.value = state.editing.assignee || "";
   const dl = document.createElement("datalist");
@@ -1285,7 +1283,7 @@ function editorEl(col, card) {
     const del = document.createElement("button");
     del.className = "del";
     del.textContent = "✕";
-    del.title = "remove item";
+    del.title = T("remove item");
     del.addEventListener("click", (e) => {
       e.stopPropagation();
       if (state.editing.isNew) {
@@ -1302,7 +1300,7 @@ function editorEl(col, card) {
   }
   const addCheck = document.createElement("input");
   addCheck.className = "add-check";
-  addCheck.placeholder = "+ checklist item";
+  addCheck.placeholder = T("+ checklist item");
   // um card novo ainda não existe no servidor: o checklist fica pendente e
   // vai junto no addCard, então addCheck não se aplica a esse caminho
   if (!state.editing.isNew) applyRestriction(addCheck, "addCheck");
@@ -1873,7 +1871,7 @@ function showModal(title, body, key = null) {
   head.textContent = title;
   const x = document.createElement("button");
   x.textContent = "✕";
-  x.title = "close (Esc)";
+  x.title = T("close (Esc)");
   x.addEventListener("click", closeModal);
   head.append(x);
   const b = document.createElement("div");
@@ -1890,7 +1888,7 @@ function showArchived() {
   if (!arch.length) {
     const p = document.createElement("div");
     p.className = "empty-note";
-    p.textContent = "Nothing archived yet — finish a card (✓) and hit \"archive\".";
+    p.textContent = T("Nothing archived yet — finish a card (✓) and hit \"archive\".");
     body.append(p);
   }
   for (const entry of [...arch].reverse()) {   // mais recente primeiro
@@ -1908,15 +1906,15 @@ function showArchived() {
     ].filter(Boolean).join(" · ");
     txt.append(sub);
     const restore = document.createElement("button");
-    restore.textContent = "restore";
+    restore.textContent = T("restore");
     restore.addEventListener("click", () => {
       commit({ type: "restoreCard", id: entry.id });
       showArchived();
     });
     const del = document.createElement("button");
     del.className = "danger";
-    del.textContent = "delete";
-    del.title = "delete forever (cannot be undone)";
+    del.textContent = T("delete");
+    del.title = T("delete forever (cannot be undone)");
     del.addEventListener("click", () => {
       if (!confirm("Delete this card forever? This cannot be undone.")) return;
       commit({ type: "delArchived", id: entry.id });
@@ -1945,7 +1943,7 @@ function showAliases() {
     lbl.textContent = ip + (state.me && ip === state.me.ip ? " (you)" : "");
     lbl.title = ip;
     const input = document.createElement("input");
-    input.placeholder = "e.g. Paulo";
+    input.placeholder = T("e.g. Paulo");
     input.maxLength = 24;
     input.value = aliasOf(ip);
     const save = () => {
@@ -1962,7 +1960,7 @@ function showAliases() {
   }
   const hint = document.createElement("div");
   hint.className = "alias-hint";
-  hint.textContent = "Names apply to everyone's screen: cursors, chips and card stamps. Empty = back to the IP.";
+  hint.textContent = T("Names apply to everyone's screen: cursors, chips and card stamps. Empty = back to the IP.");
   body.append(hint);
   showModal("Rename machines", body, "aliases");
 }
@@ -1975,7 +1973,6 @@ function showAliases() {
 // no servidor (_kanban_permitted em kanban.jl), então uma linha para ele
 // seria enganosa.
 function showPermissions() {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
 
   // reconstruída do zero a cada eco do servidor (mesmo padrão de
   // showActivity/showArchived) — preserva a rolagem entre reconstruções
@@ -2128,7 +2125,6 @@ function showPermissions() {
 
 /* ============================================ notificações */
 
-const toastsEl = $("#toasts");
 let unseen = 0;
 
 // Som de alerta (junto do toast). Navegadores bloqueiam áudio antes da
@@ -2160,20 +2156,12 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// Aviso de presença: nome em negrito na cor da máquina, a mesma do cursor
+// remoto. É o único que carrega marcação, por isso tem função própria no
+// componente compartilhado.
 function toast(entry) {
-  const t = document.createElement("div");
-  t.className = "toast";
-  t.style.setProperty("--peer", colorForIp(entry.ip));
-  const who = document.createElement("b");
-  who.textContent = displayFor(entry.ip);
-  who.title = entry.ip;
-  t.append(who, " " + entry.text);
-  toastsEl.append(t);
-  while (toastsEl.children.length > 4) toastsEl.firstChild.remove();
-  setTimeout(() => {
-    t.classList.add("out");
-    setTimeout(() => t.remove(), 260);
-  }, 4200);
+  return PerthToast.peer(displayFor(entry.ip), " " + entry.text,
+                         colorForIp(entry.ip), entry.ip);
 }
 
 /* ============================================ chat geral
@@ -2340,7 +2328,7 @@ function showActivity() {
   if (!state.log.length) {
     const p = document.createElement("div");
     p.className = "empty-note";
-    p.textContent = "No activity yet.";
+    p.textContent = T("No activity yet.");
     body.append(p);
   }
   for (const e of [...state.log].reverse()) {
@@ -2400,7 +2388,7 @@ function showShare() {
   const body = document.createElement("div");
   const note = document.createElement("div");
   note.className = "empty-note";
-  note.textContent = "loading…";
+  note.textContent = T("loading…");
   body.append(note);
   shareBody = body;
   showModal(window.PerthI18n ? PerthI18n.t("Share this board") : "Share this board",
@@ -2417,7 +2405,6 @@ function renderShareBtn(info) {
   const usable = !!(info && info.can_share && info.host);
   btn.hidden = !usable;
   if (!usable) return;
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   btn.classList.toggle("broadcasting", !!info.shared);
   btn.setAttribute("aria-pressed", info.shared ? "true" : "false");
   const label = T(info.shared ? "Transmitting — click to stop"
@@ -2446,7 +2433,7 @@ function toggleShare() {
       renderShareBtn(next);
       if (state.openModal === "share" && shareBody) renderShare(shareBody, next);
     })
-    .catch((err) => showToast(err.message));
+    .catch((err) => PerthToast.error(err.message));
 }
 
 function refreshShare() {
@@ -2460,7 +2447,7 @@ function refreshShare() {
       body.textContent = "";
       const note = document.createElement("div");
       note.className = "empty-note";
-      note.textContent = "could not load share info";
+      note.textContent = T("could not load share info");
       body.append(note);
     });
 }
@@ -2469,7 +2456,6 @@ function refreshShare() {
 // do gantt. Aplicar uma chave nova derruba quem está na rede: a chave
 // antiga passou a ser a errada, e cada um é reperguntado na tela.
 function shareKeyRow(body, info) {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const wrap = document.createElement("div");
   const row = document.createElement("div");
   row.className = "share-key";
@@ -2494,7 +2480,7 @@ function shareKeyRow(body, info) {
       })
       .catch((err) => {
         btn.disabled = false;
-        showToast(err.message);
+        PerthToast.error(err.message);
       });
   };
 
@@ -2529,7 +2515,6 @@ function shareKeyRow(body, info) {
 }
 
 function renderShare(body, info) {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   body.textContent = "";
 
   // Chave da transmissão: só o host manda, e só quando o servidor subiu
@@ -2558,7 +2543,7 @@ function renderShare(body, info) {
         })
         .catch((err) => {
           btn.disabled = false;
-          showToast(err.message);
+          PerthToast.error(err.message);
         });
     });
     row.append(label, btn);
@@ -2575,11 +2560,11 @@ function renderShare(body, info) {
     const code = document.createElement("code");
     code.textContent = u;
     const btn = document.createElement("button");
-    btn.textContent = "copy";
+    btn.textContent = T("copy");
     btn.addEventListener("click", () => {
       navigator.clipboard?.writeText(u);
-      btn.textContent = "copied!";
-      setTimeout(() => (btn.textContent = "copy"), 1400);
+      btn.textContent = T("copied!");
+      setTimeout(() => (btn.textContent = T("copy")), 1400);
     });
     row.append(code, btn);
     body.append(row);
@@ -2607,7 +2592,6 @@ function renderShare(body, info) {
 }
 
 function showKeyGate() {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const body = document.createElement("div");
   const p = document.createElement("div");
   p.className = "empty-note";
@@ -2649,7 +2633,6 @@ function showKeyGate() {
 // Transmissão desligada pelo host: sem retry automático (o servidor recusa
 // a conexão), mas com um botão para tentar de novo quando religarem
 function showShareOff() {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const body = document.createElement("div");
   const p = document.createElement("div");
   p.className = "empty-note";
@@ -2670,7 +2653,7 @@ function showBoards() {
   const body = document.createElement("div");
   const note = document.createElement("div");
   note.className = "empty-note";
-  note.textContent = "loading…";
+  note.textContent = T("loading…");
   body.append(note);
   showModal("Boards", body, "boards");
   fetch(`/api/boards${keyQS()}`)
@@ -2687,12 +2670,12 @@ function showBoards() {
         if (name === info.current) {
           const cur = document.createElement("span");
           cur.className = "boards-current";
-          cur.textContent = "current";
+          cur.textContent = T("current");
           row.append(cur);
         } else if (state.me?.host) {
           const sw = document.createElement("button");
-          sw.textContent = "switch";
-          sw.title = "switches the board for everyone";
+          sw.textContent = T("switch");
+          sw.title = T("switches the board for everyone");
           sw.addEventListener("click", () => send({ type: "useBoard", name }));
           row.append(sw);
         }
@@ -2704,7 +2687,7 @@ function showBoards() {
         const create = document.createElement("div");
         create.className = "boards-row";
         const input = document.createElement("input");
-        input.placeholder = "new board name";
+        input.placeholder = T("new board name");
         input.maxLength = 32;
         const go = () => {
           const v = input.value.trim();
@@ -2715,18 +2698,18 @@ function showBoards() {
           e.stopPropagation();
         });
         const btn = document.createElement("button");
-        btn.textContent = "create";
+        btn.textContent = T("create");
         btn.addEventListener("click", go);
         create.append(input, btn);
         body.append(create);
-        hint.textContent = "One board is active at a time — switching changes it for every connected machine.";
+        hint.textContent = T("One board is active at a time — switching changes it for every connected machine.");
       } else {
-        hint.textContent = "Only the host machine can switch or create boards.";
+        hint.textContent = T("Only the host machine can switch or create boards.");
       }
       body.append(hint);
     })
     .catch(() => {
-      note.textContent = "could not load the board list";
+      note.textContent = T("could not load the board list");
     });
 }
 
@@ -2736,7 +2719,6 @@ function showBoards() {
 // lead time = done_at - at; throughput = concluídos por janela; WIP =
 // cards não concluídos, com a idade do mais antigo.
 function showMetrics() {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const parseAt = (s) => (s ? new Date(String(s).replace(" ", "T")) : null);
   const now = Date.now();
   const day = 86400000;
@@ -2803,7 +2785,7 @@ $("#app-switch")?.addEventListener("click", async () => {
     location.href = `${location.protocol}//${location.hostname}:${info.gantt}/` +
       (qs ? "?" + qs : "");
   } catch (err) {
-    alert(err.message || "could not open the gantt");
+    PerthToast.error(err.message || T("could not open the gantt"));
   }
 });
 
@@ -2927,6 +2909,22 @@ function doAction(action) {
         commit({ type: "resetBoard" });
       break;
     }
+    /* O kanban tinha oito teclas globais e nenhum lugar onde descobri-las —
+       o único anunciado era o "/", dentro do placeholder do filtro. Mesma
+       entrada do gantt, mesma lista desenhada por shared/shortcuts.js. */
+    case "shortcuts":
+      showModal(T("Keyboard shortcuts"), PerthShortcuts.list([
+        ["N", "new card"],
+        ["Enter", "edit selected card"],
+        ["Del", "delete selected card"],
+        ["/", "filter cards"],
+        ["Ctrl+Z", "undo"],
+        ["Ctrl+Shift+Z / Ctrl+Y", "redo"],
+        ["D", "toggle dark mode"],
+        ["P", "presentation mode"],
+        ["Esc", "close / deselect / exit presentation"],
+      ]), "shortcuts");
+      break;
     case "autoarch": {
       if (!state.me?.host) break;
       const v = prompt("Auto-archive done cards after how many days? (0 disables)",

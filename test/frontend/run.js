@@ -69,6 +69,8 @@ function loadKanbanApp() {
   };
   inject(read("frontend/shared/i18n.js"));
   inject(read("frontend/shared/background.js"));
+  inject(read("frontend/shared/shortcuts.js"));
+  inject(read("frontend/shared/toast.js"));
   inject(read("frontend/kanban/app.js"));
 
   // Roda `code` como mais um <script> na mesma página — mesmo ambiente
@@ -111,6 +113,10 @@ function loadGanttApp(opts = {}) {
   w.fetch = opts.fetch || (() => Promise.reject(new Error("fetch disabled in test")));
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   w.structuredClone = structuredClone;
+  // o jsdom só define rAF com pretendToBeVisual; o arrasto de barra
+  // re-renderiza dentro de um. Síncrono aqui: determinístico e sem callback
+  // pendente sobrando depois do close() da janela.
+  w.requestAnimationFrame = (fn) => { fn(); return 0; };
   delete w.CSS;                 // idem loadKanbanApp: espelha o jsdom do CI
   w.console.error = () => {};   // init() loga o fetch rejeitado de propósito acima; ruído esperado
 
@@ -122,6 +128,8 @@ function loadGanttApp(opts = {}) {
   inject(read("frontend/shared/i18n.js"));
   inject(read("frontend/shared/presence.js"));
   inject(read("frontend/shared/background.js"));
+  inject(read("frontend/shared/shortcuts.js"));
+  inject(read("frontend/shared/toast.js"));
   inject(read("frontend/app.js"));
 
   const runIn = (code) => {
@@ -1612,6 +1620,461 @@ console.log("gantt · estimativa de três pontos (PERT)");
     return { text: el.textContent, title: el.getAttribute("title") };`);
   check(!/P80/.test(r.text) && r.title === null,
         "gantt: sem estimativa no projeto, a barra não mostra nada disso");
+
+  close();
+}
+
+/* Texto criado em JS nasce DEPOIS da varredura do PerthI18n — que passa uma
+ * vez, no set() — então um literal solto num textContent fica em inglês para
+ * sempre, dentro de uma tela traduzida no resto. O defeito já apareceu quatro
+ * vezes (rótulo `live` do kanban, título do modal, `(top level)`, e mais seis
+ * de uma varredura), sempre igual. Este bloco não conserta uma ocorrência:
+ * fecha a torneira. Qualquer literal novo atribuído a textContent/innerHTML
+ * tem que passar por T() ou existir no dicionário.
+ *
+ * O critério é "existe tradução em pt": PerthI18n.t(k) devolve a própria
+ * chave quando não conhece a string, então t(s) === s é exatamente o que o
+ * usuário veria em inglês. Strings que são iguais nos dois idiomas (nomes
+ * próprios, símbolos) vão na lista de isentas, com o motivo. */
+/* O T do kanban era declarado oito vezes, uma por função. Virou um só, do
+ * módulo — o que só é seguro se todas as funções ainda o enxergarem. Um
+ * escopo errado aqui não dá erro de sintaxe: dá ReferenceError na hora de
+ * desenhar um card, com a tela em branco. Este bloco desenha de verdade. */
+console.log("kanban · rótulos criados em JS falam o idioma da tela");
+{
+  const { runIn, close } = loadKanbanApp();
+
+  const seed = `state.board = { columns: [{ id: "c1", name: "backlog", cards: [
+      { id: "k1", text: "com dono", by: "repl", at: "2020-01-01 09:00", done: true }
+    ] }], archive: [{ id: "k9", text: "arquivado", by: "repl" }], aliases: {} };`;
+
+  let r = runIn(`${seed} PerthI18n.set("pt"); render();
+    return { arquivar: document.querySelector(".card-archive").textContent,
+             dica: document.querySelector(".card-archive").title,
+             por: document.querySelector(".card-by").textContent,
+             novaColuna: document.querySelector(".add-col").textContent,
+             novoCard: document.querySelector(".add-card").textContent };`);
+  check(r.arquivar === "arquivar", "kanban: o botão de arquivar do card fala pt");
+  check(r.dica === "mover para o arquivo",
+        "kanban: e o title dele também — dica de uso conta como texto de tela");
+  check(/^por /.test(r.por), "kanban: o crédito do card é \"por <nome>\", não \"by\"");
+  check(r.novaColuna === "+ nova coluna", "kanban: o botão de nova coluna também");
+
+  r = runIn(`PerthI18n.set("fr"); render();
+    return { arquivar: document.querySelector(".card-archive").textContent,
+             novaColuna: document.querySelector(".add-col").textContent };`);
+  check(r.arquivar === "archiver" && r.novaColuna === "+ nouvelle colonne",
+        "kanban: e troca junto quando o idioma muda");
+
+  // o arquivo e o editor de card são construídos por outras funções, que
+  // tinham cópias próprias de T — cada uma precisa enxergar o do módulo
+  r = runIn(`PerthI18n.set("pt"); showArchived();
+    const txt = document.body.textContent;
+    return { restaurar: txt.includes("restaurar"), excluir: txt.includes("excluir"),
+             semIngles: !txt.includes("restore") && !txt.includes("delete") };`);
+  check(r.restaurar && r.excluir && r.semIngles,
+        "kanban: o arquivo mostra restaurar/excluir, sem sobra em inglês");
+
+  close();
+}
+
+/* Atalhos e Sobre eram alert(): sem formatação, sem tradução, travando a
+ * página. E o kanban tinha oito teclas globais e nenhum lugar onde
+ * descobri-las. Agora os dois abrem a mesma lista (shared/shortcuts.js) no
+ * contêiner de cada um. */
+/* Falha de ação era alert(): travava a página até alguém clicar, sem tema e
+ * sem tradução. O que ele fazia de certo era não deixar a falha passar em
+ * branco — por isso o aviso de erro dura o dobro do informativo e traz botão
+ * de fechar, em vez de piscar e sumir. */
+console.log("avisos · o toast substitui o alert() das falhas");
+{
+  const { w, runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  // nenhum alert() sobrou no caminho de erro: um alert em teste trava o jsdom
+  // do mesmo jeito que trava o navegador
+  const fonte = read("frontend/app.js") + read("frontend/kanban/app.js");
+  const sobrou = [...fonte.matchAll(/^\s*alert\(/gm)].length;
+  check(sobrou === 0, "nenhuma falha de ação chama alert() ainda");
+
+  let r = runIn(`PerthToast.clear();
+    PerthToast.error("deu ruim");
+    const t = document.querySelector("#perth-toasts .toast");
+    return { pilha: !!document.getElementById("perth-toasts"),
+             texto: t.querySelector(".toast-text").textContent,
+             classe: t.className, papel: t.getAttribute("role"),
+             vivo: document.getElementById("perth-toasts").getAttribute("aria-live") };`);
+  check(r.pilha && r.texto === "deu ruim", "o aviso aparece com a mensagem");
+  check(/toast-error/.test(r.classe) && r.papel === "alert",
+        "erro se anuncia como alert para leitor de tela");
+  check(r.vivo === "polite", "a pilha é aria-live: anuncia sem roubar o foco");
+
+  r = runIn(`PerthToast.clear(); PerthToast.info("pronto");
+    const t = document.querySelector(".toast");
+    return { classe: t.className, papel: t.getAttribute("role") };`);
+  check(/toast-info/.test(r.classe) && r.papel === "status",
+        "informativo é status, não alerta");
+
+  r = runIn(`PerthToast.clear();
+    for (let i = 0; i < 7; i++) PerthToast.error("erro " + i);
+    const t = [...document.querySelectorAll(".toast-text")].map((x) => x.textContent);
+    return t;`);
+  check(r.length === 4 && r[0] === "erro 3" && r[3] === "erro 6",
+        "a pilha para em 4: entram os novos, sai o mais antigo");
+
+  r = runIn(`PerthToast.clear();
+    PerthToast.error("fecha em mim");
+    document.querySelector(".toast-close").click();
+    return document.querySelector(".toast").className;`);
+  check(/leaving/.test(r), "o botão de fechar tira o aviso na hora");
+
+  r = runIn(`PerthToast.clear();
+    return [PerthToast.error(""), PerthToast.error("   "), PerthToast.error(null),
+            document.querySelectorAll(".toast").length];`);
+  check(r[3] === 0, "erro sem mensagem não vira um aviso vazio na tela");
+
+  // caminho real, ponta a ponta: o fetch do harness rejeita de propósito,
+  // então "Aplicar estimativas PERT" falha de verdade e tem que reportar
+  runIn(`PerthToast.clear();
+    state.current = { id: "p1", name: "P", tasks: [] };
+    applyPert();
+    return 1;`);
+  await new Promise((res) => setTimeout(res, 60));   // deixa a promessa cair
+  r = runIn(`const t = document.querySelector(".toast");
+    return { existe: !!t, texto: t ? t.querySelector(".toast-text").textContent : "",
+             erro: t ? /toast-error/.test(t.className) : false,
+             modal: !!document.querySelector(".modal-backdrop:not([hidden])") };`);
+  check(r.existe && r.erro && /PERT/.test(r.texto),
+        "uma ação que falha de verdade reporta num aviso, com o nome da ação");
+  check(/fetch disabled/.test(r.texto),
+        "e leva junto a mensagem do erro, como o alert levava");
+
+  close();
+}
+
+/* O kanban já tinha toast; o gantt não tinha nada e usava alert(). Em vez de
+ * dois sistemas de aviso no mesmo produto, o do kanban virou o compartilhado.
+ * Estes testes cobrem o lado que se perde numa unificação: a variante de
+ * presença, que é a única com marcação, e o container antigo, que não pode
+ * ter ficado para trás no HTML. */
+console.log("avisos · o kanban usa o mesmo componente, sem o dele");
+{
+  const { runIn, close } = loadKanbanApp();
+
+  let r = runIn(`PerthToast.clear();
+    toast({ ip: "10.0.0.9", text: "moveu um card", notify: true });
+    const t = document.querySelector(".toast");
+    return { classe: t.className, negrito: t.querySelector("b")?.textContent,
+             titulo: t.querySelector("b")?.title,
+             cor: t.style.getPropertyValue("--peer"),
+             texto: t.querySelector(".toast-text").textContent };`);
+  check(/toast-peer/.test(r.classe) && !!r.negrito,
+        "kanban: a notificação de presença sobreviveu à mudança de componente");
+  check(r.titulo === "10.0.0.9" && /moveu um card/.test(r.texto) && !!r.cor,
+        "kanban: com o nome em negrito, o IP no title e a cor da máquina");
+
+  r = runIn(`PerthToast.clear();
+    showToast("bloqueado pelo host");
+    const a = document.querySelector(".toast").className;
+    PerthToast.clear();
+    showToast("deu erro", "toast-error");
+    return [a, document.querySelector(".toast").className];`);
+  check(/toast-info/.test(r[0]) && /toast-error/.test(r[1]),
+        "kanban: showToast continua existindo, mapeando para o componente novo");
+
+  r = runIn(`return { antigo: !!document.getElementById("toasts"),
+                     novo: !!document.getElementById("perth-toasts") };`);
+  check(r.antigo === false && r.novo === true,
+        "kanban: o container antigo saiu do HTML — sobra um só");
+
+  close();
+}
+
+console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  let r = runIn(`PerthI18n.set("pt"); showShortcuts();
+    const linhas = [...document.querySelectorAll("#perth-overlay .shortcut-row")];
+    return { titulo: document.querySelector("#perth-overlay h2").textContent,
+             linhas: linhas.length,
+             primeira: linhas[0].querySelector(".shortcut-keys").textContent,
+             descricao: linhas[0].querySelector(".shortcut-desc").textContent,
+             duasTeclas: linhas.find((l) => l.textContent.includes("Ctrl+Y"))
+                               .querySelectorAll("kbd").length,
+             fechar: document.querySelector("#perth-overlay .modal-actions button").textContent };`);
+  check(r.titulo === "Atalhos de teclado" && r.linhas === 14,
+        "gantt: Atalhos abre um overlay com as 14 teclas");
+  check(r.primeira === "N" && r.descricao === "nova tarefa",
+        "gantt: tecla de um lado, descrição traduzida do outro");
+  check(r.duasTeclas === 2, "gantt: \"Ctrl+Shift+Z / Ctrl+Y\" vira dois <kbd>, não um");
+  check(r.fechar === "Fechar",
+        "gantt: o overlay é de leitura — o botão fecha, não cancela");
+
+  r = runIn(`document.getElementById("perth-overlay").remove();
+    state.current = { id: "p1", name: "Obra", tasks: [] };
+    showAbout();
+    return { titulo: document.querySelector("#perth-overlay h2").textContent,
+             codigo: document.querySelector(".about-code").textContent,
+             paragrafos: document.querySelectorAll(".about-box p").length };`);
+  check(r.titulo === "Sobre o Perth" && r.paragrafos === 2,
+        "gantt: Sobre abre no mesmo overlay, com texto formatado");
+  check(/p = project\("Obra"\)/.test(r.codigo) && /"Tarefa"/.test(r.codigo),
+        "gantt: o exemplo de REPL usa o projeto aberto, e só o que é texto é traduzido");
+
+  close();
+}
+{
+  const { runIn, close } = loadKanbanApp();
+
+  const r = runIn(`PerthI18n.set("pt");
+    state.board = { columns: [], archive: [], aliases: {} };
+    doAction("shortcuts");
+    const linhas = [...document.querySelectorAll(".shortcut-row")];
+    return { linhas: linhas.length,
+             barra: linhas.find((l) => l.querySelector("kbd").textContent === "/")
+                          .querySelector(".shortcut-desc").textContent,
+             menu: document.querySelector('[data-menu="help"] .menu-title').textContent,
+             entrada: document.querySelector('[data-menu="help"] .menu-drop button')
+                        .textContent.trim() };`);
+  check(r.linhas === 9, "kanban: o mesmo componente lista as 9 teclas dele");
+  check(r.barra === "filtrar cards",
+        "kanban: inclusive a \"/\", que só existia escondida no placeholder do filtro");
+  check(r.menu === "Ajuda" && r.entrada === "Atalhos de teclado",
+        "kanban: e o menu Ajuda passou a existir, traduzido, como no gantt");
+
+  close();
+}
+
+console.log("i18n · nenhum literal escapa da tradução");
+{
+  const w = loadPage("frontend/index.html");
+  w.PerthI18n.set("pt");
+
+  // iguais em pt de propósito, ou não-texto
+  const ISENTAS = new Set(["Perth", "Kanban", "PERT", "P80", "WBS", "—", "…"]);
+
+  // Texto de tela em literal, nas duas formas que o código usa:
+  //   .textContent = "…" / .innerHTML = '…' / .title = "…" / .placeholder = "…"
+  //   setAttribute("title" | "aria-label" | "placeholder", "…")
+  // T(...) não casa em nenhuma: as duas exigem a aspa logo depois da vírgula
+  // ou do "=". title e placeholder contam tanto quanto o texto — são
+  // instrução de uso, não decoração.
+  //
+  // Crase entra só sem interpolação: `Olá` é texto solto e tem que falhar,
+  // enquanto `x = ${T("y")}` é a forma normal de compor texto traduzido com
+  // variável, e um trecho de código de exemplo (Julia, no diálogo Sobre)
+  // também é montado assim — não é texto de tela, é código.
+  const LITERAL = new RegExp(
+    "\\.(?:textContent|innerHTML|title|placeholder)\\s*=\\s*" +
+      "(\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*'|`[^`$]*`)" +
+    "|setAttribute\\(\\s*[\"'](?:title|aria-label|placeholder)[\"']\\s*,\\s*" +
+      "(\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*'|`[^`$]*`)", "g");
+
+  const varrer = (arquivo) => {
+    const src = read(arquivo);
+    const achados = [];
+    for (const m of src.matchAll(LITERAL)) {
+      let txt = (m[1] || m[2]).slice(1, -1).replace(/\\(.)/g, "$1");
+      txt = txt.replace(/<[^>]*>/g, "").trim();          // innerHTML: só o texto
+      if (!/[A-Za-z]{2}/.test(txt)) continue;            // símbolo, número, vazio
+      if (ISENTAS.has(txt)) continue;
+      // NÃO vale perguntar "existe tradução para esta string?": um literal
+      // solto que por acaso coincide com uma chave do dicionário continua
+      // saindo em inglês na tela (era o caso de `chip.title = "due " + …`).
+      // O que importa é estar dentro de T() — e literal dentro de T() nem
+      // chega aqui, porque o regex exige a aspa colada no "=" ou na vírgula.
+      const linha = src.slice(0, m.index).split("\n").length;
+      achados.push(`${arquivo}:${linha}  ${JSON.stringify(txt.slice(0, 60))}`);
+    }
+    return achados;
+  };
+
+  for (const arquivo of ["frontend/app.js", "frontend/kanban/app.js",
+                         "frontend/shared/presence.js",
+                         "frontend/shared/shortcuts.js", "frontend/shared/toast.js"]) {
+    const achados = varrer(arquivo);
+    if (achados.length) achados.forEach((a) => console.error("      " + a));
+    check(achados.length === 0,
+          `${arquivo}: todo texto de tela passa por T() — inclusive title e placeholder`);
+  }
+
+  // a varredura precisa mesmo pegar o erro que ela existe para pegar
+  const cobaia = `el.textContent = "Definitely untranslated sentence here";` +
+                 `el.title = "Definitely untranslated sentence here";` +
+                 `el.setAttribute("aria-label", "Definitely untranslated sentence here");` +
+                 "el.textContent = \`Definitely untranslated sentence here\`;";
+  const envolvido = `el.textContent = T("Definitely untranslated sentence here");` +
+                    "el.textContent = \`p = project(\${nome})\`;";
+  const pega = [...cobaia.matchAll(LITERAL)].length === 4 &&
+               [...envolvido.matchAll(LITERAL)].length === 0;
+  check(pega, "a varredura pega literal solto e ignora o que está em T() (auto-teste)");
+
+  w.close();
+}
+
+/* Duplo clique na barra abre a tarefa — e isso é frágil de um jeito que não
+ * aparece em teste de unidade nenhum: depende de o navegador conseguir FORMAR
+ * o click. Duas coisas o impediam, e as duas voltam fácil numa refatoração:
+ *
+ *   1. preventDefault() no pointerdown suprime os eventos de mouse de
+ *      compatibilidade; sem mousedown não há click, e sem click não há
+ *      dblclick. O listener de dblclick vira código morto.
+ *   2. selecionar a tarefa no pointerup re-renderiza o gráfico. pointerup
+ *      roda ANTES do mouseup, então o nó que recebeu o mousedown morre no
+ *      meio do gesto e o par deixa de existir no mesmo elemento.
+ *
+ * Os dois testes abaixo miram exatamente essas duas causas, não o sintoma. */
+console.log("gantt · duplo clique na barra abre a tarefa");
+{
+  const { w, runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const seed = `
+    const mk = (id, name, start, duration, extra) => Object.assign({
+      id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+      optimistic: 0, most_likely: 0, pessimistic: 0 }, extra || {});
+    state.current = { id: "p1", name: "P", tasks: [
+      mk("t1", "Barra", "2026-03-02", 5),
+      mk("t2", "Marco", "2026-03-10", 1, { milestone: true }) ] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  // causa 1: o pointerdown não pode ser cancelado
+  let r = runIn(`${seed}
+    const ev = (alvo) => {
+      const e = new MouseEvent("pointerdown",
+        { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true });
+      document.querySelector(alvo).dispatchEvent(e);
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+      return e.defaultPrevented;
+    };
+    return { barra: ev("#chart .bar"), punho: ev("#chart .bar-handle"),
+             marco: ev("#chart .milestone") };`);
+  check(r.barra === false && r.punho === false && r.marco === false,
+        "gantt: pointerdown da barra não é cancelado (senão não há click nem dblclick)");
+
+  // causa 2: um clique parado não pode re-renderizar antes do mouseup —
+  // o nó que recebeu o pointerdown tem que continuar na árvore
+  r = runIn(`${seed}
+    const bar = document.querySelector("#chart .bar");
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    return { naArvore: document.contains(bar), selecionou: state.selected };`);
+  check(r.naArvore === true,
+        "gantt: pointerup de clique parado não re-renderiza (o nó sobrevive ao gesto)");
+  check(r.selecionou === null,
+        "gantt: e a seleção não acontece ali — quem seleciona é o click");
+
+  r = runIn(`document.querySelector("#chart .bar").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }));
+    return state.selected;`);
+  check(r === "t1", "gantt: o click é que seleciona a tarefa");
+
+  // o gesto completo: dblclick chega ao nó e abre o modal
+  r = runIn(`${seed}
+    document.querySelector("#chart .bar").dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true }));
+    return { aberto: !document.getElementById("modal").hidden,
+             nome: document.getElementById("f-name").value };`);
+  check(r.aberto === true && r.nome === "Barra",
+        "gantt: duplo clique na barra abre o modal da tarefa certa");
+
+  r = runIn(`closeModal(false); ${seed}
+    document.querySelector("#chart .milestone").dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true }));
+    return { aberto: !document.getElementById("modal").hidden,
+             nome: document.getElementById("f-name").value };`);
+  check(r.aberto === true && r.nome === "Marco",
+        "gantt: e no losango do marco também");
+
+  // arrastar continua arrastando, e não seleciona no fim do gesto
+  r = runIn(`closeModal(false); ${seed}
+    state.selected = null;
+    const bar = document.querySelector("#chart .bar");
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: 100 + 3 * PPD[state.zoom], clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    const t = state.current.tasks.find((x) => x.id === "t1");
+    document.querySelector("#chart .bar").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }));
+    return { inicio: t.start, selecionou: state.selected };`);
+  check(r.inicio === "2026-03-05", "gantt: arrastar a barra ainda move a tarefa (3 dias)");
+
+  close();
+}
+
+/* pushUndo() guarda o "antes" e ZERA a pilha de refazer. Se um clique que só
+ * seleciona passa por ele, cada clique numa barra empilha uma entrada que não
+ * corresponde a edição nenhuma — e mata o refazer de uma edição de verdade.
+ * Pior: a entrada fica sem "depois" (markDirty só roda em edição), e undo()
+ * sem par completo cai no _restore() cru, que ignora o que chegou por fora. */
+console.log("gantt · clicar numa barra não mexe no histórico");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const seed = `
+    const mk = (id, name, start, duration) => ({
+      id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+      optimistic: 0, most_likely: 0, pessimistic: 0 });
+    state.current = { id: "p1", name: "P", tasks: [mk("t1", "Barra", "2026-03-02", 5)] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "", pert: null,
+                  byId: new Map() };
+    state.undoStack = []; state.redoStack = [];
+    renderAll();`;
+
+  // bloco proprio: o trecho e colado varias vezes na mesma funcao
+  const clicar = `{
+    const bar = document.querySelector("#chart .bar");
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    document.querySelector("#chart .bar").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }));
+  }`;
+
+  let r = runIn(`${seed} ${clicar} ${clicar} ${clicar}
+    return { undo: state.undoStack.length, selecionada: state.selected };`);
+  check(r.undo === 0, "gantt: três cliques numa barra não empilham nada para desfazer");
+
+  // o dano concreto: um clique de seleção apagava o refazer de uma edição
+  r = runIn(`${seed}
+    pushUndo(); state.current.tasks[0].duration = 9; markDirty();
+    undo();
+    const refazerAntes = state.redoStack.length;
+    ${clicar}
+    return { refazerAntes, refazerDepois: state.redoStack.length };`);
+  check(r.refazerAntes === 1 && r.refazerDepois === 1,
+        "gantt: e não jogam fora o refazer de uma edição de verdade");
+
+  // arrastar de verdade continua sendo desfazível
+  r = runIn(`${seed}
+    const bar = document.querySelector("#chart .bar");
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: 100 + 4 * PPD[state.zoom], clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    const movido = state.current.tasks[0].start;
+    const entrada = state.undoStack[state.undoStack.length - 1];
+    undo();
+    return { movido, desfeito: state.current.tasks[0].start,
+             pilha: state.undoStack.length + 1,
+             parCompleto: !!(entrada && entrada.before && entrada.after) };`);
+  check(r.movido === "2026-03-06" && r.desfeito === "2026-03-02",
+        "gantt: arrastar continua registrando um desfazer que funciona");
+  check(r.parCompleto === true,
+        "gantt: e a entrada tem antes E depois (undo reconcilia em vez de sobrescrever)");
 
   close();
 }

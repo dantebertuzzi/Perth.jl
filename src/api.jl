@@ -516,6 +516,8 @@ function _build_router()
     HTTP.register!(router, "GET", "/shared/i18n.js", _static(joinpath("shared", "i18n.js")))
     HTTP.register!(router, "GET", "/shared/draggable.js", _static(joinpath("shared", "draggable.js")))
     HTTP.register!(router, "GET", "/shared/background.js", _static(joinpath("shared", "background.js")))
+    HTTP.register!(router, "GET", "/shared/shortcuts.js", _static(joinpath("shared", "shortcuts.js")))
+    HTTP.register!(router, "GET", "/shared/toast.js", _static(joinpath("shared", "toast.js")))
     HTTP.register!(router, "GET", "/manifest.webmanifest", _static("manifest.webmanifest"))
     HTTP.register!(router, "GET", "/sw.js", _static(joinpath("shared", "sw.js")))
 

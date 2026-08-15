@@ -5,6 +5,111 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- Clicking a bar to select it no longer touches the undo history. `attachDrag`
+  called `pushUndo()` from `pointerdown`, so merely touching a bar pushed an
+  entry with a "before" and no "after" — `markDirty()`, which closes the pair,
+  only runs on a real edit — and, worse, cleared the redo stack: edit, undo,
+  click a bar, and the redo was gone. Undoing one of those half entries also
+  fell back to a raw restore, which overwrites whatever arrived from outside
+  meanwhile. `pushUndo()` now runs on the first movement of the gesture, which
+  is when an edit actually begins and while the snapshot is still the original
+  state.
+- **Double-clicking a bar in the chart opens the task again.** It had two
+  independent causes stacked on top of each other, both in `attachDrag`.
+  First, `pointerdown` called `preventDefault()`, which suppresses the
+  compatibility mouse events — with no `mousedown` the browser never forms a
+  `click`, so it never forms a `dblclick` either, and the `dblclick` listener
+  sitting right there was dead code. Second, a click that did not drag
+  selected the task from `pointerup`, which runs *before* `mouseup`: the
+  re-render destroyed the node mid-gesture, so the `mousedown`/`mouseup` pair
+  no longer shared an element. Selecting now happens in a real `click`
+  listener, and text selection during a drag is held off by `user-select:
+  none` on the chart instead of by cancelling the event. The task table never
+  had either problem, which is why double-clicking a row always worked.
+
+- Seventeen more strings in the kanban were stuck in English, this time in
+  `title` and `placeholder`: `double-click to rename`, `WIP limit exceeded`,
+  `move to the archive`, `delete forever (cannot be undone)`, the card
+  composer's `type and press Enter — #tags, **bold**, [links](url)…` and the
+  rest. A tooltip that explains how something works is screen text, not
+  decoration, so the scan now covers `title`, `placeholder` and `aria-label`
+  alongside `textContent` and `innerHTML`.
+- The scan also stopped letting a literal off because a translation for it
+  happens to exist: `chip.title = "due " + …` passed while shipping English,
+  since `due` was a dictionary key. The question it asks now is whether the
+  string goes through `T()`, which is the thing that actually matters — and
+  that caught two more.
+- Twenty-three labels built in JavaScript were stuck in English in every
+  language: the gantt's `copy` / `copied!` / `loading…` / `no subfolders` /
+  `no project open` and the empty dependency list, and the kanban's `+ card`,
+  `+ new column`, `by`, `archive`, `due`, `assignee`, `restore`, `delete`,
+  `current`, `switch`, `create` and its board-list error. They are written
+  after `PerthI18n` has swept the DOM — the sweep runs once, on `set()` — so
+  a bare literal there never gets translated. All of them now go through
+  `T()`, with the seventeen distinct strings added to all four dictionaries.
+
+### Changed
+- **Every failed action reports in a toast, not an `alert()`.** Ten alerts —
+  nine in the gantt, one in the kanban — froze the whole page until someone
+  clicked, carried no theme, and put untranslated browser buttons on screen.
+  What `alert()` did get right was making a failure impossible to miss, so an
+  error toast lasts twice as long as an informational one and carries a close
+  button instead of blinking away. It announces itself through `aria-live`
+  without stealing focus, which is the opposite of what the alert did.
+- The toast is **one** component now, not two. The kanban already had its own
+  — `showToast`, the `#toasts` stack, the presence notification tinted with
+  each machine's colour — while the gantt had nothing. Rather than ship two
+  notification systems in one product, the kanban's moved to `shared/toast.js`
+  and both apps use it; `showToast` still exists there as a thin adapter. Its
+  stack also moved from the bottom right to the bottom left, because the chat
+  panel opens bottom right in both apps and the two overlapped. The kanban's
+  three errors, which used the informational styling and timing, now read as
+  errors.
+- **Keyboard shortcuts and About are dialogs now, not `alert()`.** Both were
+  plain-text browser alerts: no formatting, no translation, and they freeze the
+  page while open. They use the same overlay as Activity and the S-curve, with
+  the keys as `<kbd>` chips in a column and the descriptions translated. The
+  About box shows its Julia snippet as code.
+- The read-only overlay's button says *Close*, not *Cancel* — its English
+  fallback always said `Close`, so the `Cancel` key was picked up by mistake.
+  Activity and the S-curve get the correction too.
+- `Import failed`, `Auto-schedule failed` and the kanban's
+  `could not open the gantt` were raw English inside otherwise translated
+  alerts.
+- The kanban's card filter box is drawn like the gantt's save-to path box: at
+  rest it is just text in the menubar, and the frame appears on hover and
+  focus. The two menubars are the same component, and one field carrying a
+  permanent box while the other carried none looked unintentional. Same font,
+  size, height, colour, radius and padding — the computed styles now match
+  exactly. It still widens on focus, which is the kanban's own behaviour.
+- The kanban declared the same one-line `T` helper eight times, once per
+  function. It is now a single module-level constant, like the gantt's.
+
+### Added
+- **The kanban has a Help menu with its keyboard shortcuts**, alongside Board
+  and View where the gantt keeps its own. It had eight
+  global keys — undo/redo, `/`, N, D, P, Del, Enter, Esc — and nowhere to
+  discover them; the only advertised one was `/`, buried in the filter's
+  placeholder. The gantt had the entry, the kanban did not, and both menubars
+  are otherwise the same component.
+- `shared/shortcuts.js`, which draws the shortcut list for both apps. What is
+  shared is the drawing only: each app passes its own keys and opens it in its
+  own container, which differ for good reasons. The list inherits each app's
+  typeface — the kanban is a mono UI and the gantt is not — because a dialog
+  should look like the app it belongs to.
+- A test that closes this class of bug rather than another instance of it:
+  it scans `app.js`, `kanban/app.js` and `presence.js` for string literals
+  assigned to `textContent` / `innerHTML` and fails unless each goes through
+  `T()` or has a translation. The bug had already shipped four times. The
+  scan carries a self-test, so a regex that stops matching fails loudly
+  instead of passing silently, and a short exempt list for strings that are
+  identical across languages.
+- The kanban's labels are also rendered for real in a test — the eight-into-one
+  `T` refactor would otherwise fail as a blank screen, not a syntax error.
+
 ## [0.8.1] - 2026-08-15
 
 ### Fixed
