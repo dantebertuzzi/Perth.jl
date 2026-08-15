@@ -1646,10 +1646,13 @@ console.log("kanban · rótulos criados em JS falam o idioma da tela");
 
   let r = runIn(`${seed} PerthI18n.set("pt"); render();
     return { arquivar: document.querySelector(".card-archive").textContent,
+             dica: document.querySelector(".card-archive").title,
              por: document.querySelector(".card-by").textContent,
              novaColuna: document.querySelector(".add-col").textContent,
              novoCard: document.querySelector(".add-card").textContent };`);
   check(r.arquivar === "arquivar", "kanban: o botão de arquivar do card fala pt");
+  check(r.dica === "mover para o arquivo",
+        "kanban: e o title dele também — dica de uso conta como texto de tela");
   check(/^por /.test(r.por), "kanban: o crédito do card é \"por <nome>\", não \"by\"");
   check(r.novaColuna === "+ nova coluna", "kanban: o botão de nova coluna também");
 
@@ -1679,19 +1682,31 @@ console.log("i18n · nenhum literal escapa da tradução");
   // iguais em pt de propósito, ou não-texto
   const ISENTAS = new Set(["Perth", "Kanban", "PERT", "P80", "WBS", "—", "…"]);
 
-  // .textContent = "…" / .innerHTML = '…' com literal (T(...) não casa:
-  // exige aspas logo depois do "=")
-  const LITERAL = /\.(?:textContent|innerHTML)\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')/g;
+  // Texto de tela em literal, nas duas formas que o código usa:
+  //   .textContent = "…" / .innerHTML = '…' / .title = "…" / .placeholder = "…"
+  //   setAttribute("title" | "aria-label" | "placeholder", "…")
+  // T(...) não casa em nenhuma: as duas exigem aspas logo depois da vírgula
+  // ou do "=". title e placeholder contam tanto quanto o texto — são
+  // instrução de uso, não decoração.
+  const LITERAL = new RegExp(
+    "\\.(?:textContent|innerHTML|title|placeholder)\\s*=\\s*" +
+      "(\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*')" +
+    "|setAttribute\\(\\s*[\"'](?:title|aria-label|placeholder)[\"']\\s*,\\s*" +
+      "(\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'])*')", "g");
 
   const varrer = (arquivo) => {
     const src = read(arquivo);
     const achados = [];
     for (const m of src.matchAll(LITERAL)) {
-      let txt = m[1].slice(1, -1).replace(/\\(.)/g, "$1");
+      let txt = (m[1] || m[2]).slice(1, -1).replace(/\\(.)/g, "$1");
       txt = txt.replace(/<[^>]*>/g, "").trim();          // innerHTML: só o texto
       if (!/[A-Za-z]{2}/.test(txt)) continue;            // símbolo, número, vazio
       if (ISENTAS.has(txt)) continue;
-      if (w.PerthI18n.t(txt) !== txt) continue;          // tem tradução
+      // NÃO vale perguntar "existe tradução para esta string?": um literal
+      // solto que por acaso coincide com uma chave do dicionário continua
+      // saindo em inglês na tela (era o caso de `chip.title = "due " + …`).
+      // O que importa é estar dentro de T() — e literal dentro de T() nem
+      // chega aqui, porque o regex exige a aspa colada no "=" ou na vírgula.
       const linha = src.slice(0, m.index).split("\n").length;
       achados.push(`${arquivo}:${linha}  ${JSON.stringify(txt.slice(0, 60))}`);
     }
@@ -1703,15 +1718,17 @@ console.log("i18n · nenhum literal escapa da tradução");
     const achados = varrer(arquivo);
     if (achados.length) achados.forEach((a) => console.error("      " + a));
     check(achados.length === 0,
-          `${arquivo}: todo literal de tela passa por T() ou está no dicionário`);
+          `${arquivo}: todo texto de tela passa por T() — inclusive title e placeholder`);
   }
 
   // a varredura precisa mesmo pegar o erro que ela existe para pegar
-  const cobaia = `el.textContent = "Definitely untranslated sentence here";`;
-  const pega = [...cobaia.matchAll(LITERAL)].length === 1 &&
-               w.PerthI18n.t("Definitely untranslated sentence here") ===
-                 "Definitely untranslated sentence here";
-  check(pega, "a varredura reconhece um literal sem tradução (auto-teste)");
+  const cobaia = `el.textContent = "Definitely untranslated sentence here";` +
+                 `el.title = "Definitely untranslated sentence here";` +
+                 `el.setAttribute("aria-label", "Definitely untranslated sentence here");`;
+  const envolvido = `el.textContent = T("Definitely untranslated sentence here");`;
+  const pega = [...cobaia.matchAll(LITERAL)].length === 3 &&
+               [...envolvido.matchAll(LITERAL)].length === 0;
+  check(pega, "a varredura pega literal solto e ignora o que está em T() (auto-teste)");
 
   w.close();
 }

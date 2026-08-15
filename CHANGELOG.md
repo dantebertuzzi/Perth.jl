@@ -30,6 +30,18 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   none` on the chart instead of by cancelling the event. The task table never
   had either problem, which is why double-clicking a row always worked.
 
+- Seventeen more strings in the kanban were stuck in English, this time in
+  `title` and `placeholder`: `double-click to rename`, `WIP limit exceeded`,
+  `move to the archive`, `delete forever (cannot be undone)`, the card
+  composer's `type and press Enter — #tags, **bold**, [links](url)…` and the
+  rest. A tooltip that explains how something works is screen text, not
+  decoration, so the scan now covers `title`, `placeholder` and `aria-label`
+  alongside `textContent` and `innerHTML`.
+- The scan also stopped letting a literal off because a translation for it
+  happens to exist: `chip.title = "due " + …` passed while shipping English,
+  since `due` was a dictionary key. The question it asks now is whether the
+  string goes through `T()`, which is the thing that actually matters — and
+  that caught two more.
 - Twenty-three labels built in JavaScript were stuck in English in every
   language: the gantt's `copy` / `copied!` / `loading…` / `no subfolders` /
   `no project open` and the empty dependency list, and the kanban's `+ card`,

@@ -776,7 +776,7 @@ function render() {
     name.className = "col-name";
     name.textContent = col.name;
     if (canDo("renameCol")) {
-      name.title = "double-click to rename";
+      name.title = T("double-click to rename");
       name.addEventListener("dblclick", () => renameColInline(col, name));
     } else {
       name.classList.add("locked");
@@ -788,7 +788,7 @@ function render() {
     count.textContent = col.wip ? `${col.cards.length}/${col.wip}` : col.cards.length;
     if (col.wip && col.cards.length > col.wip) {
       count.classList.add("over");
-      count.title = "WIP limit exceeded";
+      count.title = T("WIP limit exceeded");
     }
     head.append(name, count, colMenu(col, ci));
     colEl.append(head);
@@ -938,7 +938,7 @@ function cardEl(card) {
       const as = document.createElement("button");
       as.className = "card-assignee";
       as.textContent = "@" + card.assignee;
-      as.title = "assigned to " + card.assignee + " — click to filter";
+      as.title = T("assigned to") + " " + card.assignee + " — " + T("click to filter");
       as.style.setProperty("--tagc", tagColor(card.assignee.toLowerCase()));
       as.addEventListener("pointerdown", (e) => e.stopPropagation());
       as.addEventListener("click", (e) => {
@@ -952,7 +952,7 @@ function cardEl(card) {
       const chip = document.createElement("button");
       chip.className = "card-due" + (due.cls ? " " + due.cls : "");
       chip.textContent = due.label;
-      chip.title = "due " + card.due + " — click to edit";
+      chip.title = T("due") + " " + card.due + " — " + T("click to edit");
       chip.addEventListener("pointerdown", (e) => e.stopPropagation());
       chip.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -964,7 +964,7 @@ function cardEl(card) {
       const arch = document.createElement("button");
       arch.className = "card-archive";
       arch.textContent = T("archive");
-      arch.title = "move to the archive";
+      arch.title = T("move to the archive");
       arch.addEventListener("pointerdown", (e) => e.stopPropagation());
       arch.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1038,7 +1038,7 @@ function tagEl(val) {
   const c = tagColor(val.toLowerCase());
   tag.style.setProperty("--tagc", c);
   tag.style.setProperty("--tagbg", c + "26");
-  tag.title = "filter by " + val;
+  tag.title = T("filter by") + " " + val;
   tag.addEventListener("click", (e) => {
     e.stopPropagation();
     setFilter(val);
@@ -1085,7 +1085,7 @@ function colMenu(col, ci) {
   wrap.className = "col-menu menu";
   const btn = document.createElement("button");
   btn.textContent = "⋯";
-  btn.title = "column options";
+  btn.title = T("column options");
   const drop = document.createElement("div");
   drop.className = "menu-drop";
 
@@ -1196,7 +1196,7 @@ function editorEl(col, card) {
   const ta = document.createElement("textarea");
   ta.className = "card-editor";
   ta.value = state.editing.draft;
-  ta.placeholder = "type and press Enter — #tags, **bold**, [links](url)…";
+  ta.placeholder = T("type and press Enter — #tags, **bold**, [links](url)…");
   // um card existente pode ter editCard negado mas ainda assim aceitar
   // mudança de prazo/responsável (ops independentes) — só o texto trava
   if (card) applyRestriction(ta, "editCard");
@@ -1251,7 +1251,7 @@ function editorEl(col, card) {
   lblA.textContent = T("assignee");
   const who = document.createElement("input");
   who.className = "assignee-input";
-  who.placeholder = "name";
+  who.placeholder = T("name");
   who.maxLength = 24;
   who.value = state.editing.assignee || "";
   const dl = document.createElement("datalist");
@@ -1289,7 +1289,7 @@ function editorEl(col, card) {
     const del = document.createElement("button");
     del.className = "del";
     del.textContent = "✕";
-    del.title = "remove item";
+    del.title = T("remove item");
     del.addEventListener("click", (e) => {
       e.stopPropagation();
       if (state.editing.isNew) {
@@ -1306,7 +1306,7 @@ function editorEl(col, card) {
   }
   const addCheck = document.createElement("input");
   addCheck.className = "add-check";
-  addCheck.placeholder = "+ checklist item";
+  addCheck.placeholder = T("+ checklist item");
   // um card novo ainda não existe no servidor: o checklist fica pendente e
   // vai junto no addCard, então addCheck não se aplica a esse caminho
   if (!state.editing.isNew) applyRestriction(addCheck, "addCheck");
@@ -1877,7 +1877,7 @@ function showModal(title, body, key = null) {
   head.textContent = title;
   const x = document.createElement("button");
   x.textContent = "✕";
-  x.title = "close (Esc)";
+  x.title = T("close (Esc)");
   x.addEventListener("click", closeModal);
   head.append(x);
   const b = document.createElement("div");
@@ -1920,7 +1920,7 @@ function showArchived() {
     const del = document.createElement("button");
     del.className = "danger";
     del.textContent = T("delete");
-    del.title = "delete forever (cannot be undone)";
+    del.title = T("delete forever (cannot be undone)");
     del.addEventListener("click", () => {
       if (!confirm("Delete this card forever? This cannot be undone.")) return;
       commit({ type: "delArchived", id: entry.id });
@@ -1949,7 +1949,7 @@ function showAliases() {
     lbl.textContent = ip + (state.me && ip === state.me.ip ? " (you)" : "");
     lbl.title = ip;
     const input = document.createElement("input");
-    input.placeholder = "e.g. Paulo";
+    input.placeholder = T("e.g. Paulo");
     input.maxLength = 24;
     input.value = aliasOf(ip);
     const save = () => {
@@ -2462,7 +2462,7 @@ function refreshShare() {
       body.textContent = "";
       const note = document.createElement("div");
       note.className = "empty-note";
-      note.textContent = "could not load share info";
+      note.textContent = T("could not load share info");
       body.append(note);
     });
 }
@@ -2690,7 +2690,7 @@ function showBoards() {
         } else if (state.me?.host) {
           const sw = document.createElement("button");
           sw.textContent = T("switch");
-          sw.title = "switches the board for everyone";
+          sw.title = T("switches the board for everyone");
           sw.addEventListener("click", () => send({ type: "useBoard", name }));
           row.append(sw);
         }
@@ -2702,7 +2702,7 @@ function showBoards() {
         const create = document.createElement("div");
         create.className = "boards-row";
         const input = document.createElement("input");
-        input.placeholder = "new board name";
+        input.placeholder = T("new board name");
         input.maxLength = 32;
         const go = () => {
           const v = input.value.trim();
