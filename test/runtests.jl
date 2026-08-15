@@ -397,6 +397,36 @@ end
         delete_project(p.id)
     end
 
+    # Quebras de linha misturadas dentro do MESMO arquivo.
+    #
+    # O repositório é CRLF (ver .gitattributes: `* -text`, guardar como está).
+    # Qualquer ferramenta que leia e reescreva em modo texto converte o arquivo
+    # inteiro em silêncio, e o diff vira o arquivo todo — ou, pior, metade dele
+    # fica LF e ninguém percebe. Aconteceu quatro vezes no mesmo dia de
+    # trabalho, uma delas chegando ao repositório publicado.
+    #
+    # O comando `file` NÃO serve de guarda: ele diz "CRLF line terminators"
+    # mesmo com dezenas de linhas LF no meio. Contar bytes serve.
+    @testset "quebras de linha consistentes" begin
+        raiz = joinpath(@__DIR__, "..")
+        exts = (".jl", ".js", ".css", ".html", ".md", ".toml")
+        misturados = String[]
+        for (dir, _, arqs) in walkdir(raiz)
+            occursin(r"(^|/)(\.git|node_modules)(/|$)", dir) && continue
+            for a in arqs
+                any(e -> endswith(a, e), exts) || continue
+                caminho = joinpath(dir, a)
+                bytes = read(caminho)
+                crlf = count(i -> bytes[i] == 0x0d && bytes[i+1] == 0x0a,
+                             1:max(length(bytes) - 1, 0))
+                lf = count(==(0x0a), bytes)
+                (crlf > 0 && lf > crlf) && push!(misturados, relpath(caminho, raiz))
+            end
+        end
+        @test isempty(misturados)
+        isempty(misturados) || @info "arquivos com quebras misturadas" misturados
+    end
+
     @testset "formato .perth.jl" begin
         p = create_project("Formato Julia")
         t1 = add_task!(p, "Digitaliza\u00e7\u00e3o \u25c6"; start = Date(2026, 7, 20),

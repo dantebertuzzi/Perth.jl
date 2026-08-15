@@ -2284,6 +2284,127 @@ console.log("gantt · modal: lag, marco e descarte");
   close();
 }
 
+/* Busca de tarefa. O que ela acrescenta ao destaque que já existia é chegar
+ * lá: num projeto de 141 tarefas (os do autor têm 98 e 141), ver a linha
+ * acesa não adianta se ela está a 80 linhas de distância. */
+console.log("gantt · busca de tarefa");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const seed = `
+    const mk = (id, name, extra) => Object.assign({
+      id, name, start: "2026-03-02", duration: 3, assignee: "", progress: 0,
+      dependencies: [], color: "", notes: "", milestone: false, parent: "",
+      cost: 0, baseline_start: null, baseline_duration: 0, deadline: null,
+      pinned: false, optimistic: 0, most_likely: 0, pessimistic: 0 }, extra || {});
+    state.current = { id: "p1", name: "P", tasks: [
+      mk("t1", "Integração por partes"),
+      mk("t2", "Frações parciais", { assignee: "Ana" }),
+      mk("t3", "Estratégia de integração", { assignee: "Bruno" }),
+      mk("t4", "Área entre curvas") ] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  const buscar = (texto) => `
+    document.getElementById("task-search").value = ${JSON.stringify(texto)};
+    document.getElementById("task-search").dispatchEvent(new Event("input"));`;
+
+  // sem acento acha com acento: é o caso do português, e exigir o acento
+  // certo seria exigir que a pessoa já saiba o que está procurando
+  // .sort(): renderAll reordena as tarefas (por início, depois nome), então a
+  // ordem em state.current.tasks é a da TELA, não a da criação
+  let r = runIn(`${seed} ${buscar("integracao")}
+    return { acesas: state.current.tasks.filter(taskMatchesHighlight)
+                       .map((t) => t.id).sort(),
+             contagem: document.getElementById("task-search-count").textContent,
+             apagadas: document.querySelectorAll(".tt-row.dim").length,
+             barrasApagadas: document.querySelectorAll("#chart .bar.dim").length };`);
+  check(r.acesas.join(",") === "t1,t3",
+        "gantt: busca sem acento acha as tarefas com acento");
+  check(r.contagem === "1/2",
+        "gantt: a contagem é posição/ocorrências, como caixa de busca de editor");
+  check(r.apagadas === 2 && r.barrasApagadas === 2,
+        "gantt: tabela e barras apagam juntas — é a mesma decisão para as duas");
+
+  // caixa alta não importa
+  r = runIn(`${buscar("FRAÇÕES")}
+    return state.current.tasks.filter(taskMatchesHighlight).map((t) => t.id).sort();`);
+  check(r.join(",") === "t2", "gantt: e não liga para maiúscula");
+
+  // busca e destaque se SOMAM: filtrar por pessoa e procurar dentro disso
+  r = runIn(`state.highlight = { kind: "assignee", value: "Bruno" };
+    ${buscar("integracao")}
+    return state.current.tasks.filter(taskMatchesHighlight).map((t) => t.id).sort();`);
+  check(r.join(",") === "t3",
+        "gantt: busca e destaque se somam, em vez de um anular o outro");
+
+  // nada encontrado: avisa sem apagar o que foi digitado
+  r = runIn(`state.highlight = null; ${buscar("xyz")}
+    return { marcada: document.getElementById("task-search").classList.contains("empty-hit"),
+             texto: document.getElementById("task-search").value,
+             contagem: document.getElementById("task-search-count").textContent };`);
+  check(r.marcada === true && r.texto === "xyz" && r.contagem === "0/0",
+        "gantt: busca sem resultado se marca, e não engole o que foi digitado");
+
+  // Enter percorre as ocorrências, uma a uma, e dá a volta no fim
+  // bloco proprio: o trecho e colado varias vezes na mesma funcao
+  const enter = (shift) => `{
+    const cx = document.getElementById("task-search");
+    cx.dispatchEvent(new KeyboardEvent("keydown",
+      { key: "Enter", shiftKey: ${!!shift}, bubbles: true }));
+  }`;
+
+  r = runIn(`${seed} ${buscar("integracao")}
+    const passo = [];
+    const onde = () => ({ contagem: document.getElementById("task-search-count").textContent,
+                          selecionada: state.current.tasks.find((t) => t.id === state.selected).name });
+    passo.push(onde());
+    ${enter(false)} passo.push(onde());
+    ${enter(false)} passo.push(onde());   // aqui dá a volta
+    return passo;`);
+  check(r[0].contagem === "1/2" && r[1].contagem === "2/2" && r[2].contagem === "1/2",
+        "gantt: cada Enter vai para a próxima ocorrência e dá a volta no fim");
+  check(r[0].selecionada !== r[1].selecionada,
+        "gantt: e seleciona a tarefa — numa tela de 141 linhas, rolar não basta");
+  check(r[0].selecionada === r[2].selecionada,
+        "gantt: a volta chega de novo na primeira");
+
+  r = runIn(`${buscar("integracao")}
+    ${enter(true)}
+    return document.getElementById("task-search-count").textContent;`);
+  check(r === "2/2", "gantt: Shift+Enter volta, para quem passou do ponto");
+
+  // uma ocorrência só: Enter não pode se perder nem quebrar
+  r = runIn(`${buscar("frações")}
+    ${enter(false)} ${enter(false)}
+    return { contagem: document.getElementById("task-search-count").textContent,
+             selecionada: state.selected };`);
+  check(r.contagem === "1/1" && r.selecionada === "t2",
+        "gantt: com uma ocorrência só, Enter fica nela");
+
+  // limpar devolve tudo
+  r = runIn(`${buscar("")}
+    return { acesas: state.current.tasks.filter(taskMatchesHighlight).length,
+             contagemEscondida: document.getElementById("task-search-count").hidden };`);
+  check(r.acesas === 4 && r.contagemEscondida === true,
+        "gantt: limpar a busca devolve todas e esconde a contagem");
+
+  // "/" foca a caixa, como no kanban; Esc limpa sem fechar mais nada
+  r = runIn(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
+    return document.activeElement.id;`);
+  check(r === "task-search", "gantt: a tecla / foca a busca, mesma tecla do kanban");
+
+  r = runIn(`${buscar("area")}
+    const cx = document.getElementById("task-search");
+    cx.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return { valor: cx.value, acesas: state.current.tasks.filter(taskMatchesHighlight).length };`);
+  check(r.valor === "" && r.acesas === 4, "gantt: Esc na busca limpa e devolve tudo");
+
+  close();
+}
+
 console.log("gantt · painel de recursos");
 {
   const { runIn, close } = loadGanttApp();

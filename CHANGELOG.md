@@ -7,6 +7,15 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 
 ## [Unreleased]
 
+### Fixed
+- The test suite now fails on a file with **mixed line endings**. The
+  repository is CRLF (`.gitattributes` keeps it as stored), and any tool that
+  reads and rewrites a file in text mode converts it silently — the diff
+  becomes the whole file, or worse, half of it turns LF and nobody notices. It
+  happened four times in one working day, once reaching the published
+  repository. `file` is no guard: it reports "CRLF line terminators" with
+  dozens of LF lines in the middle. Counting bytes is.
+
 ### Added
 - **Find a task by name in the gantt** — the box next to *Highlight*, or `/`,
   the same key the kanban uses. Non-matching tasks dim, in the table and in
