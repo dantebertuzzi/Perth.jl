@@ -191,6 +191,20 @@ select.board-chip {         /* o chip do gantt é um <select> */
 .toggle[aria-pressed="true"] { background: var(--green); }
 .toggle[aria-pressed="true"]::after { transform: translateX(16px); }
 
+/* Ícone de linha do painel de configurações. Traço fino em `--muted`,
+   acende junto com a linha no hover. Alguns caminhos são preenchidos e
+   outros só contornados, por isso fill e stroke vêm do próprio SVG e
+   aqui fica só o tamanho e a cor. */
+.sp-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: var(--muted);
+  color: var(--muted);          /* para os caminhos que usam currentColor */
+}
+.sp-row:hover .sp-icon,
+.settings-check:hover .sp-icon { fill: var(--ink); color: var(--ink); }
+
 /* Etiqueta de linha do painel de configurações. Absorve a folga, então o
    interruptor encosta na borda direita e todos ficam alinhados. */
 .sp-label { flex: 1; font-size: 12px; color: var(--muted); }
@@ -323,12 +337,17 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
   padding: 3px 8px;
 }
 #lang-select:focus-visible { outline: 2px solid var(--purple); outline-offset: 1px; }
-.settings-lang { margin-top: 12px; }
+/* linha empilhada (etiqueta em cima, seletor embaixo): o ícone fica na
+   linha da etiqueta, como em .sp-row.col do gantt — 26px = ícone (14) +
+   o gap das linhas normais (12), para o texto cair na mesma coluna */
+.settings-lang { margin-top: 12px; position: relative; }
+.settings-lang .sp-icon { position: absolute; top: 0; }
 .settings-lang label {
   display: block;
   font-size: 11px;
   color: var(--muted);
   margin-bottom: 6px;
+  padding-left: 26px;
 }
 .settings-lang select { width: 100%; }
 

@@ -82,34 +82,35 @@
       </button>
       <span class="mb-sep"></span>
       <div class="menu settings-menu" data-menu="settings">
-        <button class="menu-title icon-btn" title="your name on the board">
-          <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+        <button class="menu-title icon-btn" title="Interface settings" aria-label="Interface settings">
+          <svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><circle cx="16" cy="6" r="2.2" fill="currentColor"/><circle cx="8" cy="12" r="2.2" fill="currentColor"/><circle cx="16" cy="18" r="2.2" fill="currentColor"/></svg>
         </button>
         <div class="menu-drop settings-drop">
           <label for="name-input">your name (shown on your cursor)</label>
           <input id="name-input" maxlength="24" placeholder="e.g. dante" autocomplete="off">
           <div class="settings-hint">empty = shows the machine IP only</div>
           <div class="settings-check">
-            <svg class="snd-icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4.5v-15L7 9H3z"/><path d="M14.5 8.6v6.8a3.9 3.9 0 0 0 0-6.8z"/><path d="M14.5 4.3v2.1a6.2 6.2 0 0 1 0 11.2v2.1a8.2 8.2 0 0 0 0-15.4z"/></svg>
+            <svg class="sp-icon" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4.5v-15L7 9H3z"/><path d="M14.5 8.6v6.8a3.9 3.9 0 0 0 0-6.8z"/><path d="M14.5 4.3v2.1a6.2 6.2 0 0 1 0 11.2v2.1a8.2 8.2 0 0 0 0-15.4z"/></svg>
             <span class="sp-label">notification sound</span>
             <button class="toggle" id="sound-toggle" aria-pressed="true" aria-label="notification sound"></button>
           </div>
           <div class="settings-check">
-            <svg class="snd-icon" viewBox="0 0 24 24"><path d="M2 2l20 20M9.9 5.2A10.4 10.4 0 0 1 12 5c6 0 9.6 5.5 9.9 6a11.7 11.7 0 0 1-2.7 3.2M6.6 6.6C3.6 8.4 2.1 11 2.1 11a11.9 11.9 0 0 0 3.4 4.1A10.7 10.7 0 0 0 12 17c.9 0 1.8-.1 2.5-.4M9.9 12.1a2.2 2.2 0 0 0 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="sp-icon" viewBox="0 0 24 24"><path d="M2 2l20 20M9.9 5.2A10.4 10.4 0 0 1 12 5c6 0 9.6 5.5 9.9 6a11.7 11.7 0 0 1-2.7 3.2M6.6 6.6C3.6 8.4 2.1 11 2.1 11a11.9 11.9 0 0 0 3.4 4.1A10.7 10.7 0 0 0 12 17c.9 0 1.8-.1 2.5-.4M9.9 12.1a2.2 2.2 0 0 0 3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="sp-label">hide other people's cursors</span>
             <button class="toggle" id="hide-cursors-toggle" aria-pressed="false" aria-label="hide other people's cursors"></button>
           </div>
           <div class="settings-check">
-            <svg class="snd-icon" viewBox="0 0 24 24"><path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5v-13Zm2.4 12.1h13.2l-4.3-5.8-3.1 4-2.2-2.6-3.6 4.4ZM8.4 9.9a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z"/></svg>
+            <svg class="sp-icon" viewBox="0 0 24 24"><path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5v-13Zm2.4 12.1h13.2l-4.3-5.8-3.1 4-2.2-2.6-3.6 4.4ZM8.4 9.9a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z"/></svg>
             <span class="sp-label">hide background image</span>
             <button class="toggle" id="hide-bg-toggle" aria-pressed="false" aria-label="hide background image"></button>
           </div>
           <div class="settings-check">
-            <svg class="snd-icon" viewBox="0 0 24 24"><path d="M12 3.1l1.9 4.5 4.9.4-3.7 3.2 1.1 4.8-4.2-2.6-4.2 2.6 1.1-4.8-3.7-3.2 4.9-.4L12 3.1Z"/><path d="M18.6 16.2l.7 1.7 1.8.2-1.4 1.2.4 1.8-1.5-1-1.6 1 .4-1.8-1.3-1.2 1.8-.2.7-1.7Z"/></svg>
+            <svg class="sp-icon" viewBox="0 0 24 24"><path d="M12 3.1l1.9 4.5 4.9.4-3.7 3.2 1.1 4.8-4.2-2.6-4.2 2.6 1.1-4.8-3.7-3.2 4.9-.4L12 3.1Z"/><path d="M18.6 16.2l.7 1.7 1.8.2-1.4 1.2.4 1.8-1.5-1-1.6 1 .4-1.8-1.3-1.2 1.8-.2.7-1.7Z"/></svg>
             <span class="sp-label">hide new-card badges</span>
             <button class="toggle" id="hide-new-toggle" aria-pressed="false" aria-label="hide new-card badges"></button>
           </div>
           <div class="settings-lang">
+            <svg class="sp-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 12h17M12 3.4c2.2 2.3 3.3 5.2 3.3 8.6s-1.1 6.3-3.3 8.6c-2.2-2.3-3.3-5.2-3.3-8.6S9.8 5.7 12 3.4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <label for="lang-select">Language</label>
             <select id="lang-select"></select>
           </div>

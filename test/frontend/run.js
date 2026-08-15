@@ -1387,6 +1387,65 @@ console.log("gantt · prazo e data fixa");
   close();
 }
 
+console.log("gantt · painel de configurações padronizado");
+{
+  // O painel do kanban tinha ícone em cada linha e o do gantt não. Agora os
+  // dois usam o mesmo token (.sp-icon, shared/ui.css) e o mesmo desenho
+  // onde a opção é a mesma.
+  const w = loadPage("frontend/index.html");
+  const $$g = (sel) => [...w.document.querySelectorAll(sel)];
+  const linhas = $$g(".sp-row");
+  check(linhas.length === 8, "o painel do gantt tem as 8 linhas de sempre");
+  check(linhas.every((r) => r.querySelector(".sp-icon")),
+        "e agora todas têm ícone, como as do kanban");
+  check(linhas.every((r) => r.querySelector(".sp-label")),
+        "cada linha tem a etiqueta .sp-label, que absorve a folga");
+
+  // ícone idêntico onde a opção é idêntica: é o que faz os dois apps
+  // parecerem o mesmo programa
+  const kb = loadPage("frontend/kanban/index.html");
+  const dOf = (doc, id) => {
+    const ctl = doc.querySelector("#" + id);
+    const svg = ctl.closest(".sp-row, .settings-check").querySelector(".sp-icon");
+    return [...svg.querySelectorAll("path")].map((p) => p.getAttribute("d")).join("|");
+  };
+  check(dOf(w.document, "set-hide-cursors") === dOf(kb.document, "hide-cursors-toggle"),
+        "ocultar cursores: mesmo ícone nos dois apps");
+  check(dOf(w.document, "set-hide-bg") === dOf(kb.document, "hide-bg-toggle"),
+        "esconder o fundo: mesmo ícone nos dois apps");
+
+  // o token do ícone é compartilhado, não copiado em cada folha
+  check(/\.sp-icon\s*\{/.test(read("frontend/shared/ui.css")),
+        ".sp-icon vive no shared/ui.css");
+  check(!/snd-icon/.test(read("frontend/kanban/style.css") +
+                        read("frontend/kanban/index.html")),
+        "e o antigo .snd-icon (\"sound icon\") não sobrou em lugar nenhum");
+
+  // o botão que ABRE o painel também é o mesmo nos dois: o do kanban era um
+  // boneco, que descrevia só o campo de nome — hoje uma linha entre cinco
+  const botao = (doc) => {
+    const b = doc.querySelector(".settings-menu .menu-title");
+    return { title: b.getAttribute("title"),
+             d: [...b.querySelectorAll("path")].map((x) => x.getAttribute("d")).join("|") };
+  };
+  const bg = botao(w.document), bk = botao(kb.document);
+  check(bg.d === bk.d && bg.d.length > 0,
+        "o botão do painel tem o mesmo ícone nos dois apps");
+  check(bg.title === "Interface settings" && bk.title === bg.title,
+        "e o mesmo rótulo, que o dicionário já traduz");
+
+  // rótulo de conexão: gerado em JS, tem de passar pelo i18n nos DOIS
+  check(/PerthI18n\.t\(txt\)/.test(read("frontend/shared/presence.js")),
+        "gantt: o rótulo de conexão passa pelo i18n (presence.js)");
+  check(/PerthI18n\.t\(txt\)/.test(read("frontend/kanban/app.js")),
+        "kanban: idem — mostrava \"live\" onde o gantt mostrava \"ao vivo\"");
+  for (const chave of ["live", "reconnecting…"]) {
+    kb.PerthI18n.set("pt");
+    check(kb.PerthI18n.t(chave) !== chave,
+          `e o dicionário pt traduz "${chave}"`);
+  }
+}
+
 console.log("gantt · redesenho na virada do dia");
 {
   // A linha de hoje, o destaque "past deadline" e o deadlineSlip saem todos

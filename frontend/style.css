@@ -825,6 +825,13 @@ body.presenting .res-pane { display: none; }
   padding: 7px 2px;
 }
 .sp-row.col { flex-direction: column; align-items: stretch; gap: 6px; }
+/* nas linhas empilhadas (densidade, largura do painel) o controle ocupa a
+   linha de baixo, então ícone e etiqueta ficam lado a lado na de cima */
+.sp-row.col .sp-icon { position: absolute; }
+.sp-row.col { position: relative; }
+/* 26px = largura do ícone (14) + gap da linha (12): a etiqueta cai na
+   mesma coluna das linhas não empilhadas */
+.sp-row.col .sp-label { padding-left: 26px; }
 
 .seg {
   display: flex;
