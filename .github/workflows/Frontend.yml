@@ -23,3 +23,9 @@ jobs:
         working-directory: test/frontend
       - run: node run.js
         working-directory: test/frontend
+
+      # Geometria e eventos de verdade: o que o jsdom não vê (largura de
+      # campo, cadeia de clique, rolagem). Sem navegador na máquina o script
+      # se declara pulado e sai com 0 — o runner do GitHub traz Chrome.
+      - run: node run.js
+        working-directory: test/browser

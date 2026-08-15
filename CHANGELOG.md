@@ -5,6 +5,20 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **Tests that run in a real browser** (`test/browser`), covering what jsdom
+  cannot see: layout geometry and the real input-event chain. Every case in
+  there is a defect that shipped and was caught by eye, not by the 342 jsdom
+  checks — the PERT band changing width as you type, a double-click on a bar
+  that never became a double-click, a search that lit up a name whose bar was
+  months off screen, a locked field that did not look locked. No new
+  dependency: headless Chrome driven over the DevTools protocol through Node's
+  built-in WebSocket. With no browser on the machine the file declares itself
+  skipped and exits 0 — a test that says it did not run, rather than one that
+  pretends to be green.
+
 ## [0.8.4] - 2026-08-15
 
 ### Fixed
