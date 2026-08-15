@@ -1045,6 +1045,92 @@ end
         delete_project(p.id)
     end
 
+    @testset "cadastro de colaboradores" begin
+        p = create_project("Time")
+        a = add_task!(p, "A"; start = Date(2026, 3, 2), duration = 1,
+                      assignee = "  ana  paula ")
+        b = add_task!(p, "B"; start = Date(2026, 3, 2), duration = 1,
+                      assignee = "Ana Paula")
+
+        # espaço nas pontas e no meio some; a segunda grafia adota a que o
+        # projeto já conhecia, em vez de reescrever a tarefa alheia
+        @test a.assignee == "ana paula"
+        @test b.assignee == "ana paula"
+
+        # cadastrar é o jeito explícito de CORRIGIR a grafia de todo mundo
+        @test [pe.name for pe in add_person!(p, "Ana Paula")] == ["Ana Paula"]
+        @test all(t -> t.assignee == "Ana Paula", p.tasks)
+
+        # acento NÃO é unificado: podem ser duas pessoas de verdade
+        r = create_project("Acento")
+        add_task!(r, "A"; start = Date(2026, 3, 2), duration = 1, assignee = "Ana")
+        add_task!(r, "B"; start = Date(2026, 3, 2), duration = 1, assignee = "Âna")
+        @test Set(t.assignee for t in r.tasks) == Set(["Ana", "Âna"])
+
+        # o cadastro aceita nome solto, NamedTuple e Person; apara, tira
+        # repetido (ignorando caixa) e ordena por nome
+        lista = people!(p, ["  Chen  Wei ", (name = "bruno", role = " Eletricista "),
+                            "BRUNO", "", Person(name = "Dara", team = "Obra")])
+        @test [pe.name for pe in lista] == ["bruno", "Chen Wei", "Dara"]
+        @test lista[1].role == "Eletricista"      # espaço aparado nos campos
+        @test lista[3].team == "Obra"
+        @test_throws ArgumentError people!(p, [42])
+
+        # person() acha ignorando caixa; quem não existe devolve nothing
+        @test person(p, "CHEN wei").name == "Chen Wei"
+        @test person(p, "ninguém") === nothing
+
+        # add_person! num nome que já existe ATUALIZA, não duplica: só os
+        # campos passados mudam, o resto da ficha fica de pé
+        add_person!(p, "Bruno"; team = "Obra")
+        @test length(people(p)) == 3
+        @test person(p, "bruno").name == "Bruno"   # a grafia nova vence
+        @test person(p, "bruno").role == "Eletricista"
+        @test person(p, "bruno").team == "Obra"
+
+        # people() devolve cópia: mexer no resultado não mexe no projeto
+        copia = people(p); push!(copia, Person(name = "Intruso"))
+        @test length(people(p)) == 3
+
+        # tirar do cadastro não tira o nome das tarefas
+        add_person!(p, "Ana Paula")
+        @test [pe.name for pe in remove_person!(p, "ana paula")] ==
+              ["Bruno", "Chen Wei", "Dara"]
+        @test all(t -> t.assignee == "Ana Paula", project(p.id).tasks)
+
+        # sobrevive à ida e volta pelo .perth.jl e pelo JSON
+        dir = mktempdir()
+        arq = joinpath(dir, "time.perth.jl")
+        set_file_path!(p, arq)
+        fonte = read(arq, String)
+        @test occursin("Person(name = \"Bruno\", role = \"Eletricista\", team = \"Obra\")",
+                       fonte)
+        @test occursin("Person(name = \"Chen Wei\")", fonte)   # campo vazio não é escrito
+        lido = Perth.load(arq)
+        @test [pe.name for pe in lido.people] == ["Bruno", "Chen Wei", "Dara"]
+        @test person(lido, "bruno").role == "Eletricista"
+        volta = JSON3.read(JSON3.write(p), Project)
+        @test person(volta, "bruno").team == "Obra"
+        # projeto antigo, gravado antes do campo existir, ainda abre
+        sem = replace(JSON3.write(p), r"\"people\":\[.*?\]," => "")
+        @test JSON3.read(sem, Project).people == Person[]
+
+        # a mudança no cadastro entra no diário de atividade — por nome:
+        # mexer no cargo de alguém não é cadastrar nem descadastrar
+        outro = JSON3.read(JSON3.write(p), Project)
+        outro.people = filter(pe -> pe.name != "Dara", outro.people)
+        linhas = Perth._describe_diff(project(p.id), outro)
+        @test any(l -> occursin("unregistered Dara", l), linhas)
+        outro.people = [outro.people; Person(name = "Elis")]
+        @test any(l -> occursin("registered Elis", l),
+                  Perth._describe_diff(project(p.id), outro))
+        so_cargo = JSON3.read(JSON3.write(p), Project)
+        person(so_cargo, "Dara").role = "Mestre de obras"
+        @test isempty(Perth._describe_diff(project(p.id), so_cargo))
+
+        delete_project(p.id); delete_project(r.id)
+    end
+
     @testset "superalocação de responsáveis" begin
         p = create_project("Aloc")
         pai = add_task!(p, "Grupo"; start = Date(2026, 11, 2), duration = 1)

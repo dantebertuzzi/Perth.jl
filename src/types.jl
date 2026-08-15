@@ -66,6 +66,30 @@ Base.@kwdef mutable struct GanttTask
 end
 
 """
+    Person(; name, role = "", team = "", email = "", notes = "")
+
+A registered collaborator. `name` is the only field that matters to the
+schedule — it is what a task's `assignee` holds. The rest is the address
+book around it: who they are, so a name in a plan does not need a side
+channel to be understood.
+
+# Fields
+- `name::String`: as it appears in `assignee`. Registering a name is what
+  fixes its spelling everywhere (see [`people!`](@ref)).
+- `role::String`: job title ("Arquiteta", "Eletricista").
+- `team::String`: department, squad, company — whatever the org divides by.
+- `email::String`: free text; nothing sends mail on its own.
+- `notes::String`: anything else (phone, shift, holidays).
+"""
+Base.@kwdef mutable struct Person
+    name::String = ""
+    role::String = ""
+    team::String = ""
+    email::String = ""
+    notes::String = ""
+end
+
+"""
     Project(; name, kwargs...)
 
 A project: a named collection of [`GanttTask`](@ref)s.
@@ -75,6 +99,10 @@ Base.@kwdef mutable struct Project
     name::String = ""
     tasks::Vector{GanttTask} = GanttTask[]
     calendar::String = ""    # nome de calendário BusinessDays; vazio = dias corridos
+    # Colaboradores cadastrados: alimenta o autocompletar do responsável e
+    # dá nome (e cargo, setor…) a quem ainda não tem tarefa. Texto livre
+    # continua valendo — a lista é conveniência e vocabulário, não cerca.
+    people::Vector{Person} = Person[]
     # Caminho de espelhamento em disco (estilo Pluto): quando não vazio, cada
     # salvamento também grava o .perth.jl neste caminho. Específico da máquina,
     # por isso NUNCA entra no formato de intercâmbio .perth.jl exportado.
@@ -86,6 +114,7 @@ Base.@kwdef mutable struct Project
 end
 
 # Serialização JSON via StructTypes (JSON3 cuida de Date/DateTime como ISO-8601)
+StructTypes.StructType(::Type{Person}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{GanttTask}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{Project}) = StructTypes.Mutable()
 
@@ -158,6 +187,77 @@ function _normalize_estimate!(t::GanttTask)
     t.most_likely = max(t.most_likely, t.optimistic)
     t.pessimistic = max(t.pessimistic, t.most_likely)
     return t
+end
+
+# Nome de pessoa, arrumado: sem espaço sobrando nas pontas nem no meio.
+# Texto livre num campo de responsável fragmenta em silêncio — "Ana",
+# "Ana " e "Ana  Paula" viram três pessoas para a carga, para a sobrecarga
+# e para o destaque, e ninguém vê o motivo.
+_clean_person(s::AbstractString) = _cap_text(replace(strip(s), r"\s+" => " "))
+
+# Unifica grafias que só diferem em caixa. Ganha a PRIMEIRA que o projeto
+# já conhece — cadastro antes das tarefas, tarefas na ordem do projeto.
+#
+# "A mais frequente" seria mais esperto e não funciona: a unificação roda a
+# cada gravação, então quando a segunda grafia chega a primeira já é a única
+# que existe e vence sozinha. Contar frequência daria a ilusão de uma regra
+# que na prática é sempre "a primeira" — melhor dizer isso e ser previsível.
+#
+# Como o cadastro vem antes, ele é o jeito explícito de CORRIGIR uma grafia:
+# people!(p, ["Ana Paula"]) reescreve os "ana paula" das tarefas. Digitar um
+# nome numa tarefa nunca reescreve as tarefas dos outros.
+#
+# Acento NÃO é unificado de propósito: "Ana" e "Âna" podem ser duas pessoas,
+# e o computador não tem como saber que não são.
+function _unify_assignees!(p::Project)
+    for t in p.tasks
+        t.assignee = _clean_person(t.assignee)
+    end
+    p.people = _clean_people(p.people)
+
+    canonico = Dict{String,String}()
+    for nome in Iterators.flatten(((pe.name for pe in p.people),
+                                   (t.assignee for t in p.tasks)))
+        isempty(nome) && continue
+        get!(canonico, lowercase(nome), nome)
+    end
+    for t in p.tasks
+        isempty(t.assignee) && continue
+        t.assignee = canonico[lowercase(t.assignee)]
+    end
+    return p
+end
+
+# Aceita o que for razoável escrever no REPL: "Ana", Person(...), ou uma
+# NamedTuple/Dict com os campos. Um cadastro de pessoas que só aceitasse o
+# construtor completo faria digitar Person(name = "Ana") para o caso comum.
+_as_person(x::Person) = x
+_as_person(s::AbstractString) = Person(; name = String(s))
+_as_person(nt::NamedTuple) = Person(; nt...)
+_as_person(d::AbstractDict) = Person(; (Symbol(k) => v for (k, v) in d)...)
+_as_person(x) = throw(ArgumentError("cannot register $(repr(x)) as a person — " *
+                                    "pass a name, a Person, or (; name, role, …)"))
+
+# A lista de cadastrados: sem anônimos, sem repetição (nem de caixa),
+# ordenada por nome — quem cadastra quer achar, e a ordem de digitação não
+# ajuda. Repetido: fica o PRIMEIRO, que é quem tem os campos preenchidos
+# quando o segundo veio só como nome solto.
+function _clean_people(pessoas)
+    out = Person[]
+    vistos = Set{String}()
+    for x in pessoas
+        pe = _as_person(x)
+        pe.name  = _clean_person(pe.name)
+        pe.role  = _cap_text(strip(pe.role))
+        pe.team  = _cap_text(strip(pe.team))
+        pe.email = _cap_text(strip(pe.email))
+        pe.notes = _cap_text(pe.notes)
+        isempty(pe.name) && continue
+        k = lowercase(pe.name)
+        k in vistos && continue
+        push!(vistos, k); push!(out, pe)
+    end
+    return sort!(out; by = pe -> lowercase(pe.name))
 end
 
 # Remove dependências que apontam para ids inexistentes ou para a própria tarefa

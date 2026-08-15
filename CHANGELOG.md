@@ -8,6 +8,33 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **A collaborator registry** (`people`, `person`, `people!`, `add_person!`,
+  `remove_person!`, and File → Collaborators…). `assignee` was — and stays —
+  free text, and free text *fragments in silence*: `"Ana"`, `"Ana "` and
+  `"ana"` become three different people to the workload, the overallocation
+  check and the highlight, with nothing on screen explaining why. Now every
+  save trims the name (ends and middle) and unifies spellings that differ only
+  in case, adopting the first one the project already knows — the registry
+  first, then task order. Accents are deliberately **not** unified: `"Ana"`
+  and `"Âna"` may be two real people, and the computer cannot know they are
+  not.
+- Registering a name is therefore how you **fix a spelling everywhere**:
+  because the registry is consulted first, `add_person!(p, "Ana Paula")`
+  re-spells every `"ana paula"` on the tasks. Typing a registered name with a
+  different case in the panel does the same — doing nothing there would be the
+  worst of both worlds, the user typing the correction and the screen not
+  moving.
+- Each collaborator is a `Person`: **name, role, team, email and notes**. A
+  name alone in a plan needs a side channel to be understood; the role and
+  team ride along in the assignee autocomplete, where they pay for themselves
+  at the moment of choosing. Only `name` matters to the schedule.
+- The assignee field is now an autocomplete fed by the registry **plus every
+  name already used by a task**. Offering only the registry would hide names
+  that already exist and invite retyping them — and retyping is what
+  fragments. Names used but not registered are listed at the foot of the
+  panel, where the fragmentation is visible, with one button to absorb them.
+- Removing someone from the registry **keeps their name on their tasks**: they
+  leave the list, not the work.
 - **A warnings panel** — one place for everything wrong with the plan. The
   engine already knew all of it, scattered: a dependency cycle surfaced as an
   exception when scheduling, a blown deadline as a `+8d` on the bar, an

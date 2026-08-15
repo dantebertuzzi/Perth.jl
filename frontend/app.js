@@ -1567,6 +1567,7 @@ function openModal(id) {
   $("#modal-title").textContent = T(state.editingNew ? "New task" : "Edit task");
   $("#f-name").value = t.name;
   $("#f-assignee").value = t.assignee || "";
+  fillPeopleList();
   $("#f-start").value = t.start;
   $("#f-duration").value = t.duration;
   $("#f-progress").value = t.progress;
@@ -1846,6 +1847,193 @@ function submitModal() {
 /* ------------------------------------------------------------------ */
 /* Overlay genérico (Activity, S-curve) — mesmo visual do modal de form  */
 /* ------------------------------------------------------------------ */
+
+/* Vocabulário de pessoas do projeto: o cadastro MAIS quem já aparece em
+   alguma tarefa. Oferecer só o cadastro esconderia nomes que já existem e
+   convidaria a redigitá-los — e é redigitar que fragmenta. */
+function peopleOptions() {
+  const usados = (state.current?.tasks || [])
+    .map((t) => (t.assignee || "").trim()).filter(Boolean);
+  const cadastrados = (state.current?.people || []).map((pe) => pe.name);
+  const vistos = new Map();   // minúscula => grafia (a cadastrada ganha)
+  for (const n of [...cadastrados, ...usados]) {
+    const k = n.toLowerCase();
+    if (!vistos.has(k)) vistos.set(k, n);
+  }
+  return [...vistos.values()].sort((a, b) => a.localeCompare(b));
+}
+
+function fillPeopleList() {
+  const dl = $("#people-list");
+  if (!dl) return;
+  dl.textContent = "";
+  const ficha = new Map((state.current?.people || [])
+    .map((pe) => [pe.name.toLowerCase(), pe]));
+  for (const nome of peopleOptions()) {
+    const o = document.createElement("option");
+    o.value = nome;
+    // o navegador mostra a legenda ao lado do nome na lista suspensa:
+    // é onde cargo e setor pagam por si mesmos, na hora de escolher
+    const pe = ficha.get(nome.toLowerCase());
+    const legenda = pe && [pe.role, pe.team].filter(Boolean).join(" · ");
+    if (legenda) o.label = legenda;
+    dl.append(o);
+  }
+}
+
+/* Cadastro de colaboradores: nome, cargo, setor, e-mail, observações. A
+   lista é conveniência, não cerca — o campo responsável continua aceitando
+   texto livre, e tirar alguém do cadastro NÃO tira o nome das tarefas dele:
+   some da lista, não do trabalho. */
+const PEOPLE_FIELDS = [["role", "Role"], ["team", "Team"],
+                       ["email", "Email"], ["notes", "Notes"]];
+
+function showPeople() {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "people-box";
+
+  const form = document.createElement("form");
+  form.className = "people-add";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.autocomplete = "off";
+  input.placeholder = T("Name");
+  const add = document.createElement("button");
+  add.type = "submit";
+  add.className = "primary";
+  add.textContent = T("Add");
+  form.append(input, add);
+
+  const lista = document.createElement("div");
+  lista.className = "people-list";
+  const rodape = document.createElement("div");
+  rodape.className = "people-loose";
+  let aberto = "";   // nome da ficha expandida (uma por vez)
+
+  const contar = (nome) => (state.current.tasks || [])
+    .filter((t) => (t.assignee || "").toLowerCase() === nome.toLowerCase()).length;
+
+  async function gravar(pessoas) {
+    state.current.people = pessoas;
+    await saveNowAfterDirty();
+    // quem arruma grafia, ordem e repetição é o servidor — recarregar faz
+    // a tela mostrar o que ficou gravado, não o que foi digitado
+    await loadProjects(state.current.id);
+    fillPeopleList();
+    desenhar();
+  }
+
+  function desenhar() {
+    const cadastrados = state.current.people || [];
+    lista.textContent = "";
+    if (!cadastrados.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("No collaborators registered yet.");
+      lista.append(vazio);
+    }
+    for (const pe of cadastrados) {
+      const bloco = document.createElement("div");
+      bloco.className = "people-item";
+      const linha = document.createElement("div");
+      linha.className = "people-row";
+      const n = document.createElement("span");
+      n.className = "people-name";
+      n.textContent = pe.name;
+      const cargo = document.createElement("span");
+      cargo.className = "people-role";
+      cargo.textContent = [pe.role, pe.team].filter(Boolean).join(" · ");
+      const c = document.createElement("span");
+      c.className = "people-count";
+      const q = contar(pe.name);
+      c.textContent = q ? `${q} ${T(q === 1 ? "task" : "tasks")}` : "—";
+      const x = document.createElement("button");
+      x.className = "icon-btn";
+      x.type = "button";
+      x.textContent = "✕";
+      x.title = T("Remove from list (tasks keep the name)");
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        gravar(cadastrados.filter((o) => o !== pe));
+      });
+      linha.append(n, cargo, c, x);
+      // a linha inteira abre a ficha: o alvo de clique é o nome, não um
+      // lápis de 12px que ninguém acha
+      linha.addEventListener("click", () => {
+        aberto = aberto === pe.name ? "" : pe.name;
+        desenhar();
+      });
+      bloco.append(linha);
+      if (aberto === pe.name) bloco.append(fichaDe(pe, cadastrados));
+      lista.append(bloco);
+    }
+
+    // Nomes que já trabalham no projeto mas não estão no cadastro: é
+    // exatamente aqui que a fragmentação aparece, então mostrar é o ponto
+    const nomes = cadastrados.map((pe) => pe.name.toLowerCase());
+    const soltos = peopleOptions().filter((n) => !nomes.includes(n.toLowerCase()));
+    rodape.textContent = "";
+    if (soltos.length) {
+      const txt = document.createElement("span");
+      txt.textContent = `${T("Also assigned in this project")}: ${soltos.join(", ")}`;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = T("Register these");
+      b.addEventListener("click", () =>
+        gravar([...cadastrados, ...soltos.map((name) => ({ name }))]));
+      rodape.append(txt, b);
+    }
+  }
+
+  /* A ficha: o que a pessoa é, além do nome. Grava ao sair do campo (blur)
+     em vez de a cada tecla — salvar por tecla mandaria um PUT por letra. */
+  function fichaDe(pe, cadastrados) {
+    const ficha = document.createElement("div");
+    ficha.className = "people-form";
+    for (const [campo, rotulo] of PEOPLE_FIELDS) {
+      const lab = document.createElement("label");
+      lab.textContent = T(rotulo);
+      const ip = document.createElement("input");
+      ip.type = "text";
+      ip.autocomplete = "off";
+      ip.dataset.field = campo;
+      ip.value = pe[campo] || "";
+      ip.addEventListener("change", () => {
+        if ((pe[campo] || "") === ip.value.trim()) return;
+        pe[campo] = ip.value.trim();
+        gravar(cadastrados);
+      });
+      lab.append(ip);
+      ficha.append(lab);
+    }
+    return ficha;
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const nome = input.value.trim();
+    if (!nome) return;
+    const cadastrados = state.current.people || [];
+    // Digitar um nome que já existe com outra caixa é o gesto de CORRIGIR a
+    // grafia: a digitada substitui a cadastrada (e o resto da ficha fica
+    // como estava), e o servidor reescreve as tarefas dela. Não fazer nada
+    // seria o pior dos mundos — o usuário digita a correção, aperta
+    // Adicionar, e a tela fica igual.
+    const igual = (pe) => pe.name.toLowerCase() === nome.toLowerCase();
+    const antigo = cadastrados.find(igual);
+    if (antigo) antigo.name = nome;
+    aberto = nome;   // abre a ficha do recém-cadastrado: é o convite a preenchê-la
+    gravar(antigo ? cadastrados : [...cadastrados, { name: nome }]);
+    input.value = "";
+    input.focus();
+  });
+
+  desenhar();
+  body.append(form, lista, rodape);
+  showOverlay("Collaborators", body);
+  input.focus();
+}
 
 function showOverlay(title, bodyEl) {
   document.getElementById("perth-overlay")?.remove();
@@ -2765,6 +2953,7 @@ const ACTIONS = {
   "close-welcome": () => state.current && hideWelcome(),
   "new-project": newProject,
   "rename-project": renameProject,
+  "people": showPeople,
   "delete-project": deleteProject,
   "import": importProject,
   "export": exportProject,

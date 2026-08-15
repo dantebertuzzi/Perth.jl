@@ -1020,3 +1020,52 @@ body.presenting .res-pane { display: none; }
   background: color-mix(in srgb, var(--red) 13%, transparent);
 }
 .warn-text { flex: 1; font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
+
+/* Cadastro de colaboradores */
+.people-box { display: flex; flex-direction: column; gap: 10px; min-width: 380px; }
+.people-add { display: flex; gap: 8px; }
+.people-add input { flex: 1 1 auto; min-width: 0; }
+.people-list { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; }
+.people-item {
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+}
+.people-item:has(.people-form) { border-color: var(--line); background: var(--field); }
+.people-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 6px 5px 10px;
+  cursor: pointer;
+}
+.people-item:hover { background: var(--sel); border-color: var(--line); }
+.people-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-role {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.people-count { flex: 0 0 auto; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.people-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+  padding: 4px 10px 10px;
+}
+.people-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+.people-form input { width: 100%; }
+.people-loose:empty { display: none; }
+.people-loose {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+}

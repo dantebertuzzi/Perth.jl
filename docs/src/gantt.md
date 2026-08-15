@@ -3,6 +3,7 @@
 ```@docs
 GanttTask
 Project
+Person
 Perth.run
 Perth.stop
 Perth.share!
@@ -34,6 +35,11 @@ pert_date
 pert_simulate
 set_calendar!
 set_parent!
+people
+person
+people!
+add_person!
+remove_person!
 tasktable
 icalendar
 overallocations

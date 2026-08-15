@@ -180,6 +180,7 @@ function _save!(st::AppState, p::Project)
     _prune_parents!(p)
     _rollup_summaries!(p)
     foreach(_normalize!, p.tasks)
+    _unify_assignees!(p)
     write(_project_file(st, p), JSON3.write(p))
     # Espelhamento estilo Pluto: se o usuário escolheu um arquivo na UI
     # (caixa de caminho na menubar) ou via set_file_path!, cada salvamento
@@ -270,6 +271,81 @@ function tasks(p::Project)
              assignee = t.assignee, milestone = t.milestone) for t in p.tasks]
     sort!(rows; by = r -> r.start)
     return rows
+end
+
+"""
+    people(p::Project) -> Vector{Person}
+
+Registered collaborators, alphabetically. This is the project vocabulary: it
+feeds the assignee autocomplete, fixes the spelling of a name everywhere, and
+gives a name (with role, team…) to people who have no task yet.
+
+The `assignee` field stays free text — the list is convenience, not a fence,
+and names used by tasks are offered by the UI even when not registered.
+"""
+people(p::Project) = copy(p.people)
+
+"""
+    person(p::Project, name) -> Union{Person,Nothing}
+
+The registered collaborator with this name (case-insensitive), or `nothing`.
+"""
+function person(p::Project, name::AbstractString)
+    alvo = lowercase(_clean_person(name))
+    i = findfirst(pe -> lowercase(pe.name) == alvo, p.people)
+    return i === nothing ? nothing : p.people[i]
+end
+
+"""
+    people!(p::Project, entries) -> Vector{Person}
+
+Replace the collaborator list. Each entry may be a name, a [`Person`](@ref),
+or a `NamedTuple`/`Dict` of fields. Names are trimmed, de-duplicated
+(ignoring case) and sorted; task assignees are re-spelled to match a
+registered name that differs only in case — which is how you fix a spelling
+across the whole project.
+
+```julia
+people!(p, ["Ana Paula", "Bruno"])
+people!(p, [(name = "Ana Paula", role = "Arquiteta", team = "Projetos"),
+            (name = "Bruno", role = "Eletricista")])
+```
+"""
+function people!(p::Project, entries)
+    p.people = _clean_people(entries)
+    _with_state(st -> _save!(st, p))
+    return copy(p.people)
+end
+
+"""
+    add_person!(p::Project, name; role = "", team = "", email = "", notes = "")
+
+Register one collaborator. A name already on the list (in any case) is
+*updated*, not duplicated: the spelling you pass wins, and only the keyword
+fields you pass are overwritten — so `add_person!(p, "Ana"; team = "Obra")`
+does not erase her role.
+"""
+function add_person!(p::Project, name::AbstractString; kwargs...)
+    novo = _as_person(name)
+    atual = person(p, name)
+    if atual === nothing
+        for (k, v) in kwargs; setfield!(novo, k, String(v)); end
+        return people!(p, [p.people; novo])
+    end
+    atual.name = _clean_person(name)
+    for (k, v) in kwargs; setfield!(atual, k, String(v)); end
+    return people!(p, p.people)
+end
+
+"""
+    remove_person!(p::Project, name) -> Vector{Person}
+
+Unregister a collaborator. Tasks assigned to them keep the name — removing
+someone from the list must not silently orphan their work.
+"""
+function remove_person!(p::Project, name::AbstractString)
+    alvo = lowercase(_clean_person(name))
+    return people!(p, filter(pe -> lowercase(pe.name) != alvo, p.people))
 end
 
 """

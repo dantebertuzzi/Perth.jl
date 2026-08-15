@@ -50,6 +50,15 @@ function _describe_diff(old::Project, new::Project)
     newby = Dict(t.id => t for t in new.tasks)
     old.name != new.name &&
         push!(out, "renamed project to \"$(snip(new.name))\"")
+    if old.people != new.people
+        # por nome: mexer no cargo de alguém não é "cadastrou/descadastrou"
+        antes  = [pe.name for pe in old.people]
+        depois = [pe.name for pe in new.people]
+        entrou = setdiff(depois, antes)
+        saiu   = setdiff(antes, depois)
+        isempty(entrou) || push!(out, "registered " * join(snip.(entrou), ", "))
+        isempty(saiu)   || push!(out, "unregistered " * join(snip.(saiu), ", "))
+    end
     for t in new.tasks
         haskey(oldby, t.id) || push!(out, "added \"$(snip(t.name))\"")
     end

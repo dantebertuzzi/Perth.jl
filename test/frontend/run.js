@@ -2483,6 +2483,124 @@ console.log("gantt · busca de tarefa");
   close();
 }
 
+console.log("gantt · cadastro de colaboradores");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // gravar() salva e recarrega do servidor; aqui não há rede, então os dois
+  // viram no-op e o teste guarda o que TERIA sido salvo
+  const seed = `
+    const mk = (id, assignee) => ({
+      id, name: id, start: "2026-03-02", duration: 1, assignee, progress: 0,
+      dependencies: [], color: "", notes: "", milestone: false, parent: "",
+      baseline_start: null, baseline_duration: 0, cost: 0 });
+    window.__salvos = [];
+    window.saveNowAfterDirty = async () => {
+      window.__salvos.push(JSON.parse(JSON.stringify(state.current.people))); };
+    window.loadProjects = async () => {};
+    state.current = { id: "p1", name: "P",
+      people: [{ name: "Bruno", role: "Eletricista", team: "Obra",
+                 email: "", notes: "" }],
+      tasks: [mk("t1", "Ana"), mk("t2", "Ana"), mk("t3", ""), mk("t4", "Chen Wei")] };
+    state.cpm = { cycle: false, finish: "2026-03-03", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  // O autocompletar oferece cadastrados E quem já aparece em alguma tarefa:
+  // oferecer só o cadastro esconderia nomes existentes e convidaria a
+  // redigitá-los — e redigitar é o que fragmenta
+  let r = runIn(`${seed}
+    fillPeopleList();
+    return [...document.querySelectorAll("#people-list option")]
+      .map((o) => o.value + "/" + o.label);`);
+  check(r.join("|") === "Ana/|Bruno/Eletricista · Obra|Chen Wei/",
+        "gantt: autocompletar junta cadastrados e usados, com cargo e setor");
+
+  r = runIn(`showPeople();
+    return { nomes: [...document.querySelectorAll(".people-name")].map((x) => x.textContent),
+             cargos: [...document.querySelectorAll(".people-role")].map((x) => x.textContent),
+             contas: [...document.querySelectorAll(".people-count")].map((x) => x.textContent),
+             fichas: document.querySelectorAll(".people-form").length,
+             soltos: document.querySelector(".people-loose").textContent };`);
+  check(r.nomes.join("|") === "Bruno", "gantt: a lista mostra os cadastrados");
+  check(r.cargos[0] === "Eletricista · Obra", "gantt: com cargo e setor na linha");
+  check(r.contas[0] === "—", "gantt: cadastrado sem tarefa aparece com um travessão");
+  check(r.fichas === 0, "gantt: a ficha começa fechada");
+  check(/Ana/.test(r.soltos) && /Chen Wei/.test(r.soltos) && !/Bruno/.test(r.soltos),
+        "gantt: quem trabalha sem estar cadastrado aparece no rodapé");
+
+  // clicar na linha abre a ficha; o alvo é o nome inteiro, não um lápis
+  r = runIn(`document.querySelector(".people-row").click();
+    return [...document.querySelectorAll(".people-form input")]
+      .map((i) => i.dataset.field + "=" + i.value);`);
+  check(r.join("|") === "role=Eletricista|team=Obra|email=|notes=",
+        "gantt: clicar na linha abre a ficha preenchida");
+
+  // grava no change (sair do campo), não a cada tecla: uma letra por PUT
+  // seria um PUT por letra
+  runIn(`const i = document.querySelector(".people-form input[data-field=email]");
+    i.value = " bruno@obra.com ";
+    i.dispatchEvent(new Event("input"));
+    return 0;`);
+  check(runIn(`return window.__salvos.length;`) === 0,
+        "gantt: digitar na ficha não salva a cada tecla");
+  runIn(`document.querySelector(".people-form input[data-field=email]")
+    .dispatchEvent(new Event("change")); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  check(runIn(`return window.__salvos.at(-1)[0].email;`) === "bruno@obra.com",
+        "gantt: sair do campo salva a ficha, sem o espaço sobrando");
+
+  r = runIn(`document.querySelector(".people-row").click();
+    return document.querySelectorAll(".people-form").length;`);
+  check(r === 0, "gantt: clicar de novo fecha a ficha");
+
+  // é exatamente aqui que a fragmentação fica visível — e some com um clique
+  runIn(`[...document.querySelectorAll(".people-loose button")][0].click(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return { salvo: window.__salvos.at(-1).map((pe) => pe.name),
+             contas: [...document.querySelectorAll(".people-count")].map((x) => x.textContent),
+             soltos: document.querySelector(".people-loose").textContent };`);
+  check(r.salvo.join("|") === "Bruno|Ana|Chen Wei",
+        "gantt: \"cadastrar estes\" absorve os nomes soltos");
+  check(r.soltos === "", "gantt: e o rodapé fica vazio depois disso");
+  check(r.contas.join("|") === "—|2 tasks|1 task",
+        "gantt: a contagem de tarefas por pessoa, no singular e no plural");
+
+  // digitar um nome que já está lá com outra caixa é CORRIGIR a grafia,
+  // não cadastrar de novo — e não pode ser um nada silencioso
+  r = runIn(`const f = document.querySelector(".people-add");
+    f.querySelector("input").value = "  BRUNO ";
+    f.dispatchEvent(new Event("submit"));
+    return f.querySelector("input").value;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return window.__salvos.at(-1);`);
+  check(r.map((pe) => pe.name).join("|") === "BRUNO|Ana|Chen Wei",
+        "gantt: grafia digitada substitui a cadastrada, sem duplicar");
+  check(r[0].role === "Eletricista", "gantt: e o resto da ficha fica de pé");
+
+  runIn(`const f = document.querySelector(".people-add");
+    f.querySelector("input").value = "Diego";
+    f.dispatchEvent(new Event("submit")); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return { nomes: window.__salvos.at(-1).map((pe) => pe.name),
+             aberta: [...document.querySelectorAll(".people-item")]
+               .findIndex((x) => x.querySelector(".people-form")) };`);
+  check(r.nomes.join("|") === "BRUNO|Ana|Chen Wei|Diego",
+        "gantt: nome novo entra no cadastro");
+  check(r.aberta === 3, "gantt: e a ficha dele já abre, convidando a preencher");
+
+  // tirar do cadastro tira da lista, não do trabalho
+  runIn(`[...document.querySelectorAll(".people-row .icon-btn")][1].click(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return { salvo: window.__salvos.at(-1).map((pe) => pe.name),
+             assignees: state.current.tasks.map((t) => t.assignee) };`);
+  check(!r.salvo.includes("Ana"), "gantt: remover tira o nome do cadastro");
+  check(r.assignees.join("|") === "Ana|Ana||Chen Wei",
+        "gantt: e as tarefas dela continuam com o nome dela");
+
+  close();
+}
+
 console.log("gantt · painel de recursos");
 {
   const { runIn, close } = loadGanttApp();

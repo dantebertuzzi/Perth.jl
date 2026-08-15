@@ -19,6 +19,15 @@ Base.show(io::IO, t::GanttTask) =
     print(io, "GanttTask(\"", t.name, "\", ", t.start,
           t.milestone ? ", milestone)" : " +$(t.duration)d)")
 
+# Cargo e setor entram no formato compacto porque é para isso que eles
+# existem: um nome solto numa lista não diz quem é a pessoa.
+function Base.show(io::IO, pe::Person)
+    print(io, "Person(\"", pe.name, "\"")
+    detalhe = join(filter(!isempty, [pe.role, pe.team]), ", ")
+    isempty(detalhe) || print(io, " — ", detalhe)
+    print(io, ")")
+end
+
 function Base.show(io::IO, ::MIME"text/plain", p::Project)
     printstyled(io, "Project"; bold = true)
     print(io, " \"", p.name, "\" — ", length(p.tasks), " task",
