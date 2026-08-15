@@ -919,6 +919,63 @@ end
         delete_project(p.id); delete_project(s.id)
     end
 
+    # Painel de avisos: reúne o que o motor já sabia e estava espalhado.
+    # O teste guarda duas promessas — que cada tipo de problema aparece, e que
+    # a rota devolve CAMPOS, não frases: frase pronta aqui sairia em inglês no
+    # meio de uma tela traduzida.
+    @testset "avisos do plano" begin
+        router = Perth._build_router()
+        p = create_project("Com problemas")
+        a = add_task!(p, "Escavação"; start = Date(2026, 1, 5), duration = 5,
+                      assignee = "Ana", deadline = Date(2026, 1, 6))
+        b = add_task!(p, "Fundação"; start = Date(2026, 1, 6), duration = 5,
+                      assignee = "Ana")
+        set_baseline!(p)
+        update_task!(p, b.id; start = Date(2026, 1, 20))
+
+        r = JSON3.read(String(router(HTTP.Request("GET",
+                "/api/projects/$(p.id)/warnings")).body))
+        tipos = Set(String(w.kind) for w in r.warnings)
+        @test "deadline" in tipos          # compromisso quebrado
+        @test "overdue" in tipos           # passou do fim sem terminar
+        @test "slippage" in tipos          # atrás do baseline
+
+        # campos, não frases prontas
+        prazo = first(w for w in r.warnings if w.kind == "deadline")
+        @test prazo.severity == "error"    # impede o plano, não só aperta
+        @test prazo.task == "Escavação"
+        @test prazo.days == 3
+        @test prazo.at == "2026-01-06"
+        @test !haskey(prazo, :text)        # a frase é montada no navegador
+        @test all(w -> haskey(w, :task_id), r.warnings)   # dá para levar até lá
+
+        # sobreposição da mesma pessoa aparece como sobrecarga
+        update_task!(p, b.id; start = Date(2026, 1, 6))
+        r = JSON3.read(String(router(HTTP.Request("GET",
+                "/api/projects/$(p.id)/warnings")).body))
+        sobre = first(w for w in r.warnings if w.kind == "overallocation")
+        @test sobre.who == "Ana"
+        @test Set([sobre.task, sobre.other]) == Set(["Escavação", "Fundação"])
+
+        # ciclo é do plano inteiro, não de uma tarefa: vem sem task_id
+        update_task!(p, a.id; dependencies = [b.id])
+        update_task!(p, b.id; dependencies = [a.id])
+        r = JSON3.read(String(router(HTTP.Request("GET",
+                "/api/projects/$(p.id)/warnings")).body))
+        ciclo = first(w for w in r.warnings if w.kind == "cycle")
+        @test ciclo.severity == "error" && ciclo.task_id == ""
+
+        # plano são não inventa aviso nenhum
+        limpo = create_project("Sem problemas")
+        add_task!(limpo, "Futura"; start = Dates.today() + Dates.Day(30), duration = 3)
+        r = JSON3.read(String(router(HTTP.Request("GET",
+                "/api/projects/$(limpo.id)/warnings")).body))
+        @test isempty(r.warnings)
+
+        @test router(HTTP.Request("GET", "/api/projects/naoexiste/warnings")).status == 404
+        delete_project(p.id); delete_project(limpo.id)
+    end
+
     @testset "PERT: rotas REST" begin
         router = Perth._build_router()
         p = create_project("PERT web")

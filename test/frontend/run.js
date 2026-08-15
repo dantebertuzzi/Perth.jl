@@ -2295,6 +2295,72 @@ console.log("gantt · modal: lag, marco e descarte");
 /* Busca de tarefa. O que ela acrescenta ao destaque que já existia é chegar
  * lá: num projeto de 141 tarefas (os do autor têm 98 e 141), ver a linha
  * acesa não adianta se ela está a 80 linhas de distância. */
+/* Painel de avisos: reúne num lugar só o que o motor já sabia e estava
+ * espalhado (o ciclo virava exceção, o prazo virava "+8d" na barra, a
+ * sobrecarga acendia no painel de recursos). A ficha na barra só existe
+ * quando há o que avisar — contador permanente marcando zero é decoração. */
+console.log("gantt · painel de avisos");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const seed = `
+    const mk = (id, name) => ({ id, name, start: "2026-03-02", duration: 3,
+      assignee: "", progress: 0, dependencies: [], color: "", notes: "",
+      milestone: false, parent: "", cost: 0, baseline_start: null,
+      baseline_duration: 0, deadline: null, pinned: false,
+      optimistic: 0, most_likely: 0, pessimistic: 0 });
+    state.current = { id: "p1", name: "P", tasks: [mk("t1", "Fundação"), mk("t2", "Telhado")] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "", pert: null, byId: new Map() };
+    renderAll();`;
+
+  // sem problema nenhum, a ficha não existe
+  let r = runIn(`${seed} state.warnings = []; renderWarningsChip();
+    return document.getElementById("warnings-chip").hidden;`);
+  check(r === true, "gantt: plano são não ganha contador marcando zero");
+
+  r = runIn(`state.warnings = [
+      { kind: "deadline", severity: "error", task_id: "t1", task: "Fundação",
+        days: 3, at: "2026-03-01" },
+      { kind: "slippage", severity: "warning", task_id: "t2", task: "Telhado", days: 7 }];
+    renderWarningsChip();
+    const c = document.getElementById("warnings-chip");
+    return { escondida: c.hidden, texto: c.textContent, grave: c.classList.contains("error") };`);
+  check(r.escondida === false && r.texto === "⚠ 2", "gantt: com problemas, a ficha conta");
+  check(r.grave === true,
+        "gantt: um erro no meio pinta a ficha de erro — aviso e erro não pesam igual");
+
+  // a frase é montada AQUI, com os campos: texto pronto do servidor sairia
+  // em inglês no meio de uma tela traduzida
+  r = runIn(`PerthI18n.set("pt"); showWarnings();
+    const linhas = [...document.querySelectorAll(".warn-row")];
+    return { n: linhas.length,
+             etiquetas: linhas.map((l) => l.querySelector(".warn-kind").textContent),
+             textos: linhas.map((l) => l.querySelector(".warn-text").textContent) };`);
+  check(r.n === 2, "gantt: uma linha por problema");
+  check(r.etiquetas[0] === "prazo estourado" && r.etiquetas[1] === "atrás do baseline",
+        "gantt: a etiqueta diz o tipo, traduzida");
+  check(/Fundação/.test(r.textos[0]) && /3 d/.test(r.textos[0]) && /2026-03-01/.test(r.textos[0]),
+        "gantt: e a frase é montada dos campos, não vem pronta do servidor");
+
+  // clicar leva ao problema: nomear sem levar até lá é meia ajuda
+  r = runIn(`document.querySelectorAll(".warn-row")[1].click();
+    return { selecionada: state.selected,
+             fechou: !document.getElementById("perth-overlay") };`);
+  check(r.selecionada === "t2" && r.fechou === true,
+        "gantt: clicar num aviso fecha o painel e seleciona a tarefa dele");
+
+  // ciclo é do plano inteiro: não tem para onde levar
+  r = runIn(`state.warnings = [{ kind: "cycle", severity: "error", task_id: "" }];
+    renderWarningsChip(); showWarnings();
+    const l = document.querySelector(".warn-row");
+    return { desabilitada: l.disabled, texto: l.querySelector(".warn-text").textContent };`);
+  check(r.desabilitada === true && r.texto.length > 0,
+        "gantt: o ciclo é do plano, não de uma tarefa — a linha não finge que leva a algum lugar");
+
+  close();
+}
+
 console.log("gantt · busca de tarefa");
 {
   const { runIn, close } = loadGanttApp();

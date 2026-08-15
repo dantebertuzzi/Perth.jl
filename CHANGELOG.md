@@ -8,6 +8,21 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **A warnings panel** — one place for everything wrong with the plan. The
+  engine already knew all of it, scattered: a dependency cycle surfaced as an
+  exception when scheduling, a blown deadline as a `+8d` on the bar, an
+  overload only in the resource pane, and drift against the baseline only from
+  `slippage()` in the REPL. Nothing new is computed; it is gathered. The chip
+  in the toolbar appears **only when there is something to report** — a
+  permanent counter reading zero is furniture — and turns red when a problem
+  stops the plan from being scheduled at all, rather than merely squeezing it.
+  Clicking a row closes the panel and takes you to the task: naming a problem
+  without going to it is half an answer.
+- The route returns **fields, not sentences**. A sentence composed in Julia
+  would arrive in English in the middle of a translated screen — the very
+  defect the i18n scan prevents on the other side — so the browser builds the
+  wording from `task`, `days`, `at`, `who`, and the kind label carries the
+  meaning.
 - **Tests that run in a real browser** (`test/browser`), covering what jsdom
   cannot see: layout geometry and the real input-event chain. Every case in
   there is a defect that shipped and was caught by eye, not by the 342 jsdom

@@ -912,9 +912,19 @@ body.presenting .res-pane { display: none; }
 /* Busca de tarefa na barra de ferramentas. Mesmo desenho do filtro do kanban
    (ver .mb-search lá): em repouso é só texto, a moldura aparece no hover e no
    foco. A contagem fica colada, para dizer se vale continuar digitando. */
-.task-search { position: relative; display: flex; align-items: center; gap: 6px; }
+/* Largura FIXA da faixa inteira: o campo crescer no foco, ou a contagem
+   aparecer ao digitar, empurrava a ficha de avisos para o lado. Nada aqui
+   pode mudar de tamanho — o que muda de tamanho move o vizinho, e mover o
+   vizinho é o que faz o alvo do clique fugir do dedo. */
+.task-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 296px;
+}
 #task-search {
-  width: 190px;
+  width: 240px;
   height: 26px;
   padding: 2px 9px;
   font-family: var(--mono);
@@ -927,7 +937,6 @@ body.presenting .res-pane { display: none; }
 #task-search::placeholder { color: var(--muted); opacity: .55; }
 #task-search:hover { border-color: var(--line); background: var(--field); }
 #task-search:focus {
-  width: 240px;
   color: var(--ink);
   background: var(--field);
   border-color: var(--line);
@@ -937,8 +946,67 @@ body.presenting .res-pane { display: none; }
 /* busca sem nenhum resultado: a moldura avisa, sem apagar o que foi digitado */
 #task-search.empty-hit { border-color: var(--red); color: var(--red); }
 .ts-count {
+  flex: 1;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* Ficha de avisos: só aparece quando há o que avisar (ver renderWarningsChip).
+   Âmbar para o que aperta, vermelho para o que impede — a mesma leitura das
+   barras: aviso não é erro. */
+.warn-chip {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+}
+.warn-chip:hover { background: color-mix(in srgb, var(--amber) 18%, transparent); }
+.warn-chip.error {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+.warn-chip.error:hover { background: color-mix(in srgb, var(--red) 18%, transparent); }
+
+/* Painel: uma linha por problema, clicável, que leva até a tarefa */
+.warn-list { display: flex; flex-direction: column; gap: 4px; max-height: 58vh; overflow-y: auto; }
+.warn-list.none { color: var(--muted); font-size: 12.5px; }
+/* A gravidade vive na ETIQUETA, não numa barra à esquerda: a barra flutuava
+   solta na linha e virava mobília. A etiqueta já diz o que é — colori-la diz
+   o quanto pesa, sem acrescentar elemento nenhum. Mesmo vocabulário das
+   outras marcas do app (o "+8d" da barra, o "new" do card). */
+.warn-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: none;
+}
+.warn-row:not(:disabled):hover { background: var(--sel); border-color: var(--line); }
+.warn-row:disabled { cursor: default; }
+.warn-kind {
+  flex: 0 0 auto;
+  min-width: 7.5em;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 13%, transparent);
+}
+.warn-row.error .warn-kind {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 13%, transparent);
+}
+.warn-text { flex: 1; font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }

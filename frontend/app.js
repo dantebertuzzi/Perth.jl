@@ -45,6 +45,7 @@ const state = {
   highlight: null,      // {kind: "assignee"|"status"|"type", value} ou null
   search: "",           // busca por nome de tarefa (ver matchesSearch)
   searchAt: 0,          // ocorrência atual, percorrida com Enter
+  warnings: [],         // problemas do plano, vindos do servidor
   wbs: null,            // {kids: Map, depth: Map, summary: Set} — computado a cada render
   overalloc: { pairs: [], ids: new Set() },
   resources: null,      // carga por responsável vinda do servidor (workload)
@@ -204,6 +205,7 @@ const el = {
   fbChoose: $("#fb-choose"),
   highlightSelect: $("#highlight-select"),
   taskSearch: $("#task-search"),
+  warningsChip: $("#warnings-chip"),
   taskSearchCount: $("#task-search-count"),
   resPane: $("#res-pane"),
   resNames: $("#res-names"),
@@ -497,8 +499,26 @@ async function fetchWorkload() {
 
 // CPM sempre; a carga só com o painel aberto — ninguém paga por um
 // payload que não está olhando
+/* Avisos do plano: ciclo de dependência, prazo estourado, tarefa vencida,
+   sobrecarga e atraso contra o baseline. Nada é calculado aqui — o motor já
+   sabia de tudo, só estava espalhado (o ciclo virava exceção ao reprogramar,
+   o prazo virava um "+8d" na barra, a sobrecarga acendia no painel de
+   recursos). O servidor reúne; aqui a gente só mostra. */
+async function fetchWarnings() {
+  state.warnings = [];
+  if (!state.current) return;
+  try {
+    const r = await api(`/api/projects/${state.current.id}/warnings`);
+    state.warnings = r.warnings || [];
+  } catch {
+    /* sem avisos é melhor que uma tela quebrada */
+  }
+  renderWarningsChip();
+}
+
 async function fetchAnalytics() {
   await fetchCPM();
+  await fetchWarnings();
   if (state.resOpen) await fetchWorkload();
 }
 
@@ -1853,6 +1873,84 @@ function showOverlay(title, bodyEl) {
 
 const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
 
+/* Ficha de avisos na barra: só existe quando há o que avisar. Um contador
+   permanente marcando zero vira decoração; aparecendo, ele é a informação. */
+function renderWarningsChip() {
+  const n = state.warnings.length;
+  el.warningsChip.hidden = n === 0;
+  if (!n) return;
+  const grave = state.warnings.some((w) => w.severity === "error");
+  el.warningsChip.classList.toggle("error", grave);
+  el.warningsChip.textContent = `⚠ ${n}`;
+  el.warningsChip.title = grave
+    ? T("Problems that stop the plan from being scheduled")
+    : T("Problems found in this plan");
+}
+
+const _WARN_LABEL = {
+  cycle: "dependency cycle",
+  deadline: "past the deadline",
+  overdue: "overdue",
+  overallocation: "overallocated",
+  slippage: "behind the baseline",
+};
+
+/* A frase é montada aqui, não no servidor: quem sabe o idioma de quem lê é
+   esta ponta. Texto pronto vindo do Julia sairia em inglês no meio de uma
+   tela traduzida — exatamente o defeito que a varredura de i18n impede do
+   outro lado. A etiqueta já diz o TIPO, então a frase só carrega os dados e
+   uma palavra ou outra. */
+function warningText(w) {
+  const d = (n) => `${n} d`;
+  switch (w.kind) {
+    case "cycle":
+      return T("the plan cannot be scheduled while it exists");
+    case "deadline":
+      return `${w.task} · ${d(w.days)} · ${T("deadline")} ${w.at}`;
+    case "overdue":
+      return `${w.task} · ${T("ended")} ${w.at}`;
+    case "overallocation":
+      return `${w.who} · "${w.task}" × "${w.other}" · ${w.from} → ${w.to}`;
+    case "slippage":
+      return `${w.task} · ${d(w.days)}`;
+    default:
+      return w.task || "";
+  }
+}
+
+function showWarnings() {
+  const body = document.createElement("div");
+  body.className = "warn-list";
+  if (!state.warnings.length) {
+    body.textContent = T("nothing wrong with this plan");
+    body.classList.add("none");
+    showOverlay("Warnings", body);
+    return;
+  }
+  for (const w of state.warnings) {
+    const linha = document.createElement("button");
+    linha.className = "warn-row " + (w.severity === "error" ? "error" : "warning");
+    const tipo = document.createElement("span");
+    tipo.className = "warn-kind";
+    tipo.textContent = T(_WARN_LABEL[w.kind] || w.kind);
+    const texto = document.createElement("span");
+    texto.className = "warn-text";
+    texto.textContent = warningText(w);
+    linha.append(tipo, texto);
+    // clicar leva ao problema: nomear sem levar até lá é meia ajuda
+    if (w.task_id) {
+      linha.addEventListener("click", () => {
+        document.getElementById("perth-overlay")?.remove();
+        revealTask(w.task_id);
+      });
+    } else {
+      linha.disabled = true;          // ciclo não é de uma tarefa só
+    }
+    body.append(linha);
+  }
+  showOverlay("Warnings", body);
+}
+
 async function showActivity() {
   const body = document.createElement("div");
   body.className = "activity-list";
@@ -2753,6 +2851,7 @@ document.addEventListener("click", (ev) => {
 
 $("#btn-new-task").addEventListener("click", newTask);
 $("#btn-today").addEventListener("click", scrollToToday);
+el.warningsChip.addEventListener("click", showWarnings);
 $$(".zoom-group button").forEach((b) =>
   b.addEventListener("click", () => setZoom(b.dataset.zoom)));
 
@@ -2784,8 +2883,20 @@ function goToHit(k) {
   const n = hits.length;
   state.searchAt = ((k % n) + n) % n;              // volta nas duas direções
   const linha = hits[state.searchAt];
+  state.selected = state.current.tasks[linha].id;
+  revealTask(state.selected);
+  el.taskSearchCount.textContent = `${state.searchAt + 1}/${n}`;
+}
+
+/* Traz a tarefa para a vista: seleciona, rola a lista até a linha e a linha
+   do tempo até a barra. Usado pela busca e pelo painel de avisos — clicar num
+   aviso tem que levar ao problema, não só nomeá-lo. */
+function revealTask(id) {
+  if (!state.current) return;
+  const linha = state.current.tasks.findIndex((x) => x.id === id);
+  if (linha < 0) return;
   const t = state.current.tasks[linha];
-  state.selected = t.id;
+  state.selected = id;
   renderTable();
   renderChart();
   // Rolar só na vertical não basta: a linha acende na tabela e a BARRA fica
@@ -2813,7 +2924,6 @@ function goToHit(k) {
     left: alvoX,
     behavior: "instant",
   });
-  el.taskSearchCount.textContent = `${state.searchAt + 1}/${n}`;
 }
 
 function applySearch() {
