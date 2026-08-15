@@ -150,19 +150,10 @@ kbd {
   flex: none;
 }
 .settings-check:hover .snd-icon { fill: var(--ink); }
-.settings-check label {
-  margin: 0;                /* anula margin-bottom do label genérico do painel */
-  font-size: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-.settings-check input {
-  width: auto;            /* anula o width:100% genérico dos inputs do painel */
-  margin: 0;
-  flex: none;
-  cursor: pointer;
-  accent-color: var(--purple);
-}
+/* a etiqueta absorve a folga (.sp-label tem flex:1 no ui.css), então o
+   interruptor encosta na direita e as quatro linhas ficam alinhadas
+   mesmo quando o texto quebra em duas */
+.settings-check .sp-label { color: inherit; font-size: inherit; }
 
 /* ---------- board ---------- */
 

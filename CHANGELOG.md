@@ -105,7 +105,31 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   it serves the first, so old clients and the service worker keep
   working.
 
+### Changed
+- PERT: a tie now rounds **up**, not to the even number. `te = 4.5`
+  schedules 5 days; before, Julia's default `RoundNearest` gave 4 for
+  `4.5` and 6 for `5.5` — neighbours that disagree in the same table, and
+  the `4.5` case shrinking the schedule exactly at the tie, which is the
+  wrong direction to err for a duration. The browser's `Math.round`
+  already rounded ties up in the modal preview, so the server was the odd
+  one out: *use as duration* offered 5 while `pert!` wrote 4, forever.
+  Surfaced by rebuilding the canonical PERT example, where activity `f`
+  has `te = 4.5` exactly.
+
 ### Fixed
+- Kanban: the settings panel now uses the Gantt's toggle
+  (`<button class="toggle" aria-pressed>`) instead of checkboxes. A
+  checkbox sat immediately after its label, so each one stopped at a
+  different column depending on the label's length — worse on the two
+  labels that wrap to a second line. The label now absorbs the slack and
+  every switch lands on the same right edge.
+
+  Moving `.toggle` into `shared/ui.css` exposed a specificity trap worth
+  recording: `.menu-drop button` (0,1,1) beats `.toggle` (0,1,0), so the
+  switch inherited `width: 100%` and menu-item padding and rendered as a
+  224px bar. The menu-item rule is now `.menu-drop button:not(.toggle)` —
+  a switch inside a dropdown is not a menu item.
+
 - Kanban: a column scrolled down no longer jumps back to the top when you
   act on a card. `render()` rebuilds the whole board
   (`boardEl.textContent = ""`), and a fresh element starts at

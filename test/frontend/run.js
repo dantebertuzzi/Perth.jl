@@ -945,18 +945,14 @@ console.log("fundo da UI · rotação de imagens (shared/background.js)");
 
   // esconder localmente para a rotação (não adianta girar o que não se vê)
   r = runIn(`applyBackground(${rot(60)});
-    const t = document.getElementById("hide-bg-toggle");
-    t.checked = true;
-    t.dispatchEvent(new Event("change"));
+    document.getElementById("hide-bg-toggle").click();
     return { has: document.documentElement.classList.contains("has-bg"),
              op: document.documentElement.style.getPropertyValue("--perth-bg-opacity"),
              servidor: PerthBackground.images().length };`);
   check(r.has === false && r.op === "0", "esconder apaga a camada");
   check(r.servidor === 3, "e não mexe no que o servidor mandou");
 
-  r = runIn(`const t = document.getElementById("hide-bg-toggle");
-    t.checked = false;
-    t.dispatchEvent(new Event("change"));
+  r = runIn(`document.getElementById("hide-bg-toggle").click();
     return { has: document.documentElement.classList.contains("has-bg"),
              op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
   check(r.has === true && r.op === "0.4", "desmarcar traz a rotação de volta sem recarregar");
@@ -990,9 +986,7 @@ console.log("kanban · fundo da UI");
 
   // esconder localmente: a camada some aqui, o setting do servidor não muda
   r = runIn(`applyBackground(${bgPayload});
-    const t = document.getElementById("hide-bg-toggle");
-    t.checked = true;
-    t.dispatchEvent(new Event("change"));
+    document.getElementById("hide-bg-toggle").click();
     return { has: document.documentElement.classList.contains("has-bg"),
              guardado: localStorage.getItem("perth-kanban-hide-background"),
              servidor: bgInfo.set };`);
@@ -1000,9 +994,7 @@ console.log("kanban · fundo da UI");
   check(r.guardado === "on", "kanban: e a preferência persiste no localStorage");
   check(r.servidor === true, "kanban: sem mexer no que o servidor manda");
 
-  r = runIn(`const t = document.getElementById("hide-bg-toggle");
-    t.checked = false;
-    t.dispatchEvent(new Event("change"));
+  r = runIn(`document.getElementById("hide-bg-toggle").click();
     return document.documentElement.classList.contains("has-bg");`);
   check(r === true, "kanban: desmarcar traz o fundo de volta sem recarregar");
 
@@ -1013,6 +1005,66 @@ console.log("kanban · fundo da UI");
              op: document.documentElement.style.getPropertyValue("--perth-bg-opacity") };`);
   check(/v=zzz999/.test(r.img), "kanban: msg \"background\" do servidor troca a imagem ao vivo");
   check(r.op === "0.5", "kanban: e acompanha a nova opacidade");
+
+  close();
+}
+
+console.log("kanban · interruptores do painel de configurações");
+{
+  // Regressão visual: eram <input type=checkbox> logo depois do texto, então
+  // cada um parava numa coluna diferente conforme o comprimento da etiqueta
+  // — pior ainda nas que quebram em duas linhas. Agora são o mesmo
+  // <button class="toggle" aria-pressed> do gantt, com a etiqueta
+  // absorvendo a folga.
+  const { runIn, close } = loadKanbanApp();
+  const IDS = ["sound-toggle", "hide-cursors-toggle", "hide-bg-toggle",
+               "hide-new-toggle"];
+
+  let r = runIn(`return ${JSON.stringify(IDS)}.map((id) => {
+      const el = document.getElementById(id);
+      return { id, tag: el.tagName, classe: el.className,
+               pressed: el.getAttribute("aria-pressed"),
+               rotulo: el.getAttribute("aria-label"),
+               irmaoEtiqueta: el.previousElementSibling.className };
+    });`);
+  check(r.every((x) => x.tag === "BUTTON" && x.classe === "toggle"),
+        "os quatro são o .toggle do gantt, não checkbox");
+  check(r.every((x) => x.pressed === "true" || x.pressed === "false"),
+        "cada um declara o estado em aria-pressed");
+  check(r.every((x) => x.rotulo && x.irmaoEtiqueta === "sp-label"),
+        "cada um tem etiqueta .sp-label ao lado e aria-label para leitor de tela");
+
+  // O alinhamento em si é layout, e o jsdom não faz layout (nem busca CSS
+  // externo, então document.styleSheets vem vazio). O que dá para travar é
+  // a regra que o produz, lida do fonte — e o lugar dela: .toggle e
+  // .sp-label têm de estar no CSS COMPARTILHADO, senão o kanban herdaria
+  // um componente definido só na folha do gantt.
+  const uiCss = read("frontend/shared/ui.css");
+  const kanbanCss = read("frontend/kanban/style.css");
+  check(/\.sp-label\s*\{[^}]*flex:\s*1/.test(uiCss),
+        "a etiqueta absorve a folga (.sp-label { flex: 1 }) no CSS compartilhado");
+  check(/\.toggle\s*\{/.test(uiCss) && /\.toggle\[aria-pressed="true"\]/.test(uiCss),
+        "o componente .toggle vive no shared/ui.css, servido aos dois apps");
+  check(!/^\.toggle\s*\{/m.test(read("frontend/style.css")),
+        "e não ficou duplicado na folha só do gantt");
+  check(/\.settings-check\s*\{[^}]*display:\s*flex[^}]*align-items:\s*center/s.test(kanbanCss),
+        "a linha é flex centrada, então o interruptor encosta na direita");
+
+  // clicar alterna, persiste e aplica — sem depender de evento "change"
+  r = runIn(`localStorage.removeItem("perth-kanban-hide-new");
+    const el = document.getElementById("hide-new-toggle");
+    const antes = el.getAttribute("aria-pressed");
+    el.click();
+    const depois = el.getAttribute("aria-pressed");
+    const classe = document.documentElement.classList.contains("hide-new-badges");
+    el.click();
+    return { antes, depois, classe,
+             guardado: localStorage.getItem("perth-kanban-hide-new"),
+             voltou: el.getAttribute("aria-pressed") };`);
+  check(r.antes === "false" && r.depois === "true" && r.voltou === "false",
+        "clicar alterna o aria-pressed nos dois sentidos");
+  check(r.classe === true && r.guardado === "off",
+        "e cada clique aplica o efeito e persiste a preferência");
 
   close();
 }
@@ -1170,9 +1222,7 @@ console.log("kanban · etiqueta de card novo");
   // esconder é preferência local: classe no <html>, sem re-render e sem
   // tocar no board (o carimbo `at` continua lá para as outras máquinas)
   r = runIn(`${seed} render();
-    const t = document.getElementById("hide-new-toggle");
-    t.checked = true;
-    t.dispatchEvent(new Event("change"));
+    document.getElementById("hide-new-toggle").click();
     return { classe: document.documentElement.classList.contains("hide-new-badges"),
              guardado: localStorage.getItem("perth-kanban-hide-new"),
              nodom: ${has("hoje")},
@@ -1182,9 +1232,7 @@ console.log("kanban · etiqueta de card novo");
   check(r.nodom === true && !!r.carimbo,
         "o CSS é que esconde: o nó e o carimbo do board continuam intactos");
 
-  r = runIn(`const t = document.getElementById("hide-new-toggle");
-    t.checked = false;
-    t.dispatchEvent(new Event("change"));
+  r = runIn(`document.getElementById("hide-new-toggle").click();
     return document.documentElement.classList.contains("hide-new-badges");`);
   check(r === false, "desmarcar traz a etiqueta de volta sem recarregar");
 

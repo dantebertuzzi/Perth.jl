@@ -63,7 +63,11 @@ a.brand:hover { color: var(--purple); }
 }
 :root[data-theme="dark"] .menu-drop { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); }
 .menu.open .menu-drop { display: block; }
-.menu-drop button {
+/* :not(.toggle) — item de menu estica a 100% e ganha padding, mas um
+   interruptor dentro de um dropdown (painel de configurações do kanban)
+   não é item de menu. Sem isto, `.menu-drop button` (0,1,1) ganha de
+   `.toggle` (0,1,0) e o interruptor vira uma barra da largura do painel. */
+.menu-drop button:not(.toggle) {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -157,6 +161,39 @@ select.board-chip {         /* o chip do gantt é um <select> */
 .knob .moon { display: none; }
 :root[data-theme="dark"] .knob .sun { display: none; }
 :root[data-theme="dark"] .knob .moon { display: block; }
+
+/* Interruptor de preferência (painel de configurações dos dois apps).
+   É <button aria-pressed>, não <input type=checkbox>: a linha fica com a
+   etiqueta à esquerda e o interruptor SEMPRE na mesma coluna à direita,
+   independentemente de o texto quebrar em duas linhas — que é o que um
+   checkbox logo depois do texto não consegue fazer. */
+.toggle {
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--line);
+  position: relative;
+  padding: 0;
+  flex: none;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--panel);
+  transition: transform .15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+}
+.toggle[aria-pressed="true"] { background: var(--green); }
+.toggle[aria-pressed="true"]::after { transform: translateX(16px); }
+
+/* Etiqueta de linha do painel de configurações. Absorve a folga, então o
+   interruptor encosta na borda direita e todos ficam alinhados. */
+.sp-label { flex: 1; font-size: 12px; color: var(--muted); }
 
 /* ---------- modo apresentação: esconde a menubar, sobra só o conteúdo ---------- */
 

@@ -3007,38 +3007,51 @@ nameInput.addEventListener("blur", () => {
   send({ type: "hello", name: v });
 });
 
-const soundToggle = $("#sound-toggle");
-soundToggle.checked = localStorage.getItem("perth-kanban-sound") !== "off";
-soundToggle.addEventListener("change", () => {
-  localStorage.setItem("perth-kanban-sound", soundToggle.checked ? "on" : "off");
-  if (soundToggle.checked) playAlert();   // feedback imediato do volume
-});
+/* Interruptores do painel: <button aria-pressed>, o mesmo componente do
+ * gantt (.toggle em shared/ui.css). Eram <input type=checkbox> logo depois
+ * do texto, então cada um parava numa coluna diferente conforme o
+ * comprimento da etiqueta — e as que quebravam em duas linhas pioravam o
+ * desalinhamento. Com etiqueta absorvendo a folga, todos encostam na
+ * mesma borda.
+ *
+ * `on` guarda a preferência, aplica e devolve o estado; um helper só
+ * porque os quatro fazem exatamente a mesma coisa. */
+const pressed = (el) => el.getAttribute("aria-pressed") === "true";
+
+function prefToggle(id, chave, ligadoPorPadrao, aplicar) {
+  const el = $("#" + id);
+  const salvo = localStorage.getItem(chave);
+  const on = salvo === null ? ligadoPorPadrao : salvo === "on";
+  el.setAttribute("aria-pressed", String(on));
+  aplicar(on, true);                    // true = ainda é a montagem da página
+  el.addEventListener("click", () => {
+    const novo = !pressed(el);
+    el.setAttribute("aria-pressed", String(novo));
+    localStorage.setItem(chave, novo ? "on" : "off");
+    aplicar(novo, false);
+  });
+  return el;
+}
+
+// playAlert consulta o localStorage sozinho, então aqui não há nada a
+// "aplicar": só o feedback de volume ao LIGAR — e nunca ao abrir a página,
+// que tocaria um alerta a cada F5
+const soundToggle = prefToggle("sound-toggle", "perth-kanban-sound", true,
+  (on, inicial) => { if (on && !inicial) playAlert(); });
 
 // preferência local, não afeta o protocolo: a máquina continua visível para
 // os outros (peers/menubar), só para de desenhar os cursores alheios aqui
-const hideCursorsToggle = $("#hide-cursors-toggle");
-const applyHideCursors = () =>
-  document.documentElement.classList.toggle("hide-remote-cursors", hideCursorsToggle.checked);
-hideCursorsToggle.checked = localStorage.getItem("perth-kanban-hide-cursors") === "on";
-applyHideCursors();
-hideCursorsToggle.addEventListener("change", () => {
-  localStorage.setItem("perth-kanban-hide-cursors", hideCursorsToggle.checked ? "on" : "off");
-  applyHideCursors();
-});
+const hideCursorsToggle = prefToggle("hide-cursors-toggle",
+  "perth-kanban-hide-cursors", false,
+  (on) => document.documentElement.classList.toggle("hide-remote-cursors", on));
 
 // Etiqueta de card novo: preferência local deste navegador, como os cursores
 // acima. É classe no <html> em vez de estado lido por cardEl, para o toggle
 // valer na hora — sem re-render, e sem cardEl depender de um elemento do
 // painel que ele não deveria conhecer.
-const hideNewToggle = $("#hide-new-toggle");
-const applyHideNew = () =>
-  document.documentElement.classList.toggle("hide-new-badges", hideNewToggle.checked);
-hideNewToggle.checked = localStorage.getItem("perth-kanban-hide-new") === "on";
-applyHideNew();
-hideNewToggle.addEventListener("change", () => {
-  localStorage.setItem("perth-kanban-hide-new", hideNewToggle.checked ? "on" : "off");
-  applyHideNew();
-});
+const hideNewToggle = prefToggle("hide-new-toggle", "perth-kanban-hide-new",
+  false,
+  (on) => document.documentElement.classList.toggle("hide-new-badges", on));
 
 /* ============================== fundo da UI (Perth.background!)
  *
@@ -3046,13 +3059,14 @@ hideNewToggle.addEventListener("change", () => {
  * preferência local deste navegador, como os cursores acima. */
 let bgInfo = null;
 const hideBgToggle = $("#hide-bg-toggle");
-hideBgToggle.checked = localStorage.getItem("perth-kanban-hide-background") === "on";
+hideBgToggle.setAttribute("aria-pressed",
+  String(localStorage.getItem("perth-kanban-hide-background") === "on"));
 
 // A camada, a rotação e o fade vivem em shared/background.js (os dois apps
 // usam o mesmo). Daqui vão só as duas coisas que são deste app: a
 // preferência local de esconder e como a chave de acesso entra na URL.
 PerthBackground.init({
-  isHidden: () => hideBgToggle.checked,
+  isHidden: () => pressed(hideBgToggle),
   withKey,
 });
 
@@ -3068,8 +3082,10 @@ function refreshBackground() {
     .catch(() => {});
 }
 
-hideBgToggle.addEventListener("change", () => {
-  localStorage.setItem("perth-kanban-hide-background", hideBgToggle.checked ? "on" : "off");
+hideBgToggle.addEventListener("click", () => {
+  const novo = !pressed(hideBgToggle);
+  hideBgToggle.setAttribute("aria-pressed", String(novo));
+  localStorage.setItem("perth-kanban-hide-background", novo ? "on" : "off");
   applyBackground();          // sem argumento: só redesenha com o que já se sabe
 });
 
