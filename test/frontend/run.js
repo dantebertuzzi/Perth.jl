@@ -2325,8 +2325,12 @@ console.log("gantt · painel de avisos");
       { kind: "slippage", severity: "warning", task_id: "t2", task: "Telhado", days: 7 }];
     renderWarningsChip();
     const c = document.getElementById("warnings-chip");
-    return { escondida: c.hidden, texto: c.textContent, grave: c.classList.contains("error") };`);
-  check(r.escondida === false && r.texto === "⚠ 2", "gantt: com problemas, a ficha conta");
+    return { escondida: c.hidden, texto: c.textContent,
+             simbolo: c.querySelector(".warn-ico")?.textContent,
+             grave: c.classList.contains("error") };`);
+  check(r.escondida === false && r.texto === "⚠2" && r.simbolo === "⚠",
+        "gantt: com problemas, a ficha conta — e o símbolo é elemento próprio,\n" +
+        "        para poder ser maior que o número");
   check(r.grave === true,
         "gantt: um erro no meio pinta a ficha de erro — aviso e erro não pesam igual");
 

@@ -13,9 +13,13 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   exception when scheduling, a blown deadline as a `+8d` on the bar, an
   overload only in the resource pane, and drift against the baseline only from
   `slippage()` in the REPL. Nothing new is computed; it is gathered. The chip
-  in the toolbar appears **only when there is something to report** — a
-  permanent counter reading zero is furniture — and turns red when a problem
-  stops the plan from being scheduled at all, rather than merely squeezing it.
+  in the toolbar sits next to the zoom buttons and appears **only when there is
+  something to report** — a permanent counter reading zero is furniture — and
+  turns red when a problem stops the plan from being scheduled at all, rather
+  than merely squeezing it. At rest it is just the symbol and the count; the
+  frame appears on hover, like the path box and the kanban's filter. A boxed
+  chip competed with the Day/Week/Month group beside it, reading as one more
+  view mode.
   Clicking a row closes the panel and takes you to the task: naming a problem
   without going to it is half an answer.
 - The route returns **fields, not sentences**. A sentence composed in Julia

@@ -1881,7 +1881,15 @@ function renderWarningsChip() {
   if (!n) return;
   const grave = state.warnings.some((w) => w.severity === "error");
   el.warningsChip.classList.toggle("error", grave);
-  el.warningsChip.textContent = `⚠ ${n}`;
+  // símbolo em elemento próprio: como glifo ele lê menor que letra no mesmo
+  // tamanho, e é ele que tem que chamar o olho antes do número
+  el.warningsChip.textContent = "";
+  const ico = document.createElement("span");
+  ico.className = "warn-ico";
+  ico.textContent = "⚠";
+  const num = document.createElement("span");
+  num.textContent = String(n);
+  el.warningsChip.append(ico, num);
   el.warningsChip.title = grave
     ? T("Problems that stop the plan from being scheduled")
     : T("Problems found in this plan");
