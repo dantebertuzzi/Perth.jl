@@ -1017,6 +1017,61 @@ console.log("kanban · fundo da UI");
   close();
 }
 
+console.log("kanban · carimbo de momento é hora LOCAL");
+{
+  // Regressão de uso real: o navegador carimbava `at` e `done_at` com
+  // toISOString (UTC) num campo que o servidor preenche em hora local
+  // (_kanban_now). O mesmo campo passava a ter dois significados conforme
+  // o card nascesse no navegador ou no REPL — e num fuso negativo o
+  // carimbo do navegador caía no DIA SEGUINTE depois do fim da tarde,
+  // que é como isto apareceu: card criado às 21h ficava com data de
+  // amanhã e a etiqueta "new" não aparecia.
+  const { runIn, close } = loadKanbanApp();
+  const seed = `state.board = { columns: [{ id: "c1", name: "backlog", cards: [] }],
+                                archive: [], aliases: {} };`;
+
+  let r = runIn(`${seed}
+    const local = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const esperado = local.getFullYear() + "-" + pad(local.getMonth() + 1) + "-" +
+                     pad(local.getDate()) + " " + pad(local.getHours()) + ":" +
+                     pad(local.getMinutes());
+    return { carimbo: localStamp(), esperado, utc: new Date().toISOString().slice(0, 16).replace("T", " ") };`);
+  check(r.carimbo === r.esperado,
+        "localStamp() é a hora local da máquina, no formato do servidor");
+  check(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(r.carimbo),
+        "e no formato exato de _kanban_now (yyyy-mm-dd HH:MM)");
+
+  // a data do carimbo tem de ser a MESMA que localISO() usa para decidir
+  // o que é "hoje" — é a divergência entre as duas que sumia com a etiqueta
+  r = runIn(`return { doCarimbo: localStamp().slice(0, 10), deHoje: localISO() };`);
+  check(r.doCarimbo === r.deHoje,
+        "a data do carimbo e o 'hoje' da UI são sempre o mesmo dia");
+
+  // ponta a ponta: card criado agora nasce com etiqueta
+  r = runIn(`${seed}
+    state.editing = { colId: "c1", isNew: true, draft: "recém-criado",
+                      due: "", assignee: "", checks: [] };
+    commitEditor();
+    const c = state.board.columns[0].cards[0];
+    render();
+    return { at: c.at, novo: !!document.querySelector('.card .card-new') };`);
+  check(r.at.slice(0, 10) === new Date().toLocaleDateString("sv"),
+        "card criado pela UI nasce com a data local de hoje");
+  check(r.novo === true, "e a etiqueta aparece — era isto que falhava à noite");
+
+  // done_at idem: é ele que o auto-arquivamento por idade compara com o
+  // relógio local do servidor
+  r = runIn(`${seed}
+    commit({ type: "addCard", col: "c1", id: "x", text: "t" });
+    commit({ type: "setDone", id: "x", done: true });
+    return state.board.columns[0].cards[0].done_at;`);
+  check(r.slice(0, 10) === new Date().toLocaleDateString("sv"),
+        "done_at também é local (o auto-arquivamento compara com o relógio do servidor)");
+
+  close();
+}
+
 console.log("kanban · etiqueta de card novo");
 {
   const { runIn, close } = loadKanbanApp();

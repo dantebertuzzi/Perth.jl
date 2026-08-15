@@ -625,7 +625,7 @@ function applyLocal(op) {
       if (!f) break;
       const c = f.col.cards[f.index];
       c.done = op.done;
-      if (op.done) c.done_at = new Date().toISOString().slice(0, 16).replace("T", " ");
+      if (op.done) c.done_at = localStamp();
       else delete c.done_at;
       break;
     }
@@ -1319,7 +1319,7 @@ function commitEditor() {
                assignee: (ed.assignee || "").trim() || undefined,
                checklist: ed.checks.length ? ed.checks : undefined,
                by: state.me?.ip,
-               at: new Date().toISOString().slice(0, 16).replace("T", " ") });
+               at: localStamp() });
       state.selected = id;
     } else render();
   } else {
@@ -1590,6 +1590,17 @@ function setFilter(v) {
   $("#search").value = v;
   state.filter = v.trim().toLowerCase();
   render();
+}
+
+// Carimbo de momento no formato do servidor (_kanban_now no kanban.jl:
+// "yyyy-mm-dd HH:MM"), na hora LOCAL. toISOString devolve UTC, e usá-lo
+// aqui gravava num campo que o REPL preenche em hora local — o mesmo
+// campo passava a ter dois significados conforme o card tivesse nascido
+// no navegador ou no Julia, e num fuso negativo o carimbo do navegador
+// caía no dia seguinte depois do fim da tarde.
+function localStamp() {
+  const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+  return d.toISOString().slice(0, 16).replace("T", " ");
 }
 
 // data local (toISOString é UTC; compensa o fuso p/ comparar prazos)
