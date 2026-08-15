@@ -91,6 +91,10 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 - Double-click a bar (or table row) to edit; **duplicate** a task from
   the Edit menu or `Ctrl+D` (also `duplicate_task!(p, id)` in the REPL)
 - Tasks with notes show a **red dot** on the bar — hover to read them
+- **Swimlanes**: group the chart by assignee or by team (`Lanes:` in the
+  toolbar). Collapse a lane and its tasks fold into one bar spanning that
+  person's work — less detail, not less information. WBS summaries stay out of
+  lanes: a summary brackets children who may belong to different people.
 - **Collaborators** (File → Collaborators…, or `add_person!`): a registry of
   who works on the project — name, role, team, email, notes — feeding the
   assignee autocomplete. `assignee` stays free text, but every save trims the

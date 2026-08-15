@@ -278,7 +278,15 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
-#highlight-select { max-width: 200px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+/* Os dois seletores da toolbar são uma família só: destacar e agrupar
+   respondem à mesma pergunta (o que a tela mostra), e fonte diferente entre
+   vizinhos lê como dois controles de origens diferentes. */
+#highlight-select, #group-select {
+  max-width: 200px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
 
 /* Modo apresentação: some com a toolbar e a tabela de tarefas — sobra só
    a timeline do gráfico, em tela cheia */
@@ -372,6 +380,40 @@ body.presenting .task-table { display: none; }
   cursor: pointer;
 }
 .tt-row:hover { background: var(--line-soft); }
+
+/* Raias: cabeçalho de grupo na tabela e faixa correspondente no gráfico.
+   A faixa é o que faz as duas metades lerem como um desenho só. */
+.tt-lane {
+  display: grid;
+  grid-template-columns: 14px auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+  height: var(--row-h);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sel);
+  cursor: pointer;
+  user-select: none;
+}
+.tt-lane:hover { background: var(--line-soft); }
+.lane-mark { color: var(--muted); font-size: 10px; }
+.lane-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-role {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.lane-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.lane-band { fill: var(--sel); pointer-events: none; }
+.lane-roll { fill: var(--muted); opacity: .5; }
 .tt-row.selected { background: var(--sel); box-shadow: inset 2px 0 0 var(--purple); }
 .tt-row .c-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-row .c-name .ms { color: var(--amber); margin-right: 4px; }

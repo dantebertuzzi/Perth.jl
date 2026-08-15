@@ -8,6 +8,25 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Swimlanes** (`Lanes:` in the toolbar): group the chart by assignee or by
+  team. The lane header is a row like any other — same height, same grid — so
+  the table and the timeline stay one drawing; a header one pixel taller would
+  slide every bar below it. Collapsing a lane hides the tasks, not the person:
+  what is left is a single bar from the first day of their work to the last,
+  because whoever collapses wants less detail, not to lose the fact that they
+  are busy from March to May.
+- Lanes come from the collaborator registry, which is why the names had to be
+  clean first: with `assignee` fragmenting silently, the same "Ana" would have
+  shown up as three separate lanes.
+- WBS summaries are left out while lanes are on. A summary is the bracket over
+  children who may belong to different people, and hanging it in someone's
+  lane would claim they own the whole block — the CPM engine already treats
+  them that way, scheduling leaves only. For the same reason the search does
+  not count them while grouping: the counter promises every hit is reachable.
+- Grouping never repaints: a bar's automatic color comes from its position in
+  the *project*, not on screen. Dependency arrows are drawn only between
+  visible rows — an arrow into a collapsed lane points at nothing. And finding
+  a task inside a collapsed lane **opens** the lane.
 - **A collaborator registry** (`people`, `person`, `people!`, `add_person!`,
   `remove_person!`, and File → Collaborators…). `assignee` was — and stays —
   free text, and free text *fragments in silence*: `"Ana"`, `"Ana "` and

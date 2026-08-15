@@ -224,6 +224,11 @@
   <div class="toolbar">
     <button id="btn-new-task" class="primary">+ Task</button>
     <select id="highlight-select" title="Highlight tasks by assignee, status or type"></select>
+    <select id="group-select" title="Group tasks into swimlanes by assignee or team">
+      <option value="">Lanes: none</option>
+      <option value="assignee">Lanes: assignee</option>
+      <option value="team">Lanes: team</option>
+    </select>
 
     <span class="spacer"></span>
     <button id="warnings-chip" class="warn-chip" hidden

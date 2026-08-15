@@ -2601,6 +2601,128 @@ console.log("gantt · cadastro de colaboradores");
   close();
 }
 
+console.log("gantt · raias por responsável");
+{
+  const { runIn, close } = loadGanttApp();
+
+  const seed = `
+    const mk = (id, name, start, dur, assignee, extra = {}) => ({
+      id, name, start, duration: dur, assignee, progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", baseline_start: null,
+      baseline_duration: 0, cost: 0, deadline: null, pinned: false, ...extra });
+    state.current = { id: "p1", name: "P", people: [
+        { name: "Ana", role: "Arquiteta", team: "Projetos", email: "", notes: "" },
+        { name: "Bruno", role: "Eletricista", team: "Obra", email: "", notes: "" }],
+      tasks: [
+        mk("pai", "Estrutura", "2026-03-02", 12, ""),
+        mk("t1", "Fundação", "2026-03-02", 5, "Ana", { parent: "pai" }),
+        mk("t2", "Alvenaria", "2026-03-09", 5, "Bruno", { parent: "pai" }),
+        mk("t3", "Pintura", "2026-03-16", 3, "Ana"),
+        mk("t4", "Telhado", "2026-03-20", 2, "")] };
+    state.cpm = { cycle: false, finish: "2026-03-21", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  const linhas = `[...document.querySelectorAll("#task-rows > div")]
+    .map((d) => (d.className.split(" ")[0] === "tt-lane"
+      ? "lane:" + d.querySelector(".lane-name").textContent + ":" +
+        d.querySelector(".lane-count").textContent
+      : "task:" + d.querySelector(".c-name").textContent))`;
+
+  // sem raias, a tela é a ordem do projeto e nada mais
+  let r = runIn(`${seed} return ${linhas};`);
+  check(r.join("|") === "task:▾Estrutura|task:Fundação|task:Alvenaria|task:Pintura|task:Telhado",
+        "gantt: sem agrupamento, as linhas são as tarefas do projeto");
+
+  const agrupar = (modo) => `el.groupSelect.value = ${JSON.stringify(modo)};
+    el.groupSelect.dispatchEvent(new Event("change"));`;
+
+  r = runIn(`${agrupar("assignee")} return ${linhas};`);
+  check(r.join("|") === "lane:Ana:2|task:Fundação|task:Pintura|lane:Bruno:1|" +
+        "task:Alvenaria|lane:(unassigned):1|task:Telhado",
+        "gantt: raias em ordem alfabética, sem responsável por último");
+  // Um resumo é o colchete de filhos que podem ser de gente diferente:
+  // pendurá-lo numa raia diria que aquela pessoa é dona do bloco inteiro
+  check(!r.some((x) => /Estrutura/.test(x)),
+        "gantt: resumo de WBS não entra em raia nenhuma");
+
+  r = runIn(`return [...document.querySelectorAll(".tt-row .c-name")]
+    .map((x) => x.style.paddingLeft);`);
+  check(r.every((x) => x === "0px"),
+        "gantt: dentro da raia o recuo de hierarquia some — o pai está fora");
+
+  // O invariante das duas metades: a barra tem que cair na MESMA linha do
+  // nome, senão a tela mente sobre quem faz o quê
+  r = runIn(`const y = (id) => +[...document.querySelectorAll("#chart .bar")]
+      .find((b) => b.dataset.id === id).getAttribute("y");
+    const linha = (nome) => [...document.querySelectorAll("#task-rows > div")]
+      .findIndex((d) => d.textContent.includes(nome));
+    return { yAlv: y("t2"), rowAlv: linha("Alvenaria"),
+             yPin: y("t3"), rowPin: linha("Pintura"), h: ROW_H };`);
+  check(r.yAlv === r.rowAlv * r.h + 6 && r.yPin === r.rowPin * r.h + 6,
+        "gantt: a barra cai na mesma linha do nome, com raias no meio");
+
+  // agrupar não pode repintar: a cor vem da posição no PROJETO
+  const cor = `[...document.querySelectorAll("#chart .bar")]
+    .find((b) => b.dataset.id === "t3").getAttribute("fill")`;
+  const comRaia = runIn(`return ${cor};`);
+  const semRaia = runIn(`${agrupar("")} return ${cor};`);
+  check(comRaia === semRaia, "gantt: ligar a raia não muda a cor da barra");
+
+  // recolher esconde as tarefas, não a pessoa: sobra uma barra do começo do
+  // primeiro trabalho ao fim do último
+  r = runIn(`${agrupar("assignee")} toggleLane("Ana");
+    const roll = document.querySelector("#chart .lane-roll");
+    return { linhas: ${linhas}, x: +roll.getAttribute("x"),
+             w: +roll.getAttribute("width"),
+             x0: xOf(parseDate("2026-03-02")),
+             x1: xOf(parseDate("2026-03-18")) + PPD[state.zoom] };`);
+  check(!r.linhas.includes("task:Fundação") && !r.linhas.includes("task:Pintura"),
+        "gantt: raia recolhida esconde as tarefas dela");
+  check(r.linhas[0] === "lane:Ana:2", "gantt: e o cabeçalho continua contando 2");
+  check(r.x === r.x0 && r.x + r.w === r.x1,
+        "gantt: a barra da raia recolhida vai do primeiro dia ao último");
+
+  // seta entre raias existe; com uma ponta recolhida, some — apontar para
+  // uma linha que não está na tela é pior do que seta nenhuma
+  r = runIn(`toggleLane("Ana");
+    state.current.tasks.find((t) => t.id === "t2").dependencies = ["t1"];
+    renderChart();
+    const antes = document.querySelectorAll("#chart .dep").length;
+    toggleLane("Ana");
+    return { antes, depois: document.querySelectorAll("#chart .dep").length };`);
+  check(r.antes === 1 && r.depois === 0,
+        "gantt: seta de dependência some quando uma ponta está numa raia fechada");
+
+  // buscar tem que ALCANÇAR: se a tarefa está numa raia fechada, a raia abre
+  r = runIn(`state.current.tasks.find((t) => t.id === "t2").dependencies = [];
+    el.taskSearch.value = "fund";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    el.taskSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    return { linhas: ${linhas}, conta: el.taskSearchCount.textContent,
+             sel: state.selected };`);
+  check(r.linhas.includes("task:Fundação") && r.sel === "t1",
+        "gantt: buscar numa raia fechada abre a raia e seleciona a tarefa");
+  check(r.conta === "1/1", "gantt: e a contagem bate com o que dá para alcançar");
+
+  // o resumo escondido não pode entrar na contagem: ela promete que dá para
+  // chegar em todas as ocorrências
+  r = runIn(`el.taskSearch.value = "estrutura";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    return el.taskSearchCount.textContent;`);
+  check(r === "0/0", "gantt: resumo escondido pela raia não conta como ocorrência");
+
+  // por setor: a raia sai da FICHA da pessoa, não da tarefa
+  r = runIn(`el.taskSearch.value = "";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    ${agrupar("team")} return ${linhas};`);
+  check(r.join("|") === "lane:Obra:1|task:Alvenaria|lane:Projetos:2|task:Fundação|" +
+        "task:Pintura|lane:(no team):1|task:Telhado",
+        "gantt: raias por setor vêm do cadastro de colaboradores");
+
+  close();
+}
+
 console.log("gantt · painel de recursos");
 {
   const { runIn, close } = loadGanttApp();

@@ -43,6 +43,8 @@ const state = {
   cpm: null,           // análise CPM do servidor {cycle, finish, byId: Map}
   showCritical: false,
   highlight: null,      // {kind: "assignee"|"status"|"type", value} ou null
+  groupBy: "",          // "" | "assignee" | "team" — raias na tabela e no gráfico
+  lanesClosed: new Set(),  // chaves de raia recolhidas
   search: "",           // busca por nome de tarefa (ver matchesSearch)
   searchAt: 0,          // ocorrência atual, percorrida com Enter
   warnings: [],         // problemas do plano, vindos do servidor
@@ -204,6 +206,7 @@ const el = {
   fbHint: $("#fb-hint"),
   fbChoose: $("#fb-choose"),
   highlightSelect: $("#highlight-select"),
+  groupSelect: $("#group-select"),
   taskSearch: $("#task-search"),
   warningsChip: $("#warnings-chip"),
   taskSearchCount: $("#task-search-count"),
@@ -457,6 +460,9 @@ async function openProject(id) {
   state.current = await api(`/api/projects/${id}`);
   noteBase();
   state.selected = null;
+  // raia recolhida é sobre AQUELE projeto: "Ana" fechada aqui não quer
+  // dizer "Ana" fechada no projeto seguinte
+  state.lanesClosed.clear();
   el.projectSelect.value = id;
   localStorage.setItem("perth-last-project", id);
   await fetchAnalytics();
@@ -1122,29 +1128,110 @@ function renderHeader() {
   }
 }
 
+/* A ficha cadastrada de um nome de responsável (ou null). */
+function personOf(nome) {
+  const k = (nome || "").trim().toLowerCase();
+  if (!k) return null;
+  return (state.current?.people || [])
+    .find((pe) => pe.name.toLowerCase() === k) || null;
+}
+
+function laneKeyOf(t) {
+  if (state.groupBy === "team") return (personOf(t.assignee)?.team || "").trim();
+  return (t.assignee || "").trim();
+}
+
+const laneLabel = (chave) => chave ||
+  T(state.groupBy === "team" ? "(no team)" : "(unassigned)");
+
+/* As linhas da tela. A tabela e o gráfico percorrem ESTA lista, na mesma
+   ordem — as duas metades são um só desenho, e um índice fora de sincronia
+   desalinha o nome da barra.
+
+   Sem agrupamento, é a ordem do projeto e nada mais. Com raias, resumos de
+   WBS ficam de fora: um resumo é o colchete de filhos que podem ser de gente
+   diferente, e pendurá-lo na raia de alguém diria que aquela pessoa é dona do
+   bloco inteiro. O motor de CPM já os trata assim — agenda folhas, resumos
+   são recipientes. */
+function displayRows() {
+  const tasks = state.current?.tasks || [];
+  if (!state.groupBy) return tasks.map((task) => ({ kind: "task", task }));
+
+  const raias = new Map();
+  for (const t of tasks) {
+    if (state.wbs?.summary.has(t.id)) continue;
+    const k = laneKeyOf(t);
+    if (!raias.has(k)) raias.set(k, []);
+    raias.get(k).push(t);
+  }
+  // sem dono por último: é uma pendência, não uma pessoa — mesmo motivo de
+  // ela ficar no pé do painel de recursos
+  const chaves = [...raias.keys()].sort((a, b) =>
+    !a ? 1 : !b ? -1 : a.localeCompare(b));
+
+  const rows = [];
+  for (const key of chaves) {
+    const tarefas = raias.get(key);
+    const closed = state.lanesClosed.has(key);
+    rows.push({ kind: "lane", key, tasks: tarefas, closed });
+    if (!closed) for (const task of tarefas) rows.push({ kind: "task", task });
+  }
+  return rows;
+}
+
+function toggleLane(key) {
+  state.lanesClosed.has(key) ? state.lanesClosed.delete(key)
+                             : state.lanesClosed.add(key);
+  renderTable();
+  renderChart();
+}
+
 function renderTable() {
   el.taskRows.innerHTML = "";
-  for (const t of state.current.tasks) {
-    const row = document.createElement("div");
-    const info = state.cpm?.byId.get(t.id);
-    const crit = state.showCritical && info?.critical;
-    const depth = state.wbs?.depth.get(t.id) ?? 0;
-    const isSum = state.wbs?.summary.has(t.id) ?? false;
-    row.className = "tt-row" + (t.id === state.selected ? " selected" : "")
-      + (crit ? " critical" : "")
-      + (isSum ? " summary" : "")
-      + (taskMatchesHighlight(t) ? "" : " dim");
-    if (state.showCritical && info) row.title = `slack: ${info.slack_days}d`;
-    row.dataset.id = t.id;
-    row.innerHTML = `
-      <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? '<span class="sum-mark">▾</span>' : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
-      <span class="c-date">${t.start}</span>
-      <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
-      <span class="c-num">${t.progress}</span>`;
-    row.addEventListener("click", () => selectTask(t.id));
-    row.addEventListener("dblclick", () => openModal(t.id));
-    el.taskRows.appendChild(row);
+  for (const row of displayRows()) {
+    el.taskRows.appendChild(row.kind === "lane" ? laneRow(row) : taskRow(row.task));
   }
+}
+
+/* Cabeçalho de raia: quem é, o que faz, quantas tarefas. A linha inteira
+   recolhe a raia — o alvo é o nome, não uma seta de 10px. */
+function laneRow(row) {
+  const div = document.createElement("div");
+  div.className = "tt-lane" + (row.closed ? " closed" : "");
+  div.dataset.lane = row.key;
+  const pe = state.groupBy === "assignee" ? personOf(row.key) : null;
+  const legenda = pe ? [pe.role, pe.team].filter(Boolean).join(" · ") : "";
+  div.innerHTML = `
+    <span class="lane-mark">${row.closed ? "▸" : "▾"}</span>
+    <span class="lane-name">${escapeHTML(laneLabel(row.key))}</span>
+    <span class="lane-role">${escapeHTML(legenda)}</span>
+    <span class="lane-count">${row.tasks.length}</span>`;
+  div.addEventListener("click", () => toggleLane(row.key));
+  return div;
+}
+
+function taskRow(t) {
+  const row = document.createElement("div");
+  const info = state.cpm?.byId.get(t.id);
+  const crit = state.showCritical && info?.critical;
+  // dentro de uma raia a hierarquia não vale: o pai pode estar em outra
+  // raia, e o recuo apontaria para uma linha que não está ali
+  const depth = state.groupBy ? 0 : (state.wbs?.depth.get(t.id) ?? 0);
+  const isSum = state.wbs?.summary.has(t.id) ?? false;
+  row.className = "tt-row" + (t.id === state.selected ? " selected" : "")
+    + (crit ? " critical" : "")
+    + (isSum ? " summary" : "")
+    + (taskMatchesHighlight(t) ? "" : " dim");
+  if (state.showCritical && info) row.title = `slack: ${info.slack_days}d`;
+  row.dataset.id = t.id;
+  row.innerHTML = `
+    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? '<span class="sum-mark">▾</span>' : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
+    <span class="c-date">${t.start}</span>
+    <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
+    <span class="c-num">${t.progress}</span>`;
+  row.addEventListener("click", () => selectTask(t.id));
+  row.addEventListener("dblclick", () => openModal(t.id));
+  return row;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1165,9 +1252,12 @@ function svgTitle(text) {
 function renderChart() {
   const ppd = PPD[state.zoom];
   const { start, days } = state.range;
-  const tasks = state.current.tasks;
+  const rows = displayRows();
+  // cor por posição no PROJETO, não na tela: agrupar em raias não pode
+  // repintar as barras, senão a mesma tarefa muda de cor ao ligar a raia
+  const corDe = new Map(state.current.tasks.map((t, i) => [t.id, i]));
   const totalW = days * ppd;
-  const totalH = Math.max(tasks.length * ROW_H + 40, el.tlBody.clientHeight);
+  const totalH = Math.max(rows.length * ROW_H + 40, el.tlBody.clientHeight);
 
   const chart = el.chart;
   chart.innerHTML = "";
@@ -1206,19 +1296,27 @@ function renderChart() {
   }
 
   // Linhas horizontais das linhas de tarefa
-  for (let r = 1; r <= tasks.length; r++) {
+  for (let r = 1; r <= rows.length; r++) {
     chart.appendChild(svg("line", {
       class: "row-line", x1: 0, y1: r * ROW_H, x2: totalW, y2: r * ROW_H,
     }));
   }
 
-  // Setas de dependência (desenhadas antes das barras para ficarem por baixo)
-  const rowOf = new Map(tasks.map((t, i) => [t.id, i]));
-  for (const t of tasks) {
+  // Setas de dependência (desenhadas antes das barras para ficarem por baixo).
+  // Só entre linhas visíveis: numa raia fechada a tarefa não tem linha, e uma
+  // seta apontando para o vazio é pior do que seta nenhuma.
+  const rowOf = new Map();
+  const byId = new Map();
+  rows.forEach((r, i) => {
+    if (r.kind !== "task") return;
+    rowOf.set(r.task.id, i);
+    byId.set(r.task.id, r.task);
+  });
+  for (const t of byId.values()) {
     for (const depRef of t.dependencies || []) {
       const dep = depId(depRef);
       if (!rowOf.has(dep)) continue;
-      const pred = tasks[rowOf.get(dep)];
+      const pred = byId.get(dep);
       const x1 = xOf(addDays(taskEnd(pred), 1));
       const y1 = rowOf.get(dep) * ROW_H + ROW_H / 2;
       const x2 = xOf(parseDate(t.start));
@@ -1232,10 +1330,12 @@ function renderChart() {
   }
 
   // Barras e marcos
-  tasks.forEach((t, i) => {
+  rows.forEach((row, i) => {
+    if (row.kind === "lane") { drawLane(chart, row, i, totalW, ppd); return; }
+    const t = row.task;
     const y = i * ROW_H + 6;
     const h = ROW_H - 12;
-    const color = t.color || AUTO_COLORS[i % AUTO_COLORS.length];
+    const color = t.color || AUTO_COLORS[corDe.get(t.id) % AUTO_COLORS.length];
     const x = xOf(parseDate(t.start));
     const dim = taskMatchesHighlight(t) ? "" : " dim";
     const hasNotes = (t.notes || "").trim().length > 0;
@@ -1411,6 +1511,25 @@ function renderChart() {
   chart.appendChild(svg("line", {
     class: "today-line", x1: tx, y1: 0, x2: tx, y2: totalH,
   }));
+}
+
+/* A faixa da raia no gráfico. Fechada, ela vira uma barra só, do começo do
+   primeiro trabalho ao fim do último: recolher a raia esconde as tarefas,
+   não a pessoa — quem fecha quer ver menos detalhe, não perder a informação
+   de que ela está ocupada de março a maio. */
+function drawLane(chart, row, i, totalW, ppd) {
+  chart.appendChild(svg("rect", {
+    class: "lane-band", x: 0, y: i * ROW_H, width: totalW, height: ROW_H,
+  }));
+  if (!row.closed) return;
+  const x0 = Math.min(...row.tasks.map((t) => xOf(parseDate(t.start))));
+  const x1 = Math.max(...row.tasks.map((t) => xOf(taskEnd(t)) + ppd));
+  const roll = svg("rect", {
+    class: "lane-roll", x: x0, y: i * ROW_H + ROW_H / 2 - 4,
+    width: Math.max(x1 - x0, 3), height: 8, rx: 4,
+  });
+  roll.appendChild(svgTitle(`${laneLabel(row.key)} — ${row.tasks.length}`));
+  chart.appendChild(roll);
 }
 
 /* Caminho em cotovelo entre fim da predecessora e início da sucessora */
@@ -3066,9 +3185,13 @@ $$(".zoom-group button").forEach((b) =>
    seguinte, e um índice guardado apontaria para a tarefa errada. */
 function searchHits() {
   if (!state.current || !state.search) return [];
-  const out = [];
-  state.current.tasks.forEach((t, i) => matchesSearch(t) && out.push(i));
-  return out;
+  // ids, não índices: a tarefa pode estar numa raia fechada (revealTask
+  // abre) ou ser um resumo que o agrupamento esconde — e aí ela não pode
+  // contar, porque a contagem promete que dá para chegar em todas
+  return state.current.tasks
+    .filter((t) => matchesSearch(t) &&
+                   !(state.groupBy && state.wbs?.summary.has(t.id)))
+    .map((t) => t.id);
 }
 
 /* Leva à k-ésima ocorrência, dando a volta nas duas pontas. Seleciona a
@@ -3079,8 +3202,7 @@ function goToHit(k) {
   if (!hits.length) return;
   const n = hits.length;
   state.searchAt = ((k % n) + n) % n;              // volta nas duas direções
-  const linha = hits[state.searchAt];
-  state.selected = state.current.tasks[linha].id;
+  state.selected = hits[state.searchAt];
   revealTask(state.selected);
   el.taskSearchCount.textContent = `${state.searchAt + 1}/${n}`;
 }
@@ -3090,12 +3212,17 @@ function goToHit(k) {
    aviso tem que levar ao problema, não só nomeá-lo. */
 function revealTask(id) {
   if (!state.current) return;
-  const linha = state.current.tasks.findIndex((x) => x.id === id);
-  if (linha < 0) return;
-  const t = state.current.tasks[linha];
+  const t = state.current.tasks.find((x) => x.id === id);
+  if (!t) return;
   state.selected = id;
+  // numa raia fechada é preciso ABRIR a raia: apontar para uma linha que não
+  // está na tela é pior do que não apontar
+  if (state.groupBy) state.lanesClosed.delete(laneKeyOf(t));
   renderTable();
   renderChart();
+  const linha = displayRows()
+    .findIndex((r) => r.kind === "task" && r.task.id === id);
+  if (linha < 0) return;   // resumo, escondido enquanto há raias
   // Rolar só na vertical não basta: a linha acende na tabela e a BARRA fica
   // fora da vista, porque ela está no tempo, não na lista. Num projeto de um
   // ano há meses de distância entre uma tarefa e a seguinte.
@@ -3153,6 +3280,16 @@ el.taskSearch.addEventListener("keydown", (ev) => {
     ev.stopPropagation();          // nem abrir o modal pelo atalho global
     goToHit(state.searchAt + (ev.shiftKey ? -1 : 1));
   }
+});
+
+/* Raias ficam guardadas por navegador, como o zoom e o tema: é preferência
+   de quem olha, não dado do projeto — cada um vê o mesmo plano do seu jeito. */
+el.groupSelect.addEventListener("change", () => {
+  state.groupBy = el.groupSelect.value;
+  state.lanesClosed.clear();
+  localStorage.setItem("perth-lanes", state.groupBy);
+  renderTable();
+  renderChart();
 });
 
 el.highlightSelect.addEventListener("change", () => {
@@ -3492,6 +3629,11 @@ function bootFailed(err) {
 
 (async function init() {
   applyUI();
+  state.groupBy = localStorage.getItem("perth-lanes") || "";
+  el.groupSelect.value = state.groupBy;
+  // um valor guardado de uma versão futura/antiga não pode deixar o seletor
+  // dizendo uma coisa e a tela mostrando outra
+  if (el.groupSelect.value !== state.groupBy) state.groupBy = "";
   try {
     await bootData();
   } catch (err) {
