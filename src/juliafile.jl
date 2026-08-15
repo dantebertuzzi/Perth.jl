@@ -168,8 +168,49 @@ function _eval_safe(e::Expr)
     throw(ArgumentError("Perth: construct not allowed in project file: $(e.head)"))
 end
 
+# Tetos do fonte aceito. Um .perth.jl real aninha 4 níveis (Project → tasks
+# → GanttTask → Date); 32 é folga de sobra. O motivo de existirem é grave: o
+# parser do PRÓPRIO Julia é recursivo e morre — não lança exceção, derruba o
+# processo com core dump — em poucos milhares de colchetes aninhados. Como
+# fonte chega por HTTP (import e o painel "ver código"), sem este teto
+# qualquer cliente derruba o servidor com alguns KB de "[[[[[".
+const _MAX_SOURCE_BYTES = 4 * 1024 * 1024
+const _MAX_SOURCE_DEPTH = 32
+
+# Conta profundidade ignorando o que está dentro de string e de comentário:
+# um nome de tarefa com "(((" não é aninhamento, e recusá-lo seria um falso
+# positivo em projeto legítimo.
+function _guard_source(src::AbstractString)
+    sizeof(src) <= _MAX_SOURCE_BYTES || throw(ArgumentError(
+        "Perth: project file is too large " *
+        "(over $(_MAX_SOURCE_BYTES ÷ 1024^2) MB)"))
+    depth = 0
+    nastring = escapado = nocomentario = false
+    for c in src
+        if nocomentario
+            c == '\n' && (nocomentario = false)
+        elseif nastring
+            if escapado;        escapado = false
+            elseif c == '\\';   escapado = true
+            elseif c == '"';    nastring = false
+            end
+        elseif c == '"';       nastring = true
+        elseif c == '#';        nocomentario = true
+        elseif c == '(' || c == '[' || c == '{'
+            depth += 1
+            depth <= _MAX_SOURCE_DEPTH || throw(ArgumentError(
+                "Perth: project file nests too deeply " *
+                "(over $(_MAX_SOURCE_DEPTH) levels)"))
+        elseif c == ')' || c == ']' || c == '}'
+            depth = max(depth - 1, 0)
+        end
+    end
+    return nothing
+end
+
 # Faz o parse do fonte completo e exige exatamente uma expressão Project(...)
 function _parse_project_source(src::AbstractString)
+    _guard_source(src)          # antes do Meta.parseall: ver _guard_source
     ex = Meta.parseall(String(src))
     exprs = [a for a in ex.args if !(a isa LineNumberNode)]
     length(exprs) == 1 ||
@@ -177,6 +218,15 @@ function _parse_project_source(src::AbstractString)
     val = _eval_safe(exprs[1])
     val isa Project ||
         throw(ArgumentError("Perth: file does not evaluate to a Project"))
+    # file_path é caminho de espelhamento DESTA máquina e, por isso, nunca é
+    # escrito no formato (ver types.jl). O leitor precisa dizer o mesmo: um
+    # arquivo que o declare faz o primeiro salvamento gravar por cima do que
+    # ele apontar — ~/.ssh/authorized_keys, um fonte, um documento. Recusar é
+    # melhor que ignorar: arquivo de terceiros com esse campo não é engano de
+    # digitação, e falhar alto é o que o resto deste parser faz.
+    isempty(val.file_path) ||
+        throw(ArgumentError("Perth: file_path is machine-specific and never " *
+                            "part of a project file — set it with set_file_path!"))
     _prune_dependencies!(val)
     _prune_parents!(val)
     _rollup_summaries!(val)

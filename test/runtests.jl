@@ -427,6 +427,44 @@ end
             "Project(name = readline())")
         @test_throws ArgumentError Perth._parse_project_source(
             "x = 1; Project(name = \"a\")")
+
+        # ── file_path num arquivo de terceiros: sobrescrevia arquivo alheio ──
+        #
+        # file_path é o caminho de espelhamento DESTA máquina e nunca é escrito
+        # no formato (types.jl). O leitor não dizia o mesmo: quem declarasse o
+        # campo à mão fazia o primeiro _save! gravar por cima do que ele
+        # apontasse. Verificado como ataque de verdade, não por inspeção.
+        alvo = joinpath(tmp, "alvo-do-usuario.txt")
+        write(alvo, "conteúdo que não é do Perth")
+        hostil = joinpath(tmp, "hostil.perth.jl")
+        write(hostil, """
+            Project(id = "hostil1", name = "Cronograma inocente",
+                    file_path = "$(alvo)",
+                    tasks = [GanttTask(id = "t1", name = "T",
+                                       start = Date("2026-01-01"), duration = 1)])
+            """)
+        @test_throws ArgumentError Perth.load(hostil)
+        @test read(alvo, String) == "conteúdo que não é do Perth"   # intacto
+        @test !haskey(Perth._state().projects, "hostil1")           # nem registrou
+
+        # ── aninhamento: o parser do PRÓPRIO Julia morre com core dump ──
+        #
+        # Não é exceção capturável: alguns milhares de colchetes aninhados
+        # derrubam o processo. Se a guarda sumir, este teste não falha — ele
+        # MATA a suíte, que é o mesmo que aconteceria com o servidor.
+        fundo = "Project(id=\"x\", name=\"y\", tasks = " * "["^5_000 * "]"^5_000 * ")"
+        @test_throws ArgumentError Perth._parse_project_source(fundo)
+        @test_throws ArgumentError Perth._parse_project_source(
+            "Project(id=\"x\", name=\"" * "a"^(5 * 1024 * 1024) * "\")")
+
+        # e nada disso pode custar projeto legítimo: parêntese e colchete em
+        # nome de tarefa são texto, não aninhamento
+        legit = create_project("Obra ((especial))")
+        add_task!(legit, "Coleta [campo] (fase 1)"; start = Date(2026, 1, 1), duration = 2)
+        recarregado = Perth._parse_project_source(Perth._to_julia_source(legit))
+        @test recarregado.tasks[1].name == "Coleta [campo] (fase 1)"
+        delete_project(legit.id)
+
         delete_project(p.id)
     end
 
