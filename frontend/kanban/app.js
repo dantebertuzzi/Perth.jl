@@ -53,6 +53,11 @@ function actionLabel(type) {
 
 // Chave de acesso (share protegido): vem no link ?key=... e fica na
 // sessão para sobreviver a navegação/reload
+// Tradução no ponto de uso: texto criado em JS nasce depois da varredura do
+// PerthI18n (que passa uma vez, no set()), então literal solto aqui fica em
+// inglês para sempre. Mesmo T do gantt, um só para o arquivo — eram oito
+// cópias idênticas espalhadas pelas funções.
+const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
 const $  = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 
@@ -807,7 +812,7 @@ function render() {
     foot.className = "col-foot";
     const add = document.createElement("button");
     add.className = "add-card";
-    add.textContent = "+ card";
+    add.textContent = T("+ card");
     add.addEventListener("click", () => openNewCard(col.id));
     applyRestriction(add, "addCard");
     foot.append(add);
@@ -818,7 +823,7 @@ function render() {
 
   const addCol = document.createElement("button");
   addCol.className = "add-col";
-  addCol.textContent = "+ new column";
+  addCol.textContent = T("+ new column");
   addCol.addEventListener("click", newColumn);
   applyRestriction(addCol, "addCol");
   boardEl.append(addCol);
@@ -912,7 +917,6 @@ function cardEl(card) {
     const meta = document.createElement("div");
     meta.className = "card-meta";
     if (fresh) {
-      const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
       const tag = document.createElement("span");
       tag.className = "card-new";
       tag.textContent = T("new");
@@ -922,7 +926,7 @@ function cardEl(card) {
     if (card.by) {
       const by = document.createElement("span");
       by.className = "card-by";
-      by.textContent = "by " + displayFor(card.by);
+      by.textContent = T("by") + " " + displayFor(card.by);
       by.title = card.by + (card.at ? " · " + card.at : "");
       meta.append(by);
     } else {
@@ -959,7 +963,7 @@ function cardEl(card) {
     if (card.done) {
       const arch = document.createElement("button");
       arch.className = "card-archive";
-      arch.textContent = "archive";
+      arch.textContent = T("archive");
       arch.title = "move to the archive";
       arch.addEventListener("pointerdown", (e) => e.stopPropagation());
       arch.addEventListener("click", (e) => {
@@ -1227,7 +1231,7 @@ function editorEl(col, card) {
   const row = document.createElement("div");
   row.className = "editor-row";
   const lbl = document.createElement("label");
-  lbl.textContent = "due";
+  lbl.textContent = T("due");
   const date = document.createElement("input");
   date.type = "date";
   date.value = state.editing.due || "";
@@ -1244,7 +1248,7 @@ function editorEl(col, card) {
   row.append(lbl, date);
 
   const lblA = document.createElement("label");
-  lblA.textContent = "assignee";
+  lblA.textContent = T("assignee");
   const who = document.createElement("input");
   who.className = "assignee-input";
   who.placeholder = "name";
@@ -1890,7 +1894,7 @@ function showArchived() {
   if (!arch.length) {
     const p = document.createElement("div");
     p.className = "empty-note";
-    p.textContent = "Nothing archived yet — finish a card (✓) and hit \"archive\".";
+    p.textContent = T("Nothing archived yet — finish a card (✓) and hit \"archive\".");
     body.append(p);
   }
   for (const entry of [...arch].reverse()) {   // mais recente primeiro
@@ -1908,14 +1912,14 @@ function showArchived() {
     ].filter(Boolean).join(" · ");
     txt.append(sub);
     const restore = document.createElement("button");
-    restore.textContent = "restore";
+    restore.textContent = T("restore");
     restore.addEventListener("click", () => {
       commit({ type: "restoreCard", id: entry.id });
       showArchived();
     });
     const del = document.createElement("button");
     del.className = "danger";
-    del.textContent = "delete";
+    del.textContent = T("delete");
     del.title = "delete forever (cannot be undone)";
     del.addEventListener("click", () => {
       if (!confirm("Delete this card forever? This cannot be undone.")) return;
@@ -1962,7 +1966,7 @@ function showAliases() {
   }
   const hint = document.createElement("div");
   hint.className = "alias-hint";
-  hint.textContent = "Names apply to everyone's screen: cursors, chips and card stamps. Empty = back to the IP.";
+  hint.textContent = T("Names apply to everyone's screen: cursors, chips and card stamps. Empty = back to the IP.");
   body.append(hint);
   showModal("Rename machines", body, "aliases");
 }
@@ -1975,7 +1979,6 @@ function showAliases() {
 // no servidor (_kanban_permitted em kanban.jl), então uma linha para ele
 // seria enganosa.
 function showPermissions() {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
 
   // reconstruída do zero a cada eco do servidor (mesmo padrão de
   // showActivity/showArchived) — preserva a rolagem entre reconstruções
@@ -2340,7 +2343,7 @@ function showActivity() {
   if (!state.log.length) {
     const p = document.createElement("div");
     p.className = "empty-note";
-    p.textContent = "No activity yet.";
+    p.textContent = T("No activity yet.");
     body.append(p);
   }
   for (const e of [...state.log].reverse()) {
@@ -2400,7 +2403,7 @@ function showShare() {
   const body = document.createElement("div");
   const note = document.createElement("div");
   note.className = "empty-note";
-  note.textContent = "loading…";
+  note.textContent = T("loading…");
   body.append(note);
   shareBody = body;
   showModal(window.PerthI18n ? PerthI18n.t("Share this board") : "Share this board",
@@ -2417,7 +2420,6 @@ function renderShareBtn(info) {
   const usable = !!(info && info.can_share && info.host);
   btn.hidden = !usable;
   if (!usable) return;
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   btn.classList.toggle("broadcasting", !!info.shared);
   btn.setAttribute("aria-pressed", info.shared ? "true" : "false");
   const label = T(info.shared ? "Transmitting — click to stop"
@@ -2469,7 +2471,6 @@ function refreshShare() {
 // do gantt. Aplicar uma chave nova derruba quem está na rede: a chave
 // antiga passou a ser a errada, e cada um é reperguntado na tela.
 function shareKeyRow(body, info) {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const wrap = document.createElement("div");
   const row = document.createElement("div");
   row.className = "share-key";
@@ -2529,7 +2530,6 @@ function shareKeyRow(body, info) {
 }
 
 function renderShare(body, info) {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   body.textContent = "";
 
   // Chave da transmissão: só o host manda, e só quando o servidor subiu
@@ -2575,11 +2575,11 @@ function renderShare(body, info) {
     const code = document.createElement("code");
     code.textContent = u;
     const btn = document.createElement("button");
-    btn.textContent = "copy";
+    btn.textContent = T("copy");
     btn.addEventListener("click", () => {
       navigator.clipboard?.writeText(u);
-      btn.textContent = "copied!";
-      setTimeout(() => (btn.textContent = "copy"), 1400);
+      btn.textContent = T("copied!");
+      setTimeout(() => (btn.textContent = T("copy")), 1400);
     });
     row.append(code, btn);
     body.append(row);
@@ -2607,7 +2607,6 @@ function renderShare(body, info) {
 }
 
 function showKeyGate() {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const body = document.createElement("div");
   const p = document.createElement("div");
   p.className = "empty-note";
@@ -2649,7 +2648,6 @@ function showKeyGate() {
 // Transmissão desligada pelo host: sem retry automático (o servidor recusa
 // a conexão), mas com um botão para tentar de novo quando religarem
 function showShareOff() {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const body = document.createElement("div");
   const p = document.createElement("div");
   p.className = "empty-note";
@@ -2670,7 +2668,7 @@ function showBoards() {
   const body = document.createElement("div");
   const note = document.createElement("div");
   note.className = "empty-note";
-  note.textContent = "loading…";
+  note.textContent = T("loading…");
   body.append(note);
   showModal("Boards", body, "boards");
   fetch(`/api/boards${keyQS()}`)
@@ -2687,11 +2685,11 @@ function showBoards() {
         if (name === info.current) {
           const cur = document.createElement("span");
           cur.className = "boards-current";
-          cur.textContent = "current";
+          cur.textContent = T("current");
           row.append(cur);
         } else if (state.me?.host) {
           const sw = document.createElement("button");
-          sw.textContent = "switch";
+          sw.textContent = T("switch");
           sw.title = "switches the board for everyone";
           sw.addEventListener("click", () => send({ type: "useBoard", name }));
           row.append(sw);
@@ -2715,18 +2713,18 @@ function showBoards() {
           e.stopPropagation();
         });
         const btn = document.createElement("button");
-        btn.textContent = "create";
+        btn.textContent = T("create");
         btn.addEventListener("click", go);
         create.append(input, btn);
         body.append(create);
-        hint.textContent = "One board is active at a time — switching changes it for every connected machine.";
+        hint.textContent = T("One board is active at a time — switching changes it for every connected machine.");
       } else {
-        hint.textContent = "Only the host machine can switch or create boards.";
+        hint.textContent = T("Only the host machine can switch or create boards.");
       }
       body.append(hint);
     })
     .catch(() => {
-      note.textContent = "could not load the board list";
+      note.textContent = T("could not load the board list");
     });
 }
 
@@ -2736,7 +2734,6 @@ function showBoards() {
 // lead time = done_at - at; throughput = concluídos por janela; WIP =
 // cards não concluídos, com a idade do mais antigo.
 function showMetrics() {
-  const T = (k) => (window.PerthI18n ? PerthI18n.t(k) : k);
   const parseAt = (s) => (s ? new Date(String(s).replace(" ", "T")) : null);
   const now = Date.now();
   const day = 86400000;

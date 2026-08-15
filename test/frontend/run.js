@@ -1616,6 +1616,102 @@ console.log("gantt · estimativa de três pontos (PERT)");
   close();
 }
 
+/* Texto criado em JS nasce DEPOIS da varredura do PerthI18n — que passa uma
+ * vez, no set() — então um literal solto num textContent fica em inglês para
+ * sempre, dentro de uma tela traduzida no resto. O defeito já apareceu quatro
+ * vezes (rótulo `live` do kanban, título do modal, `(top level)`, e mais seis
+ * de uma varredura), sempre igual. Este bloco não conserta uma ocorrência:
+ * fecha a torneira. Qualquer literal novo atribuído a textContent/innerHTML
+ * tem que passar por T() ou existir no dicionário.
+ *
+ * O critério é "existe tradução em pt": PerthI18n.t(k) devolve a própria
+ * chave quando não conhece a string, então t(s) === s é exatamente o que o
+ * usuário veria em inglês. Strings que são iguais nos dois idiomas (nomes
+ * próprios, símbolos) vão na lista de isentas, com o motivo. */
+/* O T do kanban era declarado oito vezes, uma por função. Virou um só, do
+ * módulo — o que só é seguro se todas as funções ainda o enxergarem. Um
+ * escopo errado aqui não dá erro de sintaxe: dá ReferenceError na hora de
+ * desenhar um card, com a tela em branco. Este bloco desenha de verdade. */
+console.log("kanban · rótulos criados em JS falam o idioma da tela");
+{
+  const { runIn, close } = loadKanbanApp();
+
+  const seed = `state.board = { columns: [{ id: "c1", name: "backlog", cards: [
+      { id: "k1", text: "com dono", by: "repl", at: "2020-01-01 09:00", done: true }
+    ] }], archive: [{ id: "k9", text: "arquivado", by: "repl" }], aliases: {} };`;
+
+  let r = runIn(`${seed} PerthI18n.set("pt"); render();
+    return { arquivar: document.querySelector(".card-archive").textContent,
+             por: document.querySelector(".card-by").textContent,
+             novaColuna: document.querySelector(".add-col").textContent,
+             novoCard: document.querySelector(".add-card").textContent };`);
+  check(r.arquivar === "arquivar", "kanban: o botão de arquivar do card fala pt");
+  check(/^por /.test(r.por), "kanban: o crédito do card é \"por <nome>\", não \"by\"");
+  check(r.novaColuna === "+ nova coluna", "kanban: o botão de nova coluna também");
+
+  r = runIn(`PerthI18n.set("fr"); render();
+    return { arquivar: document.querySelector(".card-archive").textContent,
+             novaColuna: document.querySelector(".add-col").textContent };`);
+  check(r.arquivar === "archiver" && r.novaColuna === "+ nouvelle colonne",
+        "kanban: e troca junto quando o idioma muda");
+
+  // o arquivo e o editor de card são construídos por outras funções, que
+  // tinham cópias próprias de T — cada uma precisa enxergar o do módulo
+  r = runIn(`PerthI18n.set("pt"); showArchived();
+    const txt = document.body.textContent;
+    return { restaurar: txt.includes("restaurar"), excluir: txt.includes("excluir"),
+             semIngles: !txt.includes("restore") && !txt.includes("delete") };`);
+  check(r.restaurar && r.excluir && r.semIngles,
+        "kanban: o arquivo mostra restaurar/excluir, sem sobra em inglês");
+
+  close();
+}
+
+console.log("i18n · nenhum literal escapa da tradução");
+{
+  const w = loadPage("frontend/index.html");
+  w.PerthI18n.set("pt");
+
+  // iguais em pt de propósito, ou não-texto
+  const ISENTAS = new Set(["Perth", "Kanban", "PERT", "P80", "WBS", "—", "…"]);
+
+  // .textContent = "…" / .innerHTML = '…' com literal (T(...) não casa:
+  // exige aspas logo depois do "=")
+  const LITERAL = /\.(?:textContent|innerHTML)\s*=\s*("(?:\\.|[^"])*"|'(?:\\.|[^'])*')/g;
+
+  const varrer = (arquivo) => {
+    const src = read(arquivo);
+    const achados = [];
+    for (const m of src.matchAll(LITERAL)) {
+      let txt = m[1].slice(1, -1).replace(/\\(.)/g, "$1");
+      txt = txt.replace(/<[^>]*>/g, "").trim();          // innerHTML: só o texto
+      if (!/[A-Za-z]{2}/.test(txt)) continue;            // símbolo, número, vazio
+      if (ISENTAS.has(txt)) continue;
+      if (w.PerthI18n.t(txt) !== txt) continue;          // tem tradução
+      const linha = src.slice(0, m.index).split("\n").length;
+      achados.push(`${arquivo}:${linha}  ${JSON.stringify(txt.slice(0, 60))}`);
+    }
+    return achados;
+  };
+
+  for (const arquivo of ["frontend/app.js", "frontend/kanban/app.js",
+                         "frontend/shared/presence.js"]) {
+    const achados = varrer(arquivo);
+    if (achados.length) achados.forEach((a) => console.error("      " + a));
+    check(achados.length === 0,
+          `${arquivo}: todo literal de tela passa por T() ou está no dicionário`);
+  }
+
+  // a varredura precisa mesmo pegar o erro que ela existe para pegar
+  const cobaia = `el.textContent = "Definitely untranslated sentence here";`;
+  const pega = [...cobaia.matchAll(LITERAL)].length === 1 &&
+               w.PerthI18n.t("Definitely untranslated sentence here") ===
+                 "Definitely untranslated sentence here";
+  check(pega, "a varredura reconhece um literal sem tradução (auto-teste)");
+
+  w.close();
+}
+
 console.log("gantt · modal: título e campos ilegíveis");
 {
   const { runIn, close } = loadGanttApp();

@@ -674,7 +674,7 @@ function renderFbPanel(r) {
   if (!r.dirs.length) {
     const empty = document.createElement("div");
     empty.className = "fb-empty";
-    empty.textContent = "no subfolders";
+    empty.textContent = T("no subfolders");
     el.fbDirs.appendChild(empty);
   }
   for (const name of r.dirs) {
@@ -796,7 +796,7 @@ function renderAll() {
     el.tlMonths.innerHTML = "";
     el.tlDays.innerHTML = "";
     el.chart.innerHTML = "";
-    el.statusLeft.textContent = "no project open";
+    el.statusLeft.textContent = T("no project open");
     return;
   }
   computeRange();
@@ -1522,7 +1522,10 @@ function openModal(id) {
   deps.innerHTML = "";
   const others = state.current.tasks.filter((o) => o.id !== id);
   if (!others.length) {
-    deps.innerHTML = '<span class="none">No other tasks in this project.</span>';
+    const none = document.createElement("span");
+    none.className = "none";
+    none.textContent = T("No other tasks in this project.");
+    deps.appendChild(none);
   }
   const depRefs = new Map((t.dependencies || []).map((d) => {
     const pd = parseDep(d);
@@ -1871,7 +1874,7 @@ function showShare() {
   shareBody = document.createElement("div");
   const note = document.createElement("div");
   note.className = "empty-note";
-  note.textContent = "loading…";
+  note.textContent = T("loading…");
   shareBody.append(note);
   showOverlay("Share this project", shareBody);
   refreshShare();
@@ -2020,11 +2023,11 @@ function renderShare(body, info) {
     const code = document.createElement("code");
     code.textContent = u;
     const btn = document.createElement("button");
-    btn.textContent = "copy";
+    btn.textContent = T("copy");
     btn.addEventListener("click", () => {
       navigator.clipboard?.writeText(u);
-      btn.textContent = "copied!";
-      setTimeout(() => (btn.textContent = "copy"), 1400);
+      btn.textContent = T("copied!");
+      setTimeout(() => (btn.textContent = T("copy")), 1400);
     });
     row.append(code, btn);
     body.append(row);

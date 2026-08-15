@@ -5,6 +5,33 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- Twenty-three labels built in JavaScript were stuck in English in every
+  language: the gantt's `copy` / `copied!` / `loading…` / `no subfolders` /
+  `no project open` and the empty dependency list, and the kanban's `+ card`,
+  `+ new column`, `by`, `archive`, `due`, `assignee`, `restore`, `delete`,
+  `current`, `switch`, `create` and its board-list error. They are written
+  after `PerthI18n` has swept the DOM — the sweep runs once, on `set()` — so
+  a bare literal there never gets translated. All of them now go through
+  `T()`, with the seventeen distinct strings added to all four dictionaries.
+
+### Changed
+- The kanban declared the same one-line `T` helper eight times, once per
+  function. It is now a single module-level constant, like the gantt's.
+
+### Added
+- A test that closes this class of bug rather than another instance of it:
+  it scans `app.js`, `kanban/app.js` and `presence.js` for string literals
+  assigned to `textContent` / `innerHTML` and fails unless each goes through
+  `T()` or has a translation. The bug had already shipped four times. The
+  scan carries a self-test, so a regex that stops matching fails loudly
+  instead of passing silently, and a short exempt list for strings that are
+  identical across languages.
+- The kanban's labels are also rendered for real in a test — the eight-into-one
+  `T` refactor would otherwise fail as a blank screen, not a syntax error.
+
 ## [0.8.1] - 2026-08-15
 
 ### Fixed
