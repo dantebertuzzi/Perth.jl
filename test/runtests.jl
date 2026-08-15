@@ -1332,6 +1332,28 @@ end
             Perth.GANTT_KEY[] = ""
             @test Perth._gantt_gate("/api/projects", other, noqp) === :ok
 
+            # ── só-host: o que alcança a MÁQUINA, não o projeto ──
+            #
+            # Espelho em disco, navegação de diretórios e iniciar processo não
+            # são edição — são acesso à máquina que hospeda. O espelho é o pior:
+            # _resolve_save_path aceita qualquer caminho terminado em .jl, então
+            # um convidado apontaria para ~/.julia/config/startup.jl e a máquina
+            # anfitriã sobrescreveria o arquivo no salvamento seguinte.
+            for (rota, metodo) in (("/api/projects/x1/path", "PUT"),
+                                   ("/api/fs/list", "GET"),
+                                   ("/api/fs/complete", "GET"),
+                                   ("/api/launch/kanban", "POST"))
+                @test Perth._gantt_gate(rota, other, noqp; method = metodo) === :host_only
+                @test Perth._gantt_gate(rota, "127.0.0.1", noqp; method = metodo) === :ok
+            end
+            # e o que É edição de projeto continua passando: esta guarda não é
+            # o interruptor de somente-leitura, é outro assunto
+            @test Perth._gantt_gate("/api/projects/x1", other, noqp; method = "PUT") === :ok
+            @test Perth._gantt_gate("/api/projects", other, noqp; method = "POST") === :ok
+            # GET no caminho do espelho não escreve nada: só o PUT é bloqueado
+            @test Perth._gantt_gate("/api/projects/x1/path", other, noqp;
+                                    method = "GET") === :ok
+
             Perth.GANTT_KEY[] = "s3cr3t"
             @test Perth._gantt_gate("/api/projects", other, noqp) === :need_key
             @test Perth._gantt_gate("/api/projects", other, wrong) === :need_key
