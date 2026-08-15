@@ -503,3 +503,171 @@ function _ready(io::IO = stdout; url::AbstractString, projects::Integer,
     println(io, "     ", _GREY, "Perth.stop()", _RESET, _DIM, " to shut down", _RESET, "\n")
     nothing
 end
+
+# ──────────────────────────────────────────────── dica de entrada (using) ──
+#
+# `using Perth` não dizia o que fazer em seguida: o pacote exporta a API de
+# dados, mas quem abre a interface é Perth.run() / Perth.kanban(), que não são
+# exportados (run colidiria com Base.run). A dica cobre esse vão.
+#
+# É só texto, nunca pergunta nada. Menu interativo no __init__ seria uma
+# armadilha: `using Perth` também roda em script, em teste, dentro de outro
+# pacote e na precompilação — em qualquer um deles um prompt trava o processo
+# sem saída. Quem quiser escolher pelo teclado chama Perth.menu().
+
+"""
+    Perth._hint(io = stdout; version)
+
+Static form of the entry-point pointer: the three doors, one per line, no
+selection. This is what stays on screen after the picker is dismissed, and
+what non-interactive callers get. Obeys `PERTH_SPLASH` like the rest of the
+decoration: `0` silences it.
+"""
+function _hint(io::IO = stdout; version = _version())
+    _fancy(io) || return nothing
+    print(io, join(_bloco(version, 0), "\n"), "\n")
+    nothing
+end
+
+_version() = try string(pkgversion(@__MODULE__)) catch; "" end
+
+# As duas portas de entrada. Ordem = ordem na tela.
+const _PORTAS = (("Perth.run()",    "open the Gantt in your browser"),
+                 ("Perth.kanban()", "open the Kanban board"))
+# A terceira linha difere entre as formas: no navegável é a saída; no estático
+# é como trazer o navegável de volta, porque quem dispensou precisa saber.
+const _SAIDA  = ("nothing, thanks", "")
+const _VOLTAR = ("Perth.menu()",    "pick one from a list")
+
+# `sel` = 0 devolve a forma estática (marcadores, sem legenda); 1..3 devolve a
+# forma navegável, com a seta na linha escolhida. As duas têm que caber no
+# mesmo repintar, por isso são o mesmo construtor.
+function _bloco(version::AbstractString, sel::Int)
+    w = maximum(textwidth(p[1]) for p in (_PORTAS..., _SAIDA, _VOLTAR))
+    cab = string("  ", _fg(0x95, 0x58, 0xB2), _BOLD, "perth", _RESET,
+                 "  ", _GREY, "Julia-native Gantt · Kanban · CPM", _RESET,
+                 "  ", _DIM, "v", version, _RESET)
+    if sel == 0
+        linhas = [cab]
+        for (chamada, texto) in (_PORTAS..., _VOLTAR)
+            push!(linhas, string("   ", _DIM, "·", _RESET, " ",
+                                 _BOLD, rpad(chamada, w), _RESET, "  ",
+                                 _GREY, texto, _RESET))
+        end
+        return linhas
+    end
+    linhas = [cab, ""]
+    for (i, (chamada, texto)) in enumerate((_PORTAS..., _SAIDA))
+        marca = i == sel ? string(_fg(0x38, 0x98, 0x26), "→", _RESET) : " "
+        corpo = i == sel ? string(_BOLD, rpad(chamada, w), _RESET) :
+                           string(_DIM, rpad(chamada, w), _RESET)
+        push!(linhas, string(" ", marca, " ", corpo, "  ", _GREY, texto, _RESET))
+    end
+    push!(linhas, "")
+    push!(linhas, string("   ", _DIM,
+                         "↑↓ move · enter opens · any other key dismisses",
+                         _RESET))
+    return linhas
+end
+
+"""
+    Perth._pick(io = stdout; version, timeout = 6)
+
+The pointer, navigable: arrows (or `j`/`k`) move, Enter opens the selected
+door, any other key dismisses. **Gives up on its own** after `timeout` seconds
+without a keypress, leaving [`Perth._hint`](@ref) on screen.
+
+That timeout is the whole point. This runs from `__init__`, and `using Perth`
+also happens inside `julia -i script.jl`, inside `include("script.jl")` and
+inside any package that depends on this one — a prompt that waits forever
+would hang all of those with no way out. Waiting a few seconds and stepping
+aside costs nothing to whoever was not looking.
+"""
+function _pick(io::IO = stdout; version = _version(), timeout::Real = 6)
+    _fancy(io) || return nothing
+    # sem terminal de onde ler tecla, o navegável não faz sentido
+    _isatty(stdin) || return _hint(io; version)
+
+    term  = REPL.Terminals.TTYTerminal(get(ENV, "TERM", "xterm"), stdin, io, stderr)
+    sel, escolha, raw = 1, 0, false
+    linhas = length(_bloco(version, sel))
+    print(io, "\e[?25l")
+    try
+        raw = REPL.Terminals.raw!(term, true)
+        if !raw
+            print(io, "\e[?25h")
+            return _hint(io; version)         # sem modo raw não há seta
+        end
+        Base.start_reading(stdin)
+        print(io, join(_bloco(version, sel), "\n"), "\n")
+        t0 = time()
+        while true
+            if bytesavailable(stdin) > 0
+                b = read(stdin, UInt8)
+                mexeu = true
+                if b == 0x1b && bytesavailable(stdin) >= 2
+                    read(stdin, UInt8)                       # '['
+                    c = read(stdin, UInt8)
+                    c == UInt8('A') && (sel = max(1, sel - 1))
+                    c == UInt8('B') && (sel = min(length(_PORTAS) + 1, sel + 1))
+                elseif b == 0x0d || b == 0x0a
+                    escolha = sel
+                    break
+                elseif b == UInt8('k')
+                    sel = max(1, sel - 1)
+                elseif b == UInt8('j')
+                    sel = min(length(_PORTAS) + 1, sel + 1)
+                else
+                    break                                    # dispensa
+                end
+                mexeu && print(io, "\e[$(linhas)F\e[J")
+                print(io, join(_bloco(version, sel), "\n"), "\n")
+                t0 = time()                                  # tecla reinicia a contagem
+            end
+            time() - t0 >= timeout && break
+            sleep(0.03)
+        end
+    catch
+        escolha = 0                            # terminal estranho: só o texto
+    finally
+        Base.stop_reading(stdin)
+        raw && REPL.Terminals.raw!(term, false)
+        print(io, "\e[?25h", _RESET)
+    end
+    # o que fica na tela é a dica estática, sem seta nem legenda
+    print(io, "\e[$(linhas)F\e[J")
+    print(io, join(_bloco(version, 0), "\n"), "\n")
+    escolha == 1 && return run()
+    escolha == 2 && return kanban()
+    nothing
+end
+
+"""
+    Perth.menu()
+
+Interactive picker for the entry points: arrow keys to move, Enter to run,
+`q` to leave. Needs an interactive terminal — elsewhere it prints the same
+list as [`Perth._hint`](@ref) and returns, rather than blocking on input.
+"""
+function menu(io::IO = stdout)
+    if !(isinteractive() && _isatty(io))
+        _hint(io)
+        return nothing
+    end
+    opcoes = ["Gantt — projects, dependencies, critical path",
+              "Kanban — cards on a shared board",
+              "List the projects already saved",
+              "Nothing, thanks"]
+    escolha = REPL.TerminalMenus.request(
+        "Perth — what do you want to open?",
+        REPL.TerminalMenus.RadioMenu(opcoes; charset = :unicode))
+    escolha == 1 && return run()
+    escolha == 2 && return kanban()
+    if escolha == 3
+        ps = projects()
+        isempty(ps) && return println(io, "  ", _DIM,
+            "no projects yet — create_project(\"name\") starts one", _RESET)
+        return ps
+    end
+    nothing                      # 4 ou cancelado (request devolve -1)
+end
