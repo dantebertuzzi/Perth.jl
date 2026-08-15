@@ -8,6 +8,21 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **The mirrored `.perth.jl` file now flows back.** Mirroring already went one
+  way: every save rewrote the file at `file_path`. Edit that file in your
+  editor and the browser follows on its own — no REPL round trip, and no more
+  losing your edit to the next save from the UI. This is the workflow for
+  people who read code faster than they drag bars: keep the file open in VS
+  Code, keep the chart open in the browser, and let the two agree.
+- The reload is deliberately conservative. Our own writes are recognised by
+  content, not by timestamp, so mirroring cannot loop; a file caught
+  half-written (editors save in stages) fails to parse and is ignored until
+  the next event; and the file carries content, never identity — the project's
+  id, `created_at` and mirror path stay put, so a pasted file cannot hijack
+  another project. The project object is mutated in place rather than
+  replaced, so a `p = project("obra")` you are holding in the REPL stays
+  valid instead of silently detaching.
+- `Perth.run(watch = false)` turns it off.
 - **`using Perth` now offers the doors, and you pick one with the arrows.**
   The package exports the data API, but the two doors into the UI —
   `Perth.run()` and `Perth.kanban()` — are not exported (`run` would clash

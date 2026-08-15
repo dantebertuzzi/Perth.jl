@@ -195,6 +195,7 @@ function _save!(st::AppState, p::Project)
     st.rev += 1
     _notify_rev(st.rev)
     _notify_save(p)
+    _watch_sync!(st)      # espelho novo passa a ser observado; removido, para
     return p
 end
 
@@ -205,6 +206,7 @@ function _delete!(st::AppState, id::AbstractString)
     isfile(f) && rm(f)
     st.rev += 1
     _notify_rev(st.rev)
+    _watch_sync!(st)
     return true
 end
 

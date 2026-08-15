@@ -19,6 +19,7 @@ Perth.stop()
 module Perth
 
 using Dates
+using FileWatching
 using Random
 using Sockets
 using Unicode
@@ -73,6 +74,7 @@ function save_chart end
 include("types.jl")
 include("storage.jl")
 include("juliafile.jl")
+include("watch.jl")
 include("icalendar.jl")
 include("schedule.jl")
 include("wbs.jl")

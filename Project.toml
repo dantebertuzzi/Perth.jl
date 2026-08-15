@@ -5,6 +5,7 @@ authors = ["Dante Bertuzzi <dantesbertuzzi@gmail.com>"]
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+FileWatching = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
@@ -29,6 +30,7 @@ PerthQRCodersExt = "QRCoders"
 
 [compat]
 BusinessDays = "0.9"
+FileWatching = "1"
 HTTP = "1"
 JSON3 = "1"
 Logging = "1"
