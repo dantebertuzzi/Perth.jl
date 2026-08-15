@@ -1017,6 +1017,68 @@ console.log("kanban · fundo da UI");
   close();
 }
 
+console.log("kanban · a rolagem sobrevive ao re-render");
+{
+  // Regressão de uso real: render() reconstrói o board inteiro
+  // (boardEl.textContent = ""), e elemento novo nasce com scrollTop 0.
+  // Concluir um card no fim de uma coluna longa devolvia a coluna ao topo
+  // e tirava da vista justamente o card em que se tinha acabado de mexer.
+  const { w, runIn, close } = loadKanbanApp();
+
+  // jsdom não faz layout, então scrollHeight é sempre 0 e a rolagem não
+  // "pega" sozinha: os contêineres ganham uma altura falsa para que
+  // atribuir scrollTop valha alguma coisa
+  const seed = `
+    state.board = { columns: [{ id: "c1", name: "backlog", cards:
+      Array.from({ length: 30 }, (_, i) => ({ id: "k" + i, text: "Card " + i })) },
+      { id: "c2", name: "doing", cards: [{ id: "z", text: "outro" }] }],
+      archive: [], aliases: {} };
+    render();
+    for (const box of document.querySelectorAll(".cards")) {
+      Object.defineProperty(box, "scrollHeight", { value: 4000, configurable: true });
+      Object.defineProperty(box, "clientHeight", { value: 400, configurable: true });
+    }`;
+
+  let r = runIn(`${seed}
+    const box = document.querySelector('.col[data-col="c1"] .cards');
+    box.scrollTop = 900;
+    const antes = box.scrollTop;
+    // a ação que o usuário faz: concluir um card lá embaixo
+    commit({ type: "setDone", id: "k27", done: true });
+    const depois = document.querySelector('.col[data-col="c1"] .cards').scrollTop;
+    return { antes, depois };`);
+  check(r.antes === 900, "cenário: coluna rolada para baixo");
+  check(r.depois === 900, "concluir um card não devolve a coluna ao topo");
+
+  // cada coluna guarda a sua, e a rolagem horizontal do board também
+  r = runIn(`${seed}
+    document.querySelector('.col[data-col="c1"] .cards').scrollTop = 700;
+    document.querySelector('.col[data-col="c2"] .cards').scrollTop = 120;
+    Object.defineProperty(boardEl, "scrollWidth", { value: 3000, configurable: true });
+    Object.defineProperty(boardEl, "clientWidth", { value: 800, configurable: true });
+    boardEl.scrollLeft = 260;
+    commit({ type: "editCard", id: "k3", text: "editado" });
+    return { c1: document.querySelector('.col[data-col="c1"] .cards').scrollTop,
+             c2: document.querySelector('.col[data-col="c2"] .cards').scrollTop,
+             board: boardEl.scrollLeft };`);
+  check(r.c1 === 700 && r.c2 === 120, "cada coluna guarda a própria rolagem");
+  check(r.board === 260, "e a rolagem horizontal do board também sobrevive");
+
+  // a rolagem é por COLUNA: apagar uma muito rolada não empurra o valor
+  // dela para a que sobrou (seria o bug se a chave fosse a posição)
+  r = runIn(`${seed}
+    document.querySelector('.col[data-col="c1"] .cards').scrollTop = 800;
+    document.querySelector('.col[data-col="c2"] .cards').scrollTop = 40;
+    commit({ type: "delCol", id: "c1" });
+    return { colunas: document.querySelectorAll(".col").length,
+             ids: [...document.querySelectorAll(".col")].map((e) => e.dataset.col),
+             c2: document.querySelector('.col[data-col="c2"] .cards').scrollTop };`);
+  check(r.colunas === 1 && r.ids[0] === "c2" && r.c2 === 40,
+        "a rolagem é por coluna: apagar a de cima não move a que sobrou");
+
+  close();
+}
+
 console.log("kanban · carimbo de momento é hora LOCAL");
 {
   // Regressão de uso real: o navegador carimbava `at` e `done_at` com

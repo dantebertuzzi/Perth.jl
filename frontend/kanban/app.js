@@ -740,6 +740,19 @@ function render() {
   for (const el of $$(".card", boardEl))
     before.set(el.dataset.card, el.getBoundingClientRect());
 
+  // Rolagem antes da limpeza. O render reconstrói o board inteiro, e
+  // elemento novo nasce no topo: concluir um card lá embaixo devolvia a
+  // coluna ao começo e tirava da vista justamente o card em que se
+  // acabou de mexer. Guardado por id de coluna (elas podem ser
+  // reordenadas ou apagadas entre um render e outro), mais a rolagem
+  // horizontal do próprio board.
+  const scrolls = new Map();
+  for (const el of $$(".col", boardEl)) {
+    const box = $(".cards", el);
+    if (box) scrolls.set(el.dataset.col, box.scrollTop);
+  }
+  const boardLeft = boardEl.scrollLeft;
+
   boardEl.textContent = "";
 
   cols().forEach((col, ci) => {
@@ -806,6 +819,17 @@ function render() {
   addCol.addEventListener("click", newColumn);
   applyRestriction(addCol, "addCol");
   boardEl.append(addCol);
+
+  // Rolagem de volta ANTES de medir o FLIP: as posições de `before` foram
+  // tiradas com a rolagem antiga, então medir `now` com o board no topo
+  // faria todo card "voltar" de uma distância que ninguém percorreu.
+  // O navegador limita sozinho se o conteúdo encolheu.
+  boardEl.scrollLeft = boardLeft;
+  for (const el of $$(".col", boardEl)) {
+    const box = $(".cards", el);
+    const top = scrolls.get(el.dataset.col);
+    if (box && top) box.scrollTop = top;
+  }
 
   // FLIP: anima quem se moveu
   if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {

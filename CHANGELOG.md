@@ -106,6 +106,17 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   working.
 
 ### Fixed
+- Kanban: a column scrolled down no longer jumps back to the top when you
+  act on a card. `render()` rebuilds the whole board
+  (`boardEl.textContent = ""`), and a fresh element starts at
+  `scrollTop = 0` — so completing a card near the bottom of a long column
+  scrolled away the very card you had just touched. Scroll positions are
+  now captured per column id (columns can be reordered or deleted between
+  renders) plus the board's own horizontal offset, and restored *before*
+  the FLIP measurement: the `before` rects were taken with the old
+  scroll, so measuring `now` at the top would animate every card back
+  from a distance nobody travelled.
+
 - **Timestamps written by the browser were UTC**, in fields the server
   fills with local time (`_kanban_now`, `Dates.now()`). The same field
   meant two different things depending on whether the card was born in a
