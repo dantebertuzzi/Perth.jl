@@ -1813,6 +1813,74 @@ console.log("gantt · duplo clique na barra abre a tarefa");
   close();
 }
 
+/* pushUndo() guarda o "antes" e ZERA a pilha de refazer. Se um clique que só
+ * seleciona passa por ele, cada clique numa barra empilha uma entrada que não
+ * corresponde a edição nenhuma — e mata o refazer de uma edição de verdade.
+ * Pior: a entrada fica sem "depois" (markDirty só roda em edição), e undo()
+ * sem par completo cai no _restore() cru, que ignora o que chegou por fora. */
+console.log("gantt · clicar numa barra não mexe no histórico");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const seed = `
+    const mk = (id, name, start, duration) => ({
+      id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+      optimistic: 0, most_likely: 0, pessimistic: 0 });
+    state.current = { id: "p1", name: "P", tasks: [mk("t1", "Barra", "2026-03-02", 5)] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "", pert: null,
+                  byId: new Map() };
+    state.undoStack = []; state.redoStack = [];
+    renderAll();`;
+
+  // bloco proprio: o trecho e colado varias vezes na mesma funcao
+  const clicar = `{
+    const bar = document.querySelector("#chart .bar");
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    document.querySelector("#chart .bar").dispatchEvent(
+      new MouseEvent("click", { bubbles: true }));
+  }`;
+
+  let r = runIn(`${seed} ${clicar} ${clicar} ${clicar}
+    return { undo: state.undoStack.length, selecionada: state.selected };`);
+  check(r.undo === 0, "gantt: três cliques numa barra não empilham nada para desfazer");
+
+  // o dano concreto: um clique de seleção apagava o refazer de uma edição
+  r = runIn(`${seed}
+    pushUndo(); state.current.tasks[0].duration = 9; markDirty();
+    undo();
+    const refazerAntes = state.redoStack.length;
+    ${clicar}
+    return { refazerAntes, refazerDepois: state.redoStack.length };`);
+  check(r.refazerAntes === 1 && r.refazerDepois === 1,
+        "gantt: e não jogam fora o refazer de uma edição de verdade");
+
+  // arrastar de verdade continua sendo desfazível
+  r = runIn(`${seed}
+    const bar = document.querySelector("#chart .bar");
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: 100 + 4 * PPD[state.zoom], clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    const movido = state.current.tasks[0].start;
+    const entrada = state.undoStack[state.undoStack.length - 1];
+    undo();
+    return { movido, desfeito: state.current.tasks[0].start,
+             pilha: state.undoStack.length + 1,
+             parCompleto: !!(entrada && entrada.before && entrada.after) };`);
+  check(r.movido === "2026-03-06" && r.desfeito === "2026-03-02",
+        "gantt: arrastar continua registrando um desfazer que funciona");
+  check(r.parCompleto === true,
+        "gantt: e a entrada tem antes E depois (undo reconcilia em vez de sobrescrever)");
+
+  close();
+}
+
 console.log("gantt · modal: título e campos ilegíveis");
 {
   const { runIn, close } = loadGanttApp();

@@ -1410,7 +1410,12 @@ function attachDrag(node, task, mode) {
     // código morto, e abrir a tarefa pela barra não funcionava (na linha da
     // tabela funcionava, porque lá ninguém cancela nada). Quem impede a
     // seleção de texto durante o arrasto é user-select:none no #chart.
-    pushUndo();
+    //
+    // pushUndo() NÃO entra aqui: encostar numa barra não é uma edição. Ele
+    // zera a pilha de refazer e empilha um "antes" sem "depois" (markDirty,
+    // que fecha o par, só roda em edição de verdade) — três cliques de
+    // seleção davam três entradas de nada e matavam o refazer de uma edição
+    // anterior. Vai no primeiro movimento, que é quando a edição começa.
     // Listeners na window: o re-render durante o arrasto destrói o nó
     // original, então não dá para depender de pointer capture nele.
     const ppd = PPD[state.zoom];
@@ -1422,7 +1427,10 @@ function attachDrag(node, task, mode) {
     const onMove = (mv) => {
       const deltaDays = Math.round((mv.clientX - startX) / ppd);
       if (deltaDays === 0 && !moved) return;
-      moved = true;
+      if (!moved) {
+        pushUndo();        // aqui o "antes" ainda é o original: nada mutou
+        moved = true;
+      }
       state.dragging = true;
       if (mode === "move") {
         task.start = fmtISO(addDays(parseDate(origStart), deltaDays));

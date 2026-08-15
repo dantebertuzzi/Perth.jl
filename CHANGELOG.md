@@ -8,6 +8,15 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Fixed
+- Clicking a bar to select it no longer touches the undo history. `attachDrag`
+  called `pushUndo()` from `pointerdown`, so merely touching a bar pushed an
+  entry with a "before" and no "after" — `markDirty()`, which closes the pair,
+  only runs on a real edit — and, worse, cleared the redo stack: edit, undo,
+  click a bar, and the redo was gone. Undoing one of those half entries also
+  fell back to a raw restore, which overwrites whatever arrived from outside
+  meanwhile. `pushUndo()` now runs on the first movement of the gesture, which
+  is when an edit actually begins and while the snapshot is still the original
+  state.
 - **Double-clicking a bar in the chart opens the task again.** It had two
   independent causes stacked on top of each other, both in `attachDrag`.
   First, `pointerdown` called `preventDefault()`, which suppresses the
