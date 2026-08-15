@@ -7,6 +7,27 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 
 ## [Unreleased]
 
+### Security
+- **A project file could overwrite an unrelated file on disk.** `file_path` is
+  the mirror path of *this* machine, and the writer never puts it in a
+  `.perth.jl` — the format's own comment says so. The reader did not enforce
+  it: a hand-written or hostile file that declared the field had it accepted,
+  and the first save wrote the project over whatever it pointed at —
+  `~/.ssh/authorized_keys`, a source file, a document — silently. Reachable
+  through `Perth.load`, which is exactly the documented way to open a file
+  somebody sent you. The parser now refuses such a file outright, which covers
+  every reader at once. Confirmed as an actual attack, not by inspection: the
+  regression test writes a hostile file, loads it and asserts the target is
+  untouched.
+- **A few kilobytes of `[[[[[` killed the server process.** Julia's own parser
+  is recursive and dies on deeply nested brackets — not a catchable exception,
+  a core dump — so `Meta.parseall` never returned. Project source arrives over
+  HTTP (`/api/import`, and the source panel), so any client that could reach
+  the API could take the server down. Source is now checked before parsing:
+  4 MB and 32 levels of nesting, against the four levels a real file uses.
+  Brackets inside strings and comments do not count, so a task named
+  `Coleta [campo] (fase 1)` is still just a name.
+
 ### Added
 - The UI background accepts **AVIF**, still or animated (`avif` and `avis`
   brands). It is the same risk class as the WebP already accepted — a raster
