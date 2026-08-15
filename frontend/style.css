@@ -912,19 +912,20 @@ body.presenting .res-pane { display: none; }
 /* Busca de tarefa na barra de ferramentas. Mesmo desenho do filtro do kanban
    (ver .mb-search lá): em repouso é só texto, a moldura aparece no hover e no
    foco. A contagem fica colada, para dizer se vale continuar digitando. */
-/* Largura FIXA da faixa inteira: o campo crescer no foco, ou a contagem
-   aparecer ao digitar, empurrava a ficha de avisos para o lado. Nada aqui
-   pode mudar de tamanho — o que muda de tamanho move o vizinho, e mover o
-   vizinho é o que faz o alvo do clique fugir do dedo. */
-.task-search {
-  position: relative;
+/* A busca mora no CABEÇALHO da coluna de tarefas, no lugar do rótulo: é a
+   coluna que ela filtra, e o placeholder já diz o que a coluna é. Fora dali
+   ela disputava espaço com a barra de ferramentas e empurrava o vizinho ao
+   crescer. */
+.tt-head .task-search {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 0 0 296px;
+  min-width: 0;
+  margin-left: -6px;          /* alinha o texto do campo com o da coluna */
 }
 #task-search {
-  width: 240px;
+  flex: 1;
+  min-width: 0;
   height: 26px;
   padding: 2px 9px;
   font-family: var(--mono);
@@ -946,7 +947,7 @@ body.presenting .res-pane { display: none; }
 /* busca sem nenhum resultado: a moldura avisa, sem apagar o que foi digitado */
 #task-search.empty-hit { border-color: var(--red); color: var(--red); }
 .ts-count {
-  flex: 1;
+  flex: 0 0 auto;
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--muted);

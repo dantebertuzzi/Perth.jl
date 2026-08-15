@@ -223,11 +223,7 @@
   <div class="toolbar">
     <button id="btn-new-task" class="primary">+ Task</button>
     <select id="highlight-select" title="Highlight tasks by assignee, status or type"></select>
-    <div class="task-search">
-      <input id="task-search" type="search" autocomplete="off" spellcheck="false"
-             placeholder="find a task…  ( / )" aria-label="Find a task by name">
-      <span class="ts-count" id="task-search-count" hidden></span>
-    </div>
+
     <span class="spacer"></span>
     <button id="warnings-chip" class="warn-chip" hidden
             title="Problems found in this plan"></button>
@@ -243,7 +239,11 @@
   <main class="gantt" id="gantt">
     <aside class="task-table">
       <div class="tt-head">
-        <span class="c-name">task</span>
+        <span class="c-name task-search">
+          <input id="task-search" type="search" autocomplete="off" spellcheck="false"
+                 placeholder="find a task…  ( / )" aria-label="Find a task by name">
+          <span class="ts-count" id="task-search-count" hidden></span>
+        </span>
         <span class="c-date">start</span>
         <span class="c-num">dur</span>
         <span class="c-num">%</span>

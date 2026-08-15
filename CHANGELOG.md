@@ -50,8 +50,9 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   dozens of LF lines in the middle. Counting bytes is.
 
 ### Added
-- **Find a task by name in the gantt** — the box next to *Highlight*, or `/`,
-  the same key the kanban uses. Non-matching tasks dim, in the table and in
+- **Find a task by name in the gantt** — the box sits in the task table's own
+  header, in place of the column label, since it is that column it filters and
+  the placeholder says so; `/` focuses it, the same key the kanban uses. Non-matching tasks dim, in the table and in
   the chart, because search reuses the highlight machinery that was already
   there. Accents and case do not matter: typing `integracao` finds
   *Integração por partes*, which is the point in a 141-task project — needing
