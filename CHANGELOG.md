@@ -5,6 +5,15 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- The UI background accepts **AVIF**, still or animated (`avif` and `avis`
+  brands). It is the same risk class as the WebP already accepted — a raster
+  codec the browser decodes — unlike SVG, which stays out for the reason
+  documented next to the sniffer. The check is still by content: an `ftyp`
+  box with any other brand, MP4 included, is refused.
+
 ## [0.8.2] - 2026-08-15
 
 ### Fixed
