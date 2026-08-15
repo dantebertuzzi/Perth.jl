@@ -94,7 +94,7 @@ function __init__()
     ccall(:jl_generating_output, Cint, ()) == 0 || return nothing
     isinteractive() || return nothing
     try
-        _hint()
+        _pick()          # navegável, mas desiste sozinha (ver _pick)
     catch
     end
     return nothing

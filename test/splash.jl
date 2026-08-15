@@ -228,6 +228,22 @@ _forced(f) = withenv(f, "PERTH_SPLASH" => "always")
         end
     end
 
+    # A promessa que sustenta ter isto no __init__: sem tecla, o navegável
+    # desiste sozinho e devolve o controle. Se este teste travar a suíte, é
+    # exatamente o que aconteceria com quem rodasse `julia -i script.jl`.
+    @testset "o navegável desiste sozinho" begin
+        _forced() do
+            buf = IOContext(IOBuffer(), :color => true)
+            t = @elapsed r = Perth._pick(buf; version = "9.9.9", timeout = 0.4)
+            @test r === nothing
+            @test t < 8                       # folga enorme: o alvo é 0,4s
+            txt = _nofx(String(take!(buf.io)))
+            @test occursin("Perth.run()", txt)
+            # o que sobra na tela é a forma estática, sem legenda de teclas
+            @test !occursin("enter opens", split(txt, "\n")[end - 1])
+        end
+    end
+
     # menu() fora de sessão interativa não pode BLOQUEAR esperando tecla:
     # cai na dica e volta. Sem isto, um Pkg.test que o chamasse travaria.
     @testset "menu sem terminal" begin

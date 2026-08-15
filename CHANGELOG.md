@@ -8,18 +8,24 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
-- **`using Perth` now says what to type next.** The package exports the data
-  API, but the two doors into the UI — `Perth.run()` and `Perth.kanban()` —
-  are not exported (`run` would clash with `Base.run`), so nothing on screen
-  pointed at them. Loading the package in an interactive terminal prints a
-  three-line pointer, and `PERTH_SPLASH=0` silences it along with the rest of
-  the decoration.
-- **`Perth.menu()`**, a keyboard picker for those doors: arrows to move, Enter
-  to open, `q` to leave. Deliberately *not* wired into `using`: the same
-  `using Perth` runs in scripts, in tests, during precompilation and inside
-  other packages, and a prompt in any of those hangs the process with no way
-  out. Outside an interactive terminal it prints the pointer and returns
-  instead of blocking.
+- **`using Perth` now offers the doors, and you pick one with the arrows.**
+  The package exports the data API, but the two doors into the UI —
+  `Perth.run()` and `Perth.kanban()` — are not exported (`run` would clash
+  with `Base.run`), so nothing on screen pointed at them. Loading the package
+  in an interactive terminal now draws them as a list you can move through:
+  ↑↓ to move, Enter to open, any other key to dismiss.
+- That list **gives up on its own after six seconds** without a keypress,
+  repainting itself as a plain three-line pointer, and this is the part that
+  makes it safe to run from `__init__`. The same `using Perth` also happens
+  inside `julia -i script.jl`, inside `include("script.jl")` and inside any
+  package that depends on this one; a prompt that waits forever would hang
+  all of those with no way out. Waiting a few seconds and stepping aside
+  costs nothing to whoever was not looking. Non-interactive sessions —
+  scripts, tests, precompilation — print nothing and wait for nothing, and
+  `PERTH_SPLASH=0` silences it along with the rest of the decoration.
+- **`Perth.menu()`** brings the picker back after it has been dismissed, and
+  is what the static pointer's third line advertises. Outside an interactive
+  terminal it prints the pointer and returns instead of blocking.
 - The UI background accepts **AVIF**, still or animated (`avif` and `avis`
   brands). It is the same risk class as the WebP already accepted — a raster
   codec the browser decodes — unlike SVG, which stays out for the reason
