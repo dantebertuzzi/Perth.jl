@@ -5,7 +5,7 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
-## [Unreleased]
+## [0.8.0] - 2026-08-14
 
 ### Added
 - `.gitattributes` freezing line endings as stored (`* -text`). The
@@ -105,7 +105,6 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   it serves the first, so old clients and the service worker keep
   working.
 
-### Changed
 - PERT: a tie now rounds **up**, not to the even number. `te = 4.5`
   schedules 5 days; before, Julia's default `RoundNearest` gave 4 for
   `4.5` and 6 for `5.5` — neighbours that disagree in the same table, and
