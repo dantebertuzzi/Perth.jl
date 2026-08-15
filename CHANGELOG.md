@@ -5,6 +5,63 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- PERT: the estimate band no longer moves while you type. The result
+  (`expected … · σ …`) shared its flex line with the three inputs, so it
+  grew a few pixels with every digit and took that width out of the
+  fields — and when the line finally ran out of room, the result and the
+  *use as duration* button jumped to a line of their own. The result now
+  always sits on its own line, pinned to its right edge so it no longer
+  slides sideways as the text to its left grows, and the line keeps the
+  button's height so the box does not twitch when the button is not
+  offered.
+- Typing a lag on an unticked dependency row no longer throws the number
+  away. Only ticked rows are written on save, so the lag vanished without a
+  word; typing one now ticks the row, which is visible and undoable. A lag
+  of zero is every row's default, not an intention, so it still ticks
+  nothing.
+- Marking a task as a **milestone** locks its duration field. A milestone
+  occupies its own day — `_effdur` (`schedule.jl`) counts 1 and the table
+  already prints `—` in the duration column — so the field invited a number
+  that meant nothing. The stored value survives (a disabled field is still
+  read on save), so unticking the box brings the old duration back.
+- **Esc** and a click on the backdrop now ask before throwing away an edited
+  task. They discard everything typed into fifteen fields, which the gesture
+  does not advertise, and the modal keeps a snapshot taken when it opened so
+  the question only comes up when something actually changed. The *Cancel*
+  button does not ask: it says what it does, and it stays the escape hatch
+  for a deliberate discard.
+- The task modal refuses to save while a number field holds something the
+  browser cannot read (`666+6`, `1e`, `--3`). Such a field reports an empty
+  `value`, so duration fell back to 1, cost and progress to 0 and the PERT
+  estimate to blank — the typed text stayed on screen while a different
+  number was stored. Save now focuses the offending field instead, and
+  every number field in the modal draws a red border while its content is
+  unreadable or out of range.
+- The task modal's heading and the parent select's `(top level)` option were
+  written in English on every open, after `PerthI18n` had already swept the
+  DOM, so they stayed English inside an otherwise translated modal. Neither
+  string was in any of the four dictionaries.
+- A field the modal locks — every date and number on a summary task, the
+  duration on a milestone — now looks locked. The base rule paints colour
+  and background over the browser's `:disabled` styling, so the field kept
+  an editable face and swallowed the click without explaining itself.
+- The save-to path box no longer reserves 480px of the menubar. Its resting
+  width is 340px — about 45 characters of the mono field, with longer paths
+  ellipsised as before — which closes the gap that sat in the middle of the
+  bar even with the field empty. A dead `flex-basis` on `#save-path`, shadowed
+  by `.fb-wrap #save-path` since both were introduced, went with it.
+- PERT: clicking *use as duration* twice no longer keeps pushing the
+  number up. A blank field falls back to the current duration (the same
+  rule as `_normalize_estimate!`), so writing te into the duration
+  changed the very input te came from, and each click walked the value
+  towards `(o + p) / 2` instead of settling. Applying now first writes
+  the resolved three numbers into their fields — exactly what the server
+  stores on the next save — so te stops depending on the duration, the
+  second click is a no-op and the button retracts.
+
 ## [0.8.0] - 2026-08-14
 
 ### Added
