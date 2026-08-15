@@ -1570,6 +1570,22 @@ console.log("gantt · estimativa de três pontos (PERT)");
     return document.getElementById("f-pert-apply").hidden;`);
   check(r === true, "gantt: marco não recebe duração do PERT");
 
+  // regressão: com um campo em branco, te vinha da duração — aplicar mudava a
+  // duração, que mudava o te, e cada clique empurrava o número mais um pouco.
+  // Aplicar materializa os três números antes de escrever, então o segundo
+  // clique não tem o que mudar.
+  r = runIn(`openModal("t2"); ${fields(2, "", 10)}
+    document.getElementById("f-pert-apply").click();
+    const um = document.getElementById("f-duration").value;
+    document.getElementById("f-pert-apply").click();
+    return { um, dois: document.getElementById("f-duration").value,
+             m: document.getElementById("f-most-likely").value,
+             btn: document.getElementById("f-pert-apply").hidden };`);
+  check(r.um === "4", "gantt: parcial (2, -, 10) sobre duração 3 aplica te = 4");
+  check(r.dois === "4", "gantt: clicar de novo não soma nada na duração");
+  check(r.m === "3" && r.btn === true,
+        "gantt: aplicar fixa o branco na duração de então e recolhe o botão");
+
   // resumo (tem filha): a estimativa é de quem faz o trabalho
   r = runIn(`state.current.tasks.push(Object.assign({}, state.current.tasks[1],
       { id: "t4", name: "Filha", parent: "t2" }));
@@ -1596,6 +1612,187 @@ console.log("gantt · estimativa de três pontos (PERT)");
     return { text: el.textContent, title: el.getAttribute("title") };`);
   check(!/P80/.test(r.text) && r.title === null,
         "gantt: sem estimativa no projeto, a barra não mostra nada disso");
+
+  close();
+}
+
+console.log("gantt · modal: título e campos ilegíveis");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const seed = `
+    const mk = (id, name, start, duration, extra) => Object.assign({
+      id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+      optimistic: 0, most_likely: 0, pessimistic: 0 }, extra || {});
+    state.current = { id: "p1", name: "P", tasks: [
+      mk("t1", "Um", "2026-03-02", 5, { cost: 1500 }) ] };
+    state.cpm = { cycle: false, finish: "2026-03-07", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  // o título é reescrito a cada abertura, depois da varredura do PerthI18n:
+  // ficava em inglês dentro de um modal com todo o resto traduzido
+  let r = runIn(`${seed} PerthI18n.set("pt"); openModal("t1");
+    return { titulo: document.getElementById("modal-title").textContent,
+             salvar: document.getElementById("modal-save").textContent };`);
+  check(r.titulo === "Editar tarefa" && r.salvar === "Salvar",
+        "gantt: o título do modal acompanha o idioma");
+
+  r = runIn(`state.editingNew = true; openModal("t1");
+    const pt = document.getElementById("modal-title").textContent;
+    PerthI18n.set("en"); openModal("t1");
+    state.editingNew = false;
+    return [pt, document.getElementById("modal-title").textContent];`);
+  check(r.join("|") === "Nova tarefa|New task",
+        "gantt: e distingue tarefa nova de edição nos dois idiomas");
+
+  // Campo numérico ilegível ("666+6") vale "" no navegador com badInput
+  // ligado — o jsdom sanitiza na atribuição, então o estado é simulado aqui.
+  // Sem a guarda, salvar trocava o que estava escrito por 0/1 caladamente.
+  r = runIn(`PerthI18n.set("en"); openModal("t1");
+    const c = document.getElementById("f-cost");
+    Object.defineProperty(c, "validity", { configurable: true,
+                                           value: { badInput: true } });
+    submitModal();
+    return { aberto: !document.getElementById("modal").hidden,
+             foco: document.activeElement ? document.activeElement.id : null,
+             cost: state.current.tasks[0].cost };`);
+  check(r.aberto === true && r.foco === "f-cost" && r.cost === 1500,
+        "gantt: número ilegível não salva — foca o campo e preserva o valor");
+
+  r = runIn(`const c = document.getElementById("f-cost");
+    Object.defineProperty(c, "validity", { configurable: true,
+                                           value: { badInput: false } });
+    c.value = "2000";
+    submitModal();
+    return { aberto: !document.getElementById("modal").hidden,
+             cost: state.current.tasks[0].cost };`);
+  check(r.aberto === false && r.cost === 2000,
+        "gantt: corrigido o campo, o salvamento segue normal");
+
+  // resumo desabilita os campos: um ilegível ali não é motivo pra travar
+  // um salvamento que nem vai olhar pra ele
+  r = runIn(`openModal("t1");
+    const d = document.getElementById("f-duration");
+    d.disabled = true;
+    Object.defineProperty(d, "validity", { configurable: true,
+                                           value: { badInput: true } });
+    submitModal();
+    d.disabled = false;
+    return document.getElementById("modal").hidden;`);
+  check(r === true, "gantt: campo desabilitado não segura o salvamento");
+
+  close();
+}
+
+console.log("gantt · modal: lag, marco e descarte");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  const seed = `
+    const mk = (id, name, start, duration, extra) => Object.assign({
+      id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+      optimistic: 0, most_likely: 0, pessimistic: 0 }, extra || {});
+    state.current = { id: "p1", name: "P", tasks: [
+      mk("t1", "Um", "2026-03-02", 5),
+      mk("t2", "Dois", "2026-03-09", 3) ] };
+    state.cpm = { cycle: false, finish: "2026-03-11", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  // lag digitado numa linha desmarcada era descartado no salvamento
+  let r = runIn(`${seed} openModal("t2");
+    const cb = document.querySelector('#f-deps input[value="t1"]');
+    const lag = cb.parentElement.querySelector(".dep-lag");
+    lag.value = "3";
+    lag.dispatchEvent(new Event("input"));
+    const marcou = cb.checked;
+    submitModal();
+    return { marcou, deps: state.current.tasks.find((x) => x.id === "t2").dependencies };`);
+  check(r.marcou === true, "gantt: digitar um lag marca a dependência");
+  check(r.deps.join(",") === "t1+3", "gantt: e o lag chega ao salvamento");
+
+  r = runIn(`openModal("t2");
+    const cb = document.querySelector('#f-deps input[value="t1"]');
+    cb.checked = false;
+    const lag = cb.parentElement.querySelector(".dep-lag");
+    lag.value = "0";
+    lag.dispatchEvent(new Event("input"));
+    return cb.checked;`);
+  check(r === false, "gantt: lag zero é o default da linha, não marca nada");
+
+  // marco: _effdur() conta 1 dia, então a duração digitada não valia nada
+  r = runIn(`openModal("t1");
+    const d = document.getElementById("f-duration");
+    const antes = d.disabled;
+    const ms = document.getElementById("f-milestone");
+    ms.checked = true;
+    ms.dispatchEvent(new Event("change"));
+    return { antes, depois: d.disabled, valor: d.value };`);
+  check(r.antes === false && r.depois === true,
+        "gantt: marcar Marco trava a duração");
+  check(r.valor === "5", "gantt: e o valor continua no campo");
+
+  r = runIn(`submitModal();
+    const t = state.current.tasks.find((x) => x.id === "t1");
+    openModal("t1");
+    const ms = document.getElementById("f-milestone");
+    ms.checked = false;
+    ms.dispatchEvent(new Event("change"));
+    return { dur: t.duration, marco: t.milestone,
+             destravou: document.getElementById("f-duration").disabled };`);
+  check(r.dur === 5 && r.marco === true,
+        "gantt: campo travado ainda é gravado — a duração de antes sobrevive");
+  check(r.destravou === false, "gantt: desmarcar Marco destrava a duração");
+
+  // Esc e clique no fundo descartam tudo; só perguntam se há o que perder
+  r = runIn(`window.__ask = 0;
+    window.confirm = (m) => { window.__ask++; window.__msg = m; return false; };
+    closeModal(false);
+    openModal("t2");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return { perguntou: window.__ask, hidden: document.getElementById("modal").hidden };`);
+  check(r.perguntou === 0 && r.hidden === true,
+        "gantt: Esc sem alterações fecha direto, sem perguntar");
+
+  r = runIn(`openModal("t2");
+    document.getElementById("f-name").value = "Renomeada";
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return { perguntou: window.__ask, msg: window.__msg,
+             hidden: document.getElementById("modal").hidden,
+             campo: document.getElementById("f-name").value };`);
+  check(r.perguntou === 1 && r.hidden === false && r.campo === "Renomeada",
+        "gantt: Esc com alterações pergunta, e o não mantém tudo na tela");
+  check(/Discard the changes/.test(r.msg), "gantt: pergunta de edição, não de tarefa nova");
+
+  r = runIn(`window.confirm = (m) => { window.__ask++; window.__msg = m; return true; };
+    document.querySelector("#modal").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return { hidden: document.getElementById("modal").hidden,
+             nome: state.current.tasks.find((x) => x.id === "t2").name };`);
+  check(r.hidden === true && r.nome === "Dois",
+        "gantt: clicar no fundo e confirmar descarta as alterações");
+
+  // Cancelar diz o que faz: descarta na hora, sem diálogo no caminho
+  r = runIn(`window.__ask = 0; openModal("t2");
+    document.getElementById("f-name").value = "Outra";
+    document.getElementById("modal-cancel").click();
+    return { perguntou: window.__ask,
+             hidden: document.getElementById("modal").hidden };`);
+  check(r.perguntou === 0 && r.hidden === true,
+        "gantt: o botão Cancelar não pergunta");
+
+  r = runIn(`state.editingNew = true; openModal("t2");
+    document.getElementById("f-name").value = "Nova";
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return { msg: window.__msg, resta: state.current.tasks.length };`);
+  check(/Discard this new task/.test(r.msg) && r.resta === 1,
+        "gantt: tarefa nova pergunta com as palavras dela, e some ao confirmar");
 
   close();
 }

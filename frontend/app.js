@@ -39,6 +39,7 @@ const state = {
   dirty: false,
   dragging: false,
   editingNew: false,   // tarefa recém-criada aberta no modal (cancelar remove)
+  modalClean: null,    // instantâneo do formulário na abertura (ver modalSnapshot)
   cpm: null,           // análise CPM do servidor {cycle, finish, byId: Map}
   showCritical: false,
   highlight: null,      // {kind: "assignee"|"status"|"type", value} ou null
@@ -1498,7 +1499,10 @@ function openModal(id) {
   const t = taskById(id);
   if (!t) return;
   state.selected = id;
-  $("#modal-title").textContent = state.editingNew ? "New task" : "Edit task";
+  // T(): o título é reescrito a cada abertura, depois de PerthI18n já ter
+  // varrido o DOM — sem traduzir aqui, o cabeçalho ficava em inglês no meio
+  // de um modal inteiro traduzido
+  $("#modal-title").textContent = T(state.editingNew ? "New task" : "Edit task");
   $("#f-name").value = t.name;
   $("#f-assignee").value = t.assignee || "";
   $("#f-start").value = t.start;
@@ -1512,7 +1516,6 @@ function openModal(id) {
   $("#f-optimistic").value = t.optimistic || "";
   $("#f-most-likely").value = t.most_likely || "";
   $("#f-pessimistic").value = t.pessimistic || "";
-  renderPertPreview();
 
   // Lista de dependências possíveis (todas as outras tarefas)
   const deps = $("#f-deps");
@@ -1542,6 +1545,13 @@ function openModal(id) {
     lag.step = "1";
     lag.value = ref ? ref.lag : 0;
     lag.title = (window.PerthI18n ? PerthI18n.t("lag") : "lag") + " (d)";
+    // Só dependência marcada é gravada: um lag digitado na linha desmarcada
+    // sumia no salvamento. Digitar um lag É dizer que a dependência existe,
+    // então a marca acompanha — visível e reversível, ao contrário do
+    // descarte silencioso. Zero é o default de toda linha, não uma intenção.
+    lag.addEventListener("input", () => {
+      if (parseInt(lag.value, 10)) cb.checked = true;
+    });
     label.appendChild(lag);
     deps.appendChild(label);
   }
@@ -1549,7 +1559,12 @@ function openModal(id) {
   // Parent (WBS): qualquer tarefa que não seja marco, a própria, ou
   // descendente dela (evita ciclo). Resumos têm datas/progresso derivados.
   const psel = $("#f-parent");
-  psel.innerHTML = '<option value="">(top level)</option>';
+  // idem título: opção criada depois da varredura do PerthI18n
+  psel.innerHTML = "";
+  const top = document.createElement("option");
+  top.value = "";
+  top.textContent = T("(top level)");
+  psel.appendChild(top);
   const blocked = new Set([id, ...collectDescendants(id).map((o) => o.id)]);
   for (const o of state.current.tasks) {
     if (blocked.has(o.id) || o.milestone) continue;
@@ -1560,20 +1575,58 @@ function openModal(id) {
   }
   psel.value = t.parent && !blocked.has(t.parent) ? t.parent : "";
 
-  const isSum = state.wbs?.summary.has(id) ?? false;
-  // Resumo deriva as datas dos filhos: prazo, data fixa e estimativa de
-  // três pontos não fazem sentido — quem estima é quem faz o trabalho
+  syncModalLocks();
+  renderPertPreview();          // depois dos locks: o botão de aplicar lê
+                                // f-duration.disabled
+
+  $("#f-notes").value = t.notes || "";
+  state.modalClean = modalSnapshot();
+  el.modal.hidden = false;
+  $("#f-name").focus();
+  $("#f-name").select();
+}
+
+/* Campos que o modal mostra mas que a tarefa não usa.
+ *
+ * Resumo deriva as datas dos filhos: prazo, data fixa e estimativa de três
+ * pontos não fazem sentido — quem estima é quem faz o trabalho.
+ *
+ * Marco ocupa o próprio dia: _effdur() (schedule.jl) conta 1 e a tabela já
+ * mostra "—" na coluna de duração. O campo editável convidava a digitar um
+ * número que não valia nada. O valor continua guardado (campo desabilitado
+ * ainda é lido no submit), então desmarcar devolve a duração de antes.
+ */
+function syncModalLocks() {
+  const isSum = state.wbs?.summary.has(state.selected) ?? false;
   for (const fid of ["f-start", "f-duration", "f-progress", "f-milestone",
                      "f-deadline", "f-pinned",
                      "f-optimistic", "f-most-likely", "f-pessimistic"]) {
     $("#" + fid).disabled = isSum;
   }
+  $("#f-duration").disabled = isSum || $("#f-milestone").checked;
   $("#f-summary-hint").hidden = !isSum;
+}
+$("#f-milestone").addEventListener("change", syncModalLocks);
 
-  $("#f-notes").value = t.notes || "";
-  el.modal.hidden = false;
-  $("#f-name").focus();
-  $("#f-name").select();
+/* Instantâneo do formulário na abertura. Esc e clique no fundo jogam fora
+ * tudo o que foi digitado, e num modal de quinze campos isso não é óbvio —
+ * então esses dois perguntam antes, e só quando há mesmo o que perder. O
+ * botão Cancelar não pergunta: ele diz o que faz, e é a saída de quem
+ * quer descartar de propósito.
+ */
+function modalSnapshot() {
+  const v = (id) => $("#" + id).value;
+  return JSON.stringify([
+    v("f-name"), v("f-assignee"), v("f-parent"), v("f-start"), v("f-duration"),
+    v("f-deadline"), v("f-progress"), v("f-cost"), v("f-color"), v("f-notes"),
+    v("f-optimistic"), v("f-most-likely"), v("f-pessimistic"),
+    $("#f-milestone").checked, $("#f-pinned").checked,
+    $$("#f-deps label").map((l) => {
+      const cb = l.querySelector('input[type="checkbox"]');
+      return (cb ? cb.checked : false) + ":" +
+             (l.querySelector(".dep-lag")?.value ?? "");
+    }),
+  ]);
 }
 
 /* ---------------------------------------------------------------- PERT
@@ -1625,13 +1678,31 @@ for (const id of ["f-optimistic", "f-most-likely", "f-pessimistic",
                   "f-duration", "f-milestone"]) {
   $("#" + id).addEventListener("input", renderPertPreview);
 }
+/* Aplicar te à duração fecha o laço que existia: campo em branco vem da
+ * duração atual, então mudar a duração mudava o te, e cada clique empurrava
+ * o número de novo (665 / — / 6666 subia a cada clique em vez de assentar).
+ * Materializar os três números resolvidos antes de escrever a duração corta
+ * a realimentação — e grava exatamente o que _normalize_estimate! (types.jl)
+ * gravaria no salvamento, então nada muda de sentido. Com o te já fixo, o
+ * segundo clique é no-op e o botão some sozinho. */
 $("#f-pert-apply").addEventListener("click", () => {
+  const e = pertPreview();
+  if (!e) return;
+  $("#f-optimistic").value = String(e.o);
+  $("#f-most-likely").value = String(e.m);
+  $("#f-pessimistic").value = String(e.p);
   $("#f-duration").value = $("#f-pert-apply").dataset.days;
   renderPertPreview();
   $("#f-duration").focus();
 });
 
-function closeModal(discardNew) {
+function closeModal(discardNew, ask) {
+  if (ask && state.modalClean !== null && state.modalClean !== modalSnapshot() &&
+      !confirm(T(state.editingNew ? "Discard this new task?"
+                                  : "Discard the changes to this task?"))) {
+    return;
+  }
+  state.modalClean = null;
   if (discardNew && state.editingNew && state.selected) {
     state.current.tasks = state.current.tasks.filter((t) => t.id !== state.selected);
     state.selected = null;
@@ -1644,12 +1715,33 @@ function closeModal(discardNew) {
   document.activeElement?.blur?.();
 }
 
+// Campo numérico que o navegador não consegue ler ("666+6", "1e", "--3")
+// vale "" em .value, com validity.badInput ligado: o texto continua na tela,
+// mas todo mundo aqui lê 0 e cai no default (duração 1, custo 0, estimativa
+// em branco). Sem esta guarda o salvamento engolia o que foi digitado sem
+// dizer nada — mesma armadilha que fazia a prévia do PERT usar a duração no
+// lugar do "mais provável". Guarda igual à do nome vazio: devolve o foco ao
+// campo culpado (que a essa altura já está com a borda vermelha do :invalid)
+// e não salva.
+function badNumberField() {
+  return ["f-duration", "f-progress", "f-cost",
+          "f-optimistic", "f-most-likely", "f-pessimistic"]
+    .map((id) => $("#" + id))
+    .find((f) => !f.disabled && f.validity && f.validity.badInput) || null;
+}
+
 function submitModal() {
   const t = taskById(state.selected);
   if (!t) return closeModal(false);
   const name = $("#f-name").value.trim();
   if (!name) {
     $("#f-name").focus();
+    return;
+  }
+  const bad = badNumberField();
+  if (bad) {
+    bad.focus();
+    bad.select();
     return;
   }
   pushUndo();
@@ -1678,6 +1770,7 @@ function submitModal() {
     return typ + cb.value + (lag ? (lag > 0 ? "+" : "") + lag : "");
   });
   t.notes = $("#f-notes").value;
+  state.modalClean = null;
   state.editingNew = false;
   el.modal.hidden = true;
   document.activeElement?.blur?.();
@@ -2600,7 +2693,7 @@ $("#modal-delete").addEventListener("click", () => {
   deleteSelectedTask();
 });
 el.modal.addEventListener("click", (ev) => {
-  if (ev.target === el.modal) closeModal(true);
+  if (ev.target === el.modal) closeModal(true, true);
 });
 el.welcome.addEventListener("click", (ev) => {
   if (ev.target === el.welcome && state.current) hideWelcome();
@@ -2621,7 +2714,7 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
   if (!el.modal.hidden) {
-    if (ev.key === "Escape") closeModal(true);
+    if (ev.key === "Escape") closeModal(true, true);
     if (ev.key === "Enter" && document.activeElement?.tagName !== "TEXTAREA") submitModal();
     return;
   }

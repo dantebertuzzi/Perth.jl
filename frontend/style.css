@@ -123,7 +123,6 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   cursor: default;
 }
 #save-path {
-  flex: 0 1 440px;
   min-width: 140px;
   height: 24px;
   padding: 2px 9px;
@@ -152,13 +151,17 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   border-radius: 6px;
 }
 
-/* Navegador de pastas (dropdown servido pelo backend) */
+/* Navegador de pastas (dropdown servido pelo backend). A largura de
+   repouso é 340px: cabe um caminho de ~45 caracteres em mono 12px, e o
+   que passa disso vira ellipsis (o valor inteiro continua rolando dentro
+   do campo ao focar). A caixa não é o assunto da barra — reservar 480px
+   deixava um vão largo no meio da menubar mesmo com o campo vazio. */
 .fb-wrap {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 0 1 480px;
+  flex: 0 1 340px;
   min-width: 0;
 }
 .fb-wrap #save-path { flex: 1; min-width: 0; }
@@ -680,6 +683,19 @@ body.presenting .res-pane { display: none; }
 .form-grid > label > textarea { resize: vertical; }
 /* texto longo de opcao nao alarga o select fechado */
 .form-grid > label > select { text-overflow: ellipsis; }
+/* Número ilegível ("666+6") ou fora da faixa (progresso 150): o campo se
+   marca sozinho, senão o texto fica na tela e o valor lido é outro. */
+.form-grid input[type="number"]:invalid { border-color: var(--red); }
+/* Campo travado (resumo deriva dos filhos, marco ocupa um dia só) tem que
+   parecer travado: a regra base pinta cor e fundo em cima do estilo nativo
+   de :disabled, então o campo continuava com cara de editável e engolia o
+   clique sem explicar por quê. */
+.form-grid :disabled {
+  color: var(--muted);
+  background: var(--line-soft);
+  cursor: not-allowed;
+}
+.form-grid input[type="checkbox"]:disabled { opacity: .5; }
 .form-grid label.wide { grid-column: 1 / -1; }
 .form-grid label.checkbox {
   flex-direction: row;
@@ -702,16 +718,27 @@ body.presenting .res-pane { display: none; }
   border-top: 1px solid var(--line-soft);
 }
 .pert-title { width: 100%; font-size: 12px; color: var(--muted); }
-.pert-fields { display: flex; gap: 10px; flex: 1 1 240px; min-width: 0; }
+.pert-fields { display: flex; gap: 10px; flex: 1 1 100%; min-width: 0; }
 .form-grid .pert-fields label {
   flex: 1 1 0;
   min-width: 0;
   font-size: 11px;
 }
 .pert-fields input { width: 100%; min-width: 0; }
-/* resultado e botão andam juntos: quando a faixa não cabe, quebram como um
-   par, não o botão sozinho numa linha em que ele parece um rótulo */
-.pert-result { display: flex; align-items: center; gap: 8px; padding-bottom: 4px; }
+/* Resultado em linha própria, e não disputando a faixa dos três campos: o
+   texto cresce com os dígitos digitados, e dividir a linha com eles fazia a
+   largura dos campos mudar a cada tecla — até a faixa não caber e o par
+   texto+botão saltar de linha. Linha própria = campos de largura fixa e
+   botão sempre no mesmo lugar. min-height reserva o espaço do botão, que é
+   mais alto que o texto, para a caixa não pular quando ele some. */
+.pert-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 22px;
+  padding-bottom: 4px;
+}
 .pert-out {
   font-family: var(--mono);
   font-size: 11.5px;
@@ -719,7 +746,10 @@ body.presenting .res-pane { display: none; }
   white-space: nowrap;
 }
 .pert-out.none { color: var(--muted); }
+/* Preso na direita da linha: colado no texto, ele deslizava a cada dígito
+   digitado, porque o texto à esquerda cresce. Alvo de clique parado. */
 #f-pert-apply {
+  margin-left: auto;
   font-size: 11px;
   padding: 2px 8px;
   color: var(--muted);
