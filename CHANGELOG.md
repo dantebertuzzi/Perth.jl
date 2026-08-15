@@ -40,6 +40,12 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   `T()`, with the seventeen distinct strings added to all four dictionaries.
 
 ### Changed
+- The kanban's card filter box is drawn like the gantt's save-to path box: at
+  rest it is just text in the menubar, and the frame appears on hover and
+  focus. The two menubars are the same component, and one field carrying a
+  permanent box while the other carried none looked unintentional. Same font,
+  size, height, colour, radius and padding — the computed styles now match
+  exactly. It still widens on focus, which is the kanban's own behaviour.
 - The kanban declared the same one-line `T` helper eight times, once per
   function. It is now a single module-level constant, like the gantt's.
 
