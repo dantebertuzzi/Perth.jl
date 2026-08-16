@@ -1185,6 +1185,46 @@ end
         delete_project(p.id)
     end
 
+    @testset "dias marcados" begin
+        p = create_project("Marcos")
+        add_task!(p, "A"; start = Date(2026, 3, 2), duration = 5)
+
+        @test isempty(markers(p))
+        add_marker!(p, "Entrega", Date(2026, 4, 30))
+        add_marker!(p, "Auditoria", Date(2026, 3, 15); color = "#cb3c33")
+        @test [m.name for m in markers(p)] == ["Auditoria", "Entrega"]   # por data
+        @test markers(p)[1].color == "#cb3c33"
+
+        # nome repetido MOVE de data em vez de duplicar: duas linhas com o
+        # mesmo rótulo em dias diferentes é quase sempre uma segunda tentativa
+        add_marker!(p, "ENTREGA", Date(2026, 5, 10))
+        @test length(markers(p)) == 2
+        @test markers(p)[2].date == Date(2026, 5, 10)
+
+        # marco sem nome não entra: linha que não diz o que marca é um risco
+        # na tela, não informação
+        @test length(markers!(p, [markers(p); Marker(date = Date(2026, 6, 1))])) == 2
+
+        # é anotação, como a faixa: não move tarefa nem entra no motor
+        @test p.tasks[1].start == Date(2026, 3, 2)
+        @test project_finish(p) == Date(2026, 3, 6)
+
+        @test length(remove_marker!(p, "auditoria")) == 1
+
+        dir = mktempdir()
+        arq = joinpath(dir, "m.perth.jl")
+        set_file_path!(p, arq)
+        @test occursin("Marker(name = \"ENTREGA\", date = Date(\"2026-05-10\"))",
+                       read(arq, String))
+        @test [m.name for m in Perth.load(arq).markers] == ["ENTREGA"]
+        volta = JSON3.read(JSON3.write(p), Project)
+        @test volta.markers[1].date == Date(2026, 5, 10)
+        sem = replace(JSON3.write(p), r"\"markers\":\[.*?\}\]," => "")
+        @test JSON3.read(sem, Project).markers == Marker[]
+
+        delete_project(p.id)
+    end
+
     @testset "estatísticas por pessoa e por setor" begin
         p = create_project("Obra")
         pai = add_task!(p, "Estrutura"; start = Date(2026, 3, 2), duration = 1)

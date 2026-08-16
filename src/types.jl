@@ -115,6 +115,28 @@ Base.@kwdef mutable struct Band
 end
 
 """
+    Marker(; name, date, color = "")
+
+A named day, drawn as a vertical line across the chart — the way the *today*
+line is drawn, and for the same reason: some dates matter to every task at
+once. A delivery, an audit, the day the scaffolding comes down.
+
+Like [`Band`](@ref) it is annotation: a marker never moves a task and never
+enters the CPM engine. When a date must actually *bind* a task, that is a
+`deadline` on the task, which does change its slack.
+
+# Fields
+- `name::String`: written along the line.
+- `date::Date`: the day the line falls on.
+- `color::String`: hex tint; empty picks one automatically.
+"""
+Base.@kwdef mutable struct Marker
+    name::String = ""
+    date::Date = Dates.today()
+    color::String = ""
+end
+
+"""
     Project(; name, kwargs...)
 
 A project: a named collection of [`GanttTask`](@ref)s.
@@ -132,6 +154,8 @@ Base.@kwdef mutable struct Project
     # Faixas nomeadas do calendário (sprints, paradas, período de chuva).
     # São anotação: não movem tarefa nem entram no motor de CPM.
     bands::Vector{Band} = Band[]
+    # Dias nomeados, desenhados como linha vertical (igual à linha de hoje)
+    markers::Vector{Marker} = Marker[]
     # Caminho de espelhamento em disco (estilo Pluto): quando não vazio, cada
     # salvamento também grava o .perth.jl neste caminho. Específico da máquina,
     # por isso NUNCA entra no formato de intercâmbio .perth.jl exportado.
@@ -145,6 +169,7 @@ end
 # Serialização JSON via StructTypes (JSON3 cuida de Date/DateTime como ISO-8601)
 StructTypes.StructType(::Type{Person}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{Band}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{Marker}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{GanttTask}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{Project}) = StructTypes.Mutable()
 
@@ -304,6 +329,20 @@ function _clean_bands(faixas)
         push!(out, f)
     end
     return sort!(out; by = f -> (f.from, f.to, lowercase(f.name)))
+end
+
+# Marcos de calendário arrumados: sem nome vazio (uma linha que não diz o que
+# marca é só um risco na tela), ordenados por data.
+function _clean_markers(marcos)
+    out = Marker[]
+    for x in marcos
+        m = x isa Marker ? x : Marker(; (Symbol(k) => v for (k, v) in pairs(x))...)
+        m.name = _cap_text(replace(strip(m.name), r"\s+" => " "))
+        m.color = strip(m.color)
+        isempty(m.name) && continue
+        push!(out, m)
+    end
+    return sort!(out; by = m -> (m.date, lowercase(m.name)))
 end
 
 # Remove dependências que apontam para ids inexistentes ou para a própria tarefa

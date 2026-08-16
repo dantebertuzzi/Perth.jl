@@ -44,6 +44,10 @@ bands
 bands!
 add_band!
 remove_band!
+markers
+markers!
+add_marker!
+remove_marker!
 tasktable
 icalendar
 overallocations

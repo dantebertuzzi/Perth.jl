@@ -314,7 +314,19 @@ body.presenting .task-table { display: none; }
 
 /* WBS: resumos e indentação */
 .tt-row.summary .c-name { font-weight: 650; }
-.sum-mark { color: var(--muted); margin-right: 5px; font-size: 10px; }
+/* a seta do resumo virou botão: alvo de clique de verdade, com área para o
+   dedo, sem parecer um botão no meio do nome */
+.sum-mark {
+  margin-right: 3px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sum-mark:hover { color: var(--ink); }
 /* Resumo de WBS: recipiente, não trabalho — traço neutro e fino, com o
    progresso que sobe dos filhos preenchendo o trilho. Chapado na cor do
    texto ele competia com as barras pastel e vencia. */
@@ -363,6 +375,28 @@ body.presenting .task-table { display: none; }
   flex-direction: column;
   background: var(--panel);
 }
+/* Puxador entre a tabela e a linha do tempo. Fica por cima da borda, e não
+   ao lado dela: uma faixa própria empurraria a timeline e mudaria a largura
+   da coluna de dias por 7px de enfeite. */
+.tt-resizer {
+  flex: 0 0 auto;
+  width: 7px;
+  margin: 0 -4px 0 -3px;
+  /* position é o que faz o z-index valer: sem ela o puxador continua na
+     ordem do DOM e a timeline, pintada depois, come os pixels dele — o
+     arrasto vira seleção de texto */
+  position: relative;
+  z-index: 4;
+  cursor: col-resize;
+  background: none;
+}
+.tt-resizer:hover, .tt-resizer:focus-visible, .tt-resizer.dragging {
+  background: var(--purple);
+  opacity: .35;
+  outline: none;
+}
+body.resizing { cursor: col-resize; user-select: none; }
+body.presenting .tt-resizer { display: none; }
 .tt-head, .tt-row {
   display: grid;
   grid-template-columns: 1fr 96px 44px 40px;
@@ -468,6 +502,18 @@ body.presenting .task-table { display: none; }
 .row-line { stroke: var(--line-soft); stroke-width: 1; }
 .weekend { fill: var(--weekend); }
 .today-line { stroke: var(--red); stroke-width: 1.5; stroke-dasharray: 2 3; }
+/* Dia marcado: mesma linha da de hoje, porque é a mesma ideia — uma data que
+   vale para o gráfico inteiro. A cor vem do próprio marco, no atributo. */
+.marker-line { stroke-width: 1.5; stroke-dasharray: 2 3; opacity: .8; pointer-events: none; }
+.marker-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  opacity: .9;
+  pointer-events: none;
+}
+/* a régua de dias vira alvo de duplo clique: o cursor precisa dizer isso */
+#tl-days .tl-cell { cursor: cell; }
 .bar { rx: 4; cursor: grab; }
 .bar-progress { rx: 4; pointer-events: none; }
 .bar-label {

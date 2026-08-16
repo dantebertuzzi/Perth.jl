@@ -45,6 +45,7 @@ const state = {
   highlight: null,      // {kind: "assignee"|"status"|"type", value} ou null
   groupBy: "",          // "" | "assignee" | "team" — raias na tabela e no gráfico
   lanesClosed: new Set(),  // chaves de raia recolhidas
+  wbsClosed: new Set(),    // ids de resumo com a subárvore recolhida
   search: "",           // busca por nome de tarefa (ver matchesSearch)
   searchAt: 0,          // ocorrência atual, percorrida com Enter
   warnings: [],         // problemas do plano, vindos do servidor
@@ -460,9 +461,10 @@ async function openProject(id) {
   state.current = await api(`/api/projects/${id}`);
   noteBase();
   state.selected = null;
-  // raia recolhida é sobre AQUELE projeto: "Ana" fechada aqui não quer
+  // o que está recolhido é sobre AQUELE projeto: "Ana" fechada aqui não quer
   // dizer "Ana" fechada no projeto seguinte
   state.lanesClosed.clear();
+  state.wbsClosed.clear();
   el.projectSelect.value = id;
   localStorage.setItem("perth-last-project", id);
   await fetchAnalytics();
@@ -1108,6 +1110,9 @@ function renderHeader() {
       const dt = addDays(start, i);
       const cell = document.createElement("div");
       cell.className = "tl-cell";
+      // a coluna diz que dia ela é: régua auto-descritiva, e o duplo clique
+      // que marca o dia não precisa ser conferido por aritmética de pixel
+      cell.dataset.date = fmtISO(dt);
       if (dt.getTime() === today.getTime()) cell.classList.add("today-cell");
       cell.style.left = i * ppd + "px";
       cell.style.width = ppd + "px";
@@ -1121,6 +1126,7 @@ function renderHeader() {
     for (; diffDays(start, w) < days; w = addDays(w, 7)) {
       const cell = document.createElement("div");
       cell.className = "tl-cell";
+      cell.dataset.date = fmtISO(w);   // primeiro dia da semana da coluna
       cell.style.left = xOf(w) + "px";
       cell.style.width = 7 * ppd + "px";
       cell.textContent = state.zoom === "week"
@@ -1156,9 +1162,27 @@ const laneLabel = (chave) => chave ||
    diferente, e pendurá-lo na raia de alguém diria que aquela pessoa é dona do
    bloco inteiro. O motor de CPM já os trata assim — agenda folhas, resumos
    são recipientes. */
+/* Um resumo recolhido esconde a subárvore inteira, não só os filhos diretos:
+   recolher "Estrutura" e continuar vendo os netos seria recolher pela
+   metade. O colchete dele no gráfico já resume o período dos filhos, então o
+   que sobra na tela continua dizendo quando o bloco acontece. */
+function hiddenByCollapse(t, byId) {
+  let pai = t.parent;
+  while (pai) {
+    if (state.wbsClosed.has(pai)) return true;
+    pai = byId.get(pai)?.parent || "";
+  }
+  return false;
+}
+
 function displayRows() {
   const tasks = state.current?.tasks || [];
-  if (!state.groupBy) return tasks.map((task) => ({ kind: "task", task }));
+  if (!state.groupBy) {
+    if (!state.wbsClosed.size) return tasks.map((task) => ({ kind: "task", task }));
+    const byId = new Map(tasks.map((t) => [t.id, t]));
+    return tasks.filter((t) => !hiddenByCollapse(t, byId))
+                .map((task) => ({ kind: "task", task }));
+  }
 
   const raias = new Map();
   for (const t of tasks) {
@@ -1221,6 +1245,7 @@ function taskRow(t) {
   // raia, e o recuo apontaria para uma linha que não está ali
   const depth = state.groupBy ? 0 : (state.wbs?.depth.get(t.id) ?? 0);
   const isSum = state.wbs?.summary.has(t.id) ?? false;
+  const fechado = state.wbsClosed.has(t.id);
   row.className = "tt-row" + (t.id === state.selected ? " selected" : "")
     + (crit ? " critical" : "")
     + (isSum ? " summary" : "")
@@ -1228,13 +1253,25 @@ function taskRow(t) {
   if (state.showCritical && info) row.title = `slack: ${info.slack_days}d`;
   row.dataset.id = t.id;
   row.innerHTML = `
-    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? '<span class="sum-mark">▾</span>' : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
+    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? `<button type="button" class="sum-mark" title="${T(fechado ? "Expand" : "Collapse")}">${fechado ? "▸" : "▾"}</button>` : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
     <span class="c-date">${t.start}</span>
     <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
     <span class="c-num">${t.progress}</span>`;
   row.addEventListener("click", () => selectTask(t.id));
   row.addEventListener("dblclick", () => openModal(t.id));
+  // o ▾ recolhe a subárvore e NÃO seleciona: clique na seta é sobre a
+  // árvore, clique na linha é sobre a tarefa
+  row.querySelector(".sum-mark")?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    toggleSummary(t.id);
+  });
   return row;
+}
+
+function toggleSummary(id) {
+  state.wbsClosed.has(id) ? state.wbsClosed.delete(id) : state.wbsClosed.add(id);
+  renderTable();
+  renderChart();
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1552,12 +1589,44 @@ function renderChart() {
     }
   });
 
+  /* Dias marcados: a mesma linha da de hoje, porque são a mesma ideia — uma
+     data que vale para o gráfico inteiro, não para uma tarefa. Desenhadas
+     por último, junto com a de hoje: linha de referência que passa por trás
+     de uma barra deixa de ser referência. */
+  (state.current.markers || []).forEach((m, i) => {
+    const mx = xOf(parseDate(m.date)) + ppd / 2;
+    if (mx < 0 || mx > totalW) return;
+    const cor = m.color || AUTO_COLORS[i % AUTO_COLORS.length];
+    chart.appendChild(svg("line", {
+      class: "marker-line", x1: mx, y1: 0, x2: mx, y2: totalH, stroke: cor,
+    }));
+    const rot = svg("text", {
+      class: "marker-label", x: mx - 5, y: 10, fill: cor,
+      transform: `rotate(90 ${mx - 5} 10)`,
+    });
+    rot.textContent = m.name;
+    chart.appendChild(rot);
+  });
+
   // Linha de hoje
   const tx = xOf(todayUTC()) + ppd / 2;
   chart.appendChild(svg("line", {
     class: "today-line", x1: tx, y1: 0, x2: tx, y2: totalH,
   }));
 }
+
+/* Duplo clique na régua de dias marca aquele dia. É o gesto mais curto para
+   a pergunta "o que acontece nesta data?": o dia já está debaixo do cursor,
+   e digitar a data num formulário seria repetir para o computador uma coisa
+   que ele acabou de ver. */
+el.tlDays.addEventListener("dblclick", (ev) => {
+  if (!state.current) return;
+  const r = el.tlDays.getBoundingClientRect();
+  const x = ev.clientX - r.left;
+  // floor, não round: o dia é o que está SOB o cursor, não o mais próximo
+  const dia = addDays(state.range.start, Math.floor(x / PPD[state.zoom]));
+  showMarkers(fmtISO(dia));
+});
 
 /* A faixa da raia no gráfico. Fechada, ela vira uma barra só, do começo do
    primeiro trabalho ao fim do último: recolher a raia esconde as tarefas,
@@ -2431,6 +2500,99 @@ function showBands() {
   desenhar();
   body.append(form, lista);
   showOverlay("Calendar bands", body);
+  nome.focus();
+}
+
+/* Editor de dias marcados. `preencher` chega do duplo clique na régua: o
+   painel abre com a data já posta e o cursor no nome, que é o único campo
+   que o computador não tem como adivinhar. */
+function showMarkers(preencher = "") {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "people-box cal-box";
+
+  const form = document.createElement("form");
+  form.className = "cal-add";
+  const nome = document.createElement("input");
+  nome.type = "text";
+  nome.autocomplete = "off";
+  nome.placeholder = T("Name");
+  const quando = document.createElement("input");
+  quando.type = "date";
+  quando.value = preencher || fmtISO(todayUTC());
+  const cor = document.createElement("input");
+  cor.type = "color";
+  cor.className = "cal-pick";
+  cor.title = T("Colour");
+  cor.value = corAutomatica((state.current.markers || []).length);
+  const add = document.createElement("button");
+  add.type = "submit";
+  add.className = "primary";
+  add.textContent = T("Add");
+  form.append(nome, quando, cor, add);
+
+  const lista = document.createElement("div");
+  lista.className = "people-list";
+
+  async function gravar(marcos) {
+    state.current.markers = marcos;
+    const salvo = await saveNowAfterDirty();
+    if (salvo) state.current.markers = salvo.markers;
+    renderChart();
+    desenhar();
+  }
+
+  function desenhar() {
+    const marcos = state.current.markers || [];
+    lista.textContent = "";
+    if (!marcos.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("No marked days yet.");
+      lista.append(vazio);
+    }
+    marcos.forEach((m, i) => {
+      const linha = document.createElement("div");
+      linha.className = "people-row cal-row";
+      const c = document.createElement("input");
+      c.type = "color";
+      c.className = "cal-dot";
+      c.title = T("Colour");
+      c.value = m.color || corAutomatica(i);
+      c.addEventListener("change", () => { m.color = c.value; gravar(marcos); });
+      const n = document.createElement("span");
+      n.className = "people-name";
+      n.textContent = m.name;
+      const dia = document.createElement("span");
+      dia.className = "people-count";
+      dia.textContent = m.date;
+      const x = document.createElement("button");
+      x.className = "icon-btn";
+      x.type = "button";
+      x.textContent = "✕";
+      x.title = T("Remove");
+      x.addEventListener("click", () => gravar(marcos.filter((o) => o !== m)));
+      linha.append(c, n, dia, x);
+      lista.append(linha);
+    });
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const texto = nome.value.trim();
+    if (!texto || !quando.value) return;
+    // mesma regra do REPL: nome repetido MOVE o marco de data
+    const resto = (state.current.markers || [])
+      .filter((m) => m.name.toLowerCase() !== texto.toLowerCase());
+    gravar([...resto, { name: texto, date: quando.value, color: cor.value }]);
+    nome.value = "";
+    cor.value = corAutomatica(resto.length + 1);
+    nome.focus();
+  });
+
+  desenhar();
+  body.append(form, lista);
+  showOverlay("Marked days", body);
   nome.focus();
 }
 
@@ -3354,6 +3516,7 @@ const ACTIONS = {
   "rename-project": renameProject,
   "people": showPeople,
   "bands": showBands,
+  "markers": () => showMarkers(),
   "delete-project": deleteProject,
   "import": importProject,
   "export": exportProject,
@@ -3497,9 +3660,13 @@ function revealTask(id) {
   const t = state.current.tasks.find((x) => x.id === id);
   if (!t) return;
   state.selected = id;
-  // numa raia fechada é preciso ABRIR a raia: apontar para uma linha que não
-  // está na tela é pior do que não apontar
+  // numa raia fechada — ou dentro de um resumo recolhido — é preciso ABRIR:
+  // apontar para uma linha que não está na tela é pior do que não apontar
   if (state.groupBy) state.lanesClosed.delete(laneKeyOf(t));
+  const byId = new Map(state.current.tasks.map((x) => [x.id, x]));
+  for (let pai = t.parent; pai; pai = byId.get(pai)?.parent || "") {
+    state.wbsClosed.delete(pai);
+  }
   renderTable();
   renderChart();
   const linha = displayRows()
@@ -3669,10 +3836,78 @@ $$("#set-density button").forEach((b) =>
     saveUI();
     state.current && renderAll();
   }));
+/* Arrastar a divisa entre a tabela e o gráfico. A régua de largura já
+   existia nas configurações; o que faltava era o gesto — ninguém abre um
+   painel de preferências para ver um nome de tarefa que está cortado.
+
+   Os limites saem da PRÓPRIA régua (min/max/step do input), não de números
+   repetidos aqui: dois lugares com o mesmo limite escrito à mão é um lugar
+   que vai ficar para trás. Arrastar também move a régua, e o passo é o dela
+   — largura fora do passo faria o input arredondar em silêncio e os dois
+   passariam a discordar em alguns pixels. */
+const faixaTabela = () => {
+  const reg = $("#set-tablew");
+  return { min: Number(reg.min) || 260, max: Number(reg.max) || 560,
+           passo: Number(reg.step) || 1 };
+};
+
+function setTableWidth(w, { gravar = true } = {}) {
+  const { min, max, passo } = faixaTabela();
+  const alvo = Math.min(Math.max(Math.round(w / passo) * passo, min), max);
+  ui.tableWidth = alvo;
+  document.documentElement.style.setProperty("--table-w", alvo + "px");
+  $("#set-tablew").value = alvo;
+  if (gravar) {
+    saveUI();
+    state.current && renderChart();
+  }
+  return alvo;
+}
+
+(function arrastarDivisa() {
+  const alca = $("#tt-resizer");
+  if (!alca) return;
+  let x0 = 0, w0 = 0;
+
+  // durante o arrasto só a variável CSS e a régua andam; redesenhar o SVG a
+  // cada pixel deixaria o gesto pesado
+  const mover = (ev) => setTableWidth(w0 + ev.clientX - x0, { gravar: false });
+  const soltar = (ev) => {
+    alca.releasePointerCapture?.(ev.pointerId);
+    alca.classList.remove("dragging");
+    document.body.classList.remove("resizing");
+    alca.removeEventListener("pointermove", mover);
+    alca.removeEventListener("pointerup", soltar);
+    setTableWidth(ui.tableWidth);
+  };
+
+  alca.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    x0 = ev.clientX;
+    w0 = ui.tableWidth;
+    alca.setPointerCapture?.(ev.pointerId);
+    alca.classList.add("dragging");
+    document.body.classList.add("resizing");
+    alca.addEventListener("pointermove", mover);
+    alca.addEventListener("pointerup", soltar);
+  });
+
+  // duplo clique volta ao padrão: desfazer um arrasto infeliz sem ter de
+  // acertar o pixel de onde ele começou
+  alca.addEventListener("dblclick", () => setTableWidth(UI_DEFAULTS.tableWidth));
+
+  // a divisa tem foco, então as setas também movem
+  alca.addEventListener("keydown", (ev) => {
+    const { passo } = faixaTabela();
+    const d = ev.key === "ArrowLeft" ? -passo : ev.key === "ArrowRight" ? passo : 0;
+    if (!d) return;
+    ev.preventDefault();
+    setTableWidth(ui.tableWidth + d);
+  });
+})();
+
 $("#set-tablew").addEventListener("input", () => {
-  ui.tableWidth = Number($("#set-tablew").value);
-  applyUI();
-  saveUI();
+  setTableWidth(Number($("#set-tablew").value));
 });
 $("#set-weekends").addEventListener("click", () => {
   ui.weekends = !ui.weekends;

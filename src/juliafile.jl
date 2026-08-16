@@ -12,6 +12,7 @@ const _SAFE_CONSTRUCTORS = Dict{Symbol,Any}(
     :GanttTask => GanttTask,
     :Person    => Person,
     :Band     => Band,
+    :Marker   => Marker,
     :Date      => Dates.Date,
     :DateTime  => Dates.DateTime,
 )
@@ -32,6 +33,16 @@ function _to_julia_source(p::Project)
     println(io, "    name = ", repr(p.name), ",")
     isempty(p.calendar) ||
         println(io, "    calendar = ", repr(p.calendar), ",")
+    if !isempty(p.markers)
+        println(io, "    markers = [")
+        for m in p.markers
+            campos = ["name = " * repr(m.name),
+                     "date = Date(" * repr(string(m.date)) * ")"]
+            isempty(m.color) || push!(campos, "color = " * repr(m.color))
+            println(io, "        Marker(", join(campos, ", "), "),")
+        end
+        println(io, "    ],")
+    end
     if !isempty(p.bands)
         println(io, "    bands = [")
         for f in p.bands
