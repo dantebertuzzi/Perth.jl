@@ -1675,6 +1675,9 @@ function renderChart() {
     const hasNotes = (t.notes || "").trim().length > 0;
     const isSum = state.wbs?.summary.has(t.id) ?? false;
     const slip = !isSum && !t.milestone ? slipDays(t) : 0;
+    const escolhida = t.id === state.selected;
+    // afastamento do nome: cede lugar ao ponto de ligar quando ele existe
+    const folga = escolhida ? ESPACO_PONTO : 0;
 
     /* Barra-fantasma do baseline (plano original), rente à base da linha.
      *
@@ -1690,7 +1693,6 @@ function renderChart() {
       const bx = xOf(parseDate(t.baseline_start));
       const bw = Math.max(t.baseline_duration, 1) * ppd;
       const gy = i * ROW_H + ROW_H - 9;
-      const escolhida = t.id === state.selected;
       chart.appendChild(svg("rect", {
         class: "baseline-ghost" + dim + (escolhida ? " sel" : ""),
         x: bx, y: gy, width: bw, height: 4, rx: 2,
@@ -1750,7 +1752,7 @@ function renderChart() {
           class: "note-dot" + dim, cx: x + w - 2, cy: sy - 1, r: 3.2,
         }));
       }
-      if (ui.labels) rotuloDaBarra(chart, t, dim, x + w + 8, sy + alt + 4, caixasRotulo);
+      if (ui.labels) rotuloDaBarra(chart, t, dim, x + w + 8 + folga, sy + alt + 4, caixasRotulo);
       if (t.id === state.selected) {
         chart.appendChild(svg("rect", {
           class: "bar-sel", x: x - 3, y: sy - 3, width: w + 6, height: alt + 11,
@@ -1779,7 +1781,7 @@ function renderChart() {
           class: "note-dot" + dim, cx: x + r, cy: cy - r, r: 3.2,
         }));
       }
-      if (ui.labels) rotuloDaBarra(chart, t, dim, x + r + 6, cy + 4, caixasRotulo);
+      if (ui.labels) rotuloDaBarra(chart, t, dim, x + r + 6 + folga, cy + 4, caixasRotulo);
     } else {
       const info = state.cpm?.byId.get(t.id);
       let w = Math.max(t.duration, 1) * ppd;
@@ -1817,17 +1819,19 @@ function renderChart() {
       chart.appendChild(handle);
 
       if (ui.labels) {
-        rotuloDaBarra(chart, t, dim, x + w + 8, y + h - 5, caixasRotulo, (label) => {
+        rotuloDaBarra(chart, t, dim, x + w + 8 + folga, y + h - 5, caixasRotulo, (label) => {
           if (slip <= 0) return;
           const ts = svg("tspan", { class: "slip-label" });
           ts.textContent = `  +${slip}d`;
           label.appendChild(ts);
         });
       } else if (slip > 0) {
-        const badge = svg("text", { class: "bar-label slip-label" + dim, x: x + w + 8, y: y + h - 5 });
+        const badge = svg("text", {
+          class: "bar-label slip-label" + dim, x: x + w + 8 + folga, y: y + h - 5,
+        });
         badge.textContent = `+${slip}d`;
         chart.appendChild(badge);
-        anotaCaixa(badge, x + w + 8, y + h - 5, caixasRotulo);
+        anotaCaixa(badge, x + w + 8 + folga, y + h - 5, caixasRotulo);
       }
 
       if (state.showCritical && info?.critical) {
@@ -2149,6 +2153,17 @@ function selectTask(id) {
    alimentada por". As duas criam a MESMA ligação término→início — o que muda
    é de que lado da cadeia você está montando. SS/FF e folga continuam no
    modal: são a exceção, e exceção não precisa de gesto. */
+/* Espaço que o nome da barra cede ao ponto de ligar da direita — diâmetro
+ * mais um respiro. Só na barra selecionada, que é a única que tem pontos: o
+ * ponto nasce exatamente onde o nome começa e comia a primeira letra.
+ *
+ * Subir o ponto era a outra saída, e resolve no cozy; no compact a linha é
+ * mais baixa, o nome fica mais alto, e o ponto voltaria a encostar nele. E o
+ * ponto na altura do meio da barra é o que diz "arraste a partir do FIM
+ * dela". Afastar o nome de toda barra, por causa de um ponto que só existe na
+ * selecionada, seria pagar na tela inteira por um problema de uma linha. */
+const ESPACO_PONTO = 13;
+
 function drawLinkDots(chart, t, i, xEsq, xDir) {
   if (state.readOnly) return;   // ponta de arrasto que não arrasta é convite falso
   const cy = i * ROW_H + ROW_H / 2;
