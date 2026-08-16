@@ -468,6 +468,18 @@ body.presenting .task-table { display: none; }
 .row-line { stroke: var(--line-soft); stroke-width: 1; }
 .weekend { fill: var(--weekend); }
 .today-line { stroke: var(--red); stroke-width: 1.5; stroke-dasharray: 2 3; }
+/* Dia marcado: mesma linha da de hoje, porque é a mesma ideia — uma data que
+   vale para o gráfico inteiro. A cor vem do próprio marco, no atributo. */
+.marker-line { stroke-width: 1.5; stroke-dasharray: 2 3; opacity: .8; pointer-events: none; }
+.marker-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .08em;
+  opacity: .9;
+  pointer-events: none;
+}
+/* a régua de dias vira alvo de duplo clique: o cursor precisa dizer isso */
+#tl-days .tl-cell { cursor: cell; }
 .bar { rx: 4; cursor: grab; }
 .bar-progress { rx: 4; pointer-events: none; }
 .bar-label {

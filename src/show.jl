@@ -19,6 +19,8 @@ Base.show(io::IO, t::GanttTask) =
     print(io, "GanttTask(\"", t.name, "\", ", t.start,
           t.milestone ? ", milestone)" : " +$(t.duration)d)")
 
+Base.show(io::IO, m::Marker) = print(io, "Marker(\"", m.name, "\" ", m.date, ")")
+
 Base.show(io::IO, f::Band) =
     print(io, "Band(\"", f.name, "\" ", f.from, " → ", f.to, ")")
 

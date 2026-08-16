@@ -182,6 +182,7 @@ function _save!(st::AppState, p::Project)
     foreach(_normalize!, p.tasks)
     _unify_assignees!(p)
     p.bands = _clean_bands(p.bands)
+    p.markers = _clean_markers(p.markers)
     write(_project_file(st, p), JSON3.write(p))
     # Espelhamento estilo Pluto: se o usuário escolheu um arquivo na UI
     # (caixa de caminho na menubar) ou via set_file_path!, cada salvamento
@@ -398,6 +399,54 @@ Remove the band with this name (case-insensitive).
 function remove_band!(p::Project, name::AbstractString)
     alvo = lowercase(strip(name))
     return bands!(p, filter(f -> lowercase(f.name) != alvo, p.bands))
+end
+
+"""
+    markers(p::Project) -> Vector{Marker}
+
+Named days, earliest first. See [`Marker`](@ref).
+"""
+markers(p::Project) = copy(p.markers)
+
+"""
+    markers!(p::Project, entries) -> Vector{Marker}
+
+Replace the marker list. Nameless markers are dropped: a line that does not
+say what it marks is just a stroke on the screen.
+"""
+function markers!(p::Project, entries)
+    p.markers = _clean_markers(entries)
+    _with_state(st -> _save!(st, p))
+    return copy(p.markers)
+end
+
+"""
+    add_marker!(p::Project, name, date; color = "") -> Vector{Marker}
+
+Draw a vertical line on `date`, labelled `name`.
+
+```julia
+add_marker!(p, "Entrega", Date(2026, 4, 30))
+```
+
+A name that already exists is *moved* to the new date rather than duplicated.
+"""
+function add_marker!(p::Project, name::AbstractString, date::Date;
+                     color::AbstractString = "")
+    alvo = lowercase(strip(name))
+    resto = filter(m -> lowercase(m.name) != alvo, p.markers)
+    return markers!(p, [resto; Marker(; name = String(name), date,
+                                      color = String(color))])
+end
+
+"""
+    remove_marker!(p::Project, name) -> Vector{Marker}
+
+Remove the marker with this name (case-insensitive).
+"""
+function remove_marker!(p::Project, name::AbstractString)
+    alvo = lowercase(strip(name))
+    return markers!(p, filter(m -> lowercase(m.name) != alvo, p.markers))
 end
 
 """

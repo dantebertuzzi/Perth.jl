@@ -2868,6 +2868,98 @@ console.log("gantt · faixas do calendário");
   close();
 }
 
+console.log("gantt · dias marcados");
+{
+  const { runIn, close } = loadGanttApp();
+
+  const seed = `
+    window.__salvos = [];
+    window.saveNowAfterDirty = async () => {
+      window.__salvos.push(JSON.parse(JSON.stringify(state.current.markers)));
+      return { ...state.current,
+               markers: [...state.current.markers]
+                 .sort((a, b) => (a.date < b.date ? -1 : 1)) };
+    };
+    state.current = { id: "p1", name: "P", people: [], bands: [], markers: [],
+      tasks: [{ id: "t1", name: "A", start: "2026-03-02", duration: 5,
+        assignee: "", progress: 0, dependencies: [], color: "", notes: "",
+        milestone: false, parent: "", baseline_start: null,
+        baseline_duration: 0, cost: 0, deadline: null, pinned: false }] };
+    state.cpm = { cycle: false, finish: "2026-03-06", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  // O gesto: duplo clique na régua de dias abre o painel com AQUELE dia
+  // posto. Digitar a data num formulário seria repetir para o computador uma
+  // coisa que ele acabou de ver.
+  let r = runIn(`${seed}
+    const dia = 3;                    // quarto dia da janela desenhada
+    const x = dia * PPD[state.zoom] + 2;
+    el.tlDays.dispatchEvent(new MouseEvent("dblclick",
+      { bubbles: true, clientX: x, clientY: 5 }));
+    return { data: document.querySelector(".cal-add input[type=date]").value,
+             esperada: fmtISO(addDays(state.range.start, dia)),
+             foco: document.activeElement ===
+                   document.querySelector(".cal-add input[type=text]") };`);
+  check(r.data === r.esperada, "gantt: o duplo clique traz o dia que está sob o cursor");
+  check(r.foco === true, "gantt: com o cursor no nome, o único campo que falta");
+
+  runIn(`const f = document.querySelector(".cal-add");
+    const i = f.querySelectorAll("input");
+    i[0].value = "Entrega"; i[1].value = "2026-03-20"; i[2].value = "#cb3c33";
+    f.dispatchEvent(new Event("submit")); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return window.__salvos.at(-1);`);
+  check(r.length === 1 && r[0].name === "Entrega" && r[0].date === "2026-03-20",
+        "gantt: o marco é gravado com nome, dia e cor");
+  check(r[0].color === "#cb3c33", "gantt: a cor escolhida vai junto");
+
+  // a linha: mesma ideia da linha de hoje, e no meio do dia marcado
+  r = runIn(`renderChart();
+    const l = document.querySelector("#chart .marker-line");
+    const rot = document.querySelector("#chart .marker-label");
+    const hoje = document.querySelector("#chart .today-line");
+    return { x1: +l.getAttribute("x1"), x2: +l.getAttribute("x2"),
+             esperado: xOf(parseDate("2026-03-20")) + PPD[state.zoom] / 2,
+             y2: +l.getAttribute("y2"),
+             alturaDoGrafico: +document.getElementById("chart").getAttribute("height"),
+             cor: l.getAttribute("stroke"), rotulo: rot.textContent,
+             depoisDeHoje: [...document.querySelectorAll("#chart *")].indexOf(hoje) >
+                           [...document.querySelectorAll("#chart *")].indexOf(l) };`);
+  check(r.x1 === r.esperado && r.x2 === r.esperado,
+        "gantt: a linha cai no meio do dia marcado");
+  check(r.y2 === r.alturaDoGrafico, "gantt: e atravessa o gráfico inteiro");
+  check(r.cor === "#cb3c33" && r.rotulo === "Entrega",
+        "gantt: com a cor e o nome do marco");
+  check(r.depoisDeHoje === true,
+        "gantt: desenhada por último, como a de hoje — linha de referência não passa por baixo de barra");
+
+  // nome repetido MOVE de data em vez de duplicar
+  runIn(`const f = document.querySelector(".cal-add");
+    const i = f.querySelectorAll("input");
+    i[0].value = "ENTREGA"; i[1].value = "2026-04-01";
+    f.dispatchEvent(new Event("submit")); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return window.__salvos.at(-1);`);
+  check(r.length === 1 && r[0].date === "2026-04-01",
+        "gantt: o mesmo nome move o marco de dia, não cria outro");
+
+  r = runIn(`return { nomes: [...document.querySelectorAll(".cal-row .people-name")]
+                        .map((x) => x.textContent),
+             dias: [...document.querySelectorAll(".cal-row .people-count")]
+                        .map((x) => x.textContent) };`);
+  check(r.nomes.join("|") === "ENTREGA" && r.dias.join("|") === "2026-04-01",
+        "gantt: a lista mostra o marco com o dia dele");
+
+  runIn(`document.querySelector(".cal-row .icon-btn").click(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  check(runIn(`return window.__salvos.at(-1).length;`) === 0,
+        "gantt: o ✕ remove o marco");
+
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
 console.log("gantt · painel de estatísticas");
 {
   const { runIn, close } = loadGanttApp();

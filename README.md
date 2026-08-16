@@ -91,6 +91,11 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 - Double-click a bar (or table row) to edit; **duplicate** a task from
   the Edit menu or `Ctrl+D` (also `duplicate_task!(p, id)` in the REPL)
 - Tasks with notes show a **red dot** on the bar — hover to read them
+- **Marked days**: double-click a column in the day ruler and name it — the
+  day gets a vertical line across the whole chart, like the *today* line and
+  for the same reason: some dates matter to every task at once. A delivery, an
+  audit, the day the scaffolding comes down. Also `add_marker!(p, "Entrega",
+  Date(2026, 4, 30))`.
 - **Calendar bands** (File → Calendar bands…, or `add_band!`): shade a named
   stretch of calendar behind the chart — a sprint, a shutdown, the rainy
   season, the two weeks the crane is on site. Pick its colour, overlap them

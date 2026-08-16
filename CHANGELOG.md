@@ -5,6 +5,26 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **Marked days** (`Marker`, `markers`, `markers!`, `add_marker!`,
+  `remove_marker!`, File → Marked days…, and a **double-click on the day**
+  ruler): a named day drawn as a vertical line across the whole chart, the way
+  the *today* line is drawn and for the same reason — some dates matter to
+  every task at once. A delivery, an audit, the day the scaffolding comes
+  down.
+- The gesture is the short one: the day is already under the cursor, so
+  double-clicking its column opens the panel with the date filled in and the
+  caret in the name — the only field the computer cannot guess. Typing the
+  date into a form would be repeating to the computer something it just saw.
+- Like a band, a marker is **annotation**: it never moves a task and never
+  enters the CPM engine. When a date must actually bind a task, that is the
+  task's `deadline`, which does change its slack. A nameless marker is
+  dropped — a line that does not say what it marks is a stroke on the screen.
+- Each column of the day ruler now carries its own date (`data-date`), so the
+  ruler describes itself instead of being read back through pixel arithmetic.
+
 ## [0.8.5] - 2026-08-15
 
 ### Added

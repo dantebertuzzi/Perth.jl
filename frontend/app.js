@@ -1108,6 +1108,9 @@ function renderHeader() {
       const dt = addDays(start, i);
       const cell = document.createElement("div");
       cell.className = "tl-cell";
+      // a coluna diz que dia ela é: régua auto-descritiva, e o duplo clique
+      // que marca o dia não precisa ser conferido por aritmética de pixel
+      cell.dataset.date = fmtISO(dt);
       if (dt.getTime() === today.getTime()) cell.classList.add("today-cell");
       cell.style.left = i * ppd + "px";
       cell.style.width = ppd + "px";
@@ -1121,6 +1124,7 @@ function renderHeader() {
     for (; diffDays(start, w) < days; w = addDays(w, 7)) {
       const cell = document.createElement("div");
       cell.className = "tl-cell";
+      cell.dataset.date = fmtISO(w);   // primeiro dia da semana da coluna
       cell.style.left = xOf(w) + "px";
       cell.style.width = 7 * ppd + "px";
       cell.textContent = state.zoom === "week"
@@ -1552,12 +1556,44 @@ function renderChart() {
     }
   });
 
+  /* Dias marcados: a mesma linha da de hoje, porque são a mesma ideia — uma
+     data que vale para o gráfico inteiro, não para uma tarefa. Desenhadas
+     por último, junto com a de hoje: linha de referência que passa por trás
+     de uma barra deixa de ser referência. */
+  (state.current.markers || []).forEach((m, i) => {
+    const mx = xOf(parseDate(m.date)) + ppd / 2;
+    if (mx < 0 || mx > totalW) return;
+    const cor = m.color || AUTO_COLORS[i % AUTO_COLORS.length];
+    chart.appendChild(svg("line", {
+      class: "marker-line", x1: mx, y1: 0, x2: mx, y2: totalH, stroke: cor,
+    }));
+    const rot = svg("text", {
+      class: "marker-label", x: mx - 5, y: 10, fill: cor,
+      transform: `rotate(90 ${mx - 5} 10)`,
+    });
+    rot.textContent = m.name;
+    chart.appendChild(rot);
+  });
+
   // Linha de hoje
   const tx = xOf(todayUTC()) + ppd / 2;
   chart.appendChild(svg("line", {
     class: "today-line", x1: tx, y1: 0, x2: tx, y2: totalH,
   }));
 }
+
+/* Duplo clique na régua de dias marca aquele dia. É o gesto mais curto para
+   a pergunta "o que acontece nesta data?": o dia já está debaixo do cursor,
+   e digitar a data num formulário seria repetir para o computador uma coisa
+   que ele acabou de ver. */
+el.tlDays.addEventListener("dblclick", (ev) => {
+  if (!state.current) return;
+  const r = el.tlDays.getBoundingClientRect();
+  const x = ev.clientX - r.left;
+  // floor, não round: o dia é o que está SOB o cursor, não o mais próximo
+  const dia = addDays(state.range.start, Math.floor(x / PPD[state.zoom]));
+  showMarkers(fmtISO(dia));
+});
 
 /* A faixa da raia no gráfico. Fechada, ela vira uma barra só, do começo do
    primeiro trabalho ao fim do último: recolher a raia esconde as tarefas,
@@ -2431,6 +2467,99 @@ function showBands() {
   desenhar();
   body.append(form, lista);
   showOverlay("Calendar bands", body);
+  nome.focus();
+}
+
+/* Editor de dias marcados. `preencher` chega do duplo clique na régua: o
+   painel abre com a data já posta e o cursor no nome, que é o único campo
+   que o computador não tem como adivinhar. */
+function showMarkers(preencher = "") {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "people-box cal-box";
+
+  const form = document.createElement("form");
+  form.className = "cal-add";
+  const nome = document.createElement("input");
+  nome.type = "text";
+  nome.autocomplete = "off";
+  nome.placeholder = T("Name");
+  const quando = document.createElement("input");
+  quando.type = "date";
+  quando.value = preencher || fmtISO(todayUTC());
+  const cor = document.createElement("input");
+  cor.type = "color";
+  cor.className = "cal-pick";
+  cor.title = T("Colour");
+  cor.value = corAutomatica((state.current.markers || []).length);
+  const add = document.createElement("button");
+  add.type = "submit";
+  add.className = "primary";
+  add.textContent = T("Add");
+  form.append(nome, quando, cor, add);
+
+  const lista = document.createElement("div");
+  lista.className = "people-list";
+
+  async function gravar(marcos) {
+    state.current.markers = marcos;
+    const salvo = await saveNowAfterDirty();
+    if (salvo) state.current.markers = salvo.markers;
+    renderChart();
+    desenhar();
+  }
+
+  function desenhar() {
+    const marcos = state.current.markers || [];
+    lista.textContent = "";
+    if (!marcos.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("No marked days yet.");
+      lista.append(vazio);
+    }
+    marcos.forEach((m, i) => {
+      const linha = document.createElement("div");
+      linha.className = "people-row cal-row";
+      const c = document.createElement("input");
+      c.type = "color";
+      c.className = "cal-dot";
+      c.title = T("Colour");
+      c.value = m.color || corAutomatica(i);
+      c.addEventListener("change", () => { m.color = c.value; gravar(marcos); });
+      const n = document.createElement("span");
+      n.className = "people-name";
+      n.textContent = m.name;
+      const dia = document.createElement("span");
+      dia.className = "people-count";
+      dia.textContent = m.date;
+      const x = document.createElement("button");
+      x.className = "icon-btn";
+      x.type = "button";
+      x.textContent = "✕";
+      x.title = T("Remove");
+      x.addEventListener("click", () => gravar(marcos.filter((o) => o !== m)));
+      linha.append(c, n, dia, x);
+      lista.append(linha);
+    });
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const texto = nome.value.trim();
+    if (!texto || !quando.value) return;
+    // mesma regra do REPL: nome repetido MOVE o marco de data
+    const resto = (state.current.markers || [])
+      .filter((m) => m.name.toLowerCase() !== texto.toLowerCase());
+    gravar([...resto, { name: texto, date: quando.value, color: cor.value }]);
+    nome.value = "";
+    cor.value = corAutomatica(resto.length + 1);
+    nome.focus();
+  });
+
+  desenhar();
+  body.append(form, lista);
+  showOverlay("Marked days", body);
   nome.focus();
 }
 
@@ -3354,6 +3483,7 @@ const ACTIONS = {
   "rename-project": renameProject,
   "people": showPeople,
   "bands": showBands,
+  "markers": () => showMarkers(),
   "delete-project": deleteProject,
   "import": importProject,
   "export": exportProject,

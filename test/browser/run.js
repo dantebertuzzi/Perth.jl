@@ -177,6 +177,60 @@ const SEMENTE = `
         el.groupSelect.dispatchEvent(new Event("change")); return 1;`);
     }
 
+    console.log("navegador · duplo clique na régua marca o dia");
+    {
+      // O gesto inteiro, com mouse de verdade: a régua é HTML e o dia
+      // marcado é SVG, então só um navegador diz se a linha caiu na coluna
+      // que o dedo apontou.
+      const alvo = await pg.avaliar(`
+        setZoom("day");
+        // a régua rola por baixo da tabela de tarefas, que é fixa: escolher
+        // a célula pela posição não basta, tem que ser uma que esteja mesmo
+        // SOB o cursor — senão o clique cai na tabela e some
+        const c = [...document.querySelectorAll("#tl-days .tl-cell")].find((x) => {
+          const r = x.getBoundingClientRect();
+          const alvo = document.elementFromPoint(Math.round(r.left + r.width / 2),
+                                                 Math.round(r.top + r.height / 2));
+          return alvo === x;
+        });
+        if (!c) return null;
+        const r = c.getBoundingClientRect();
+        return { x: Math.round(r.left + r.width / 2),
+                 y: Math.round(r.top + r.height / 2), dia: c.dataset.date };`);
+      check(alvo !== null, "há uma coluna de dia clicável na régua");
+      for (const n of [1, 2]) {
+        await pg.enviar("Input.dispatchMouseEvent", { type: "mousePressed", x: alvo.x,
+                                                      y: alvo.y, button: "left", clickCount: n });
+        await pg.enviar("Input.dispatchMouseEvent", { type: "mouseReleased", x: alvo.x,
+                                                      y: alvo.y, button: "left", clickCount: n });
+      }
+      await espera(150);
+      const r = await pg.avaliar(`
+        const dia = document.querySelector(".cal-add input[type=date]");
+        if (!dia) return { aberto: false };
+        const f = document.querySelector(".cal-add");
+        const i = f.querySelectorAll("input");
+        i[0].value = "Entrega";
+        window.saveNowAfterDirty = async () => null;   // sem rede neste teste
+        f.dispatchEvent(new Event("submit"));
+        document.getElementById("perth-overlay").remove();
+        renderChart();
+        const linha = document.querySelector("#chart .marker-line");
+        // a régua rola sozinha entre o clique e a medição (foco no campo,
+        // espelhamento do scroll): comparar pixel de tela seria medir duas
+        // fotos diferentes. O que importa é o DIA que ficou marcado.
+        return { aberto: true, data: dia.value,
+                 x1: +linha.getAttribute("x1"),
+                 esperado: xOf(parseDate(dia.value)) + PPD[state.zoom] / 2 };`);
+      check(r.aberto === true, "o duplo clique na régua abre o painel de dias marcados");
+      check(r.data === alvo.dia,
+            `o dia marcado é o da coluna clicada (${r.data} vs ${alvo.dia})`);
+      check(Math.abs(r.x1 - r.esperado) <= 1,
+            "e a linha cai no meio dessa coluna, no sistema do gráfico");
+
+      await pg.avaliar(`state.current.markers = []; setZoom("week"); renderChart(); return 1;`);
+    }
+
     console.log("navegador · campo travado parece travado");
     {
       const r = await pg.avaliar(`
