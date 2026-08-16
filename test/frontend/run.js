@@ -3223,21 +3223,26 @@ console.log("gantt · dias marcados");
         "gantt: o marco é gravado com nome, dia e cor");
   check(r[0].color === "#cb3c33", "gantt: a cor escolhida vai junto");
 
-  // a linha: mesma ideia da linha de hoje, e no meio do dia marcado
+  // a linha: mesma ideia da linha de hoje, e no meio do dia marcado. Ela vem
+  // em trechos — abre vão onde cruza um nome de tarefa —, então o que se
+  // verifica é a coluna de todos eles e o alcance da soma: do topo ao pé.
   r = runIn(`renderChart();
-    const l = document.querySelector("#chart .marker-line");
+    const ls = [...document.querySelectorAll("#chart .marker-line")];
     const rot = document.querySelector("#chart .marker-label");
     const hoje = document.querySelector("#chart .today-line");
-    return { x1: +l.getAttribute("x1"), x2: +l.getAttribute("x2"),
+    const todos = [...document.querySelectorAll("#chart *")];
+    return { xs: ls.map(l => +l.getAttribute("x1")),
+             xs2: ls.map(l => +l.getAttribute("x2")),
              esperado: xOf(parseDate("2026-03-20")) + PPD[state.zoom] / 2,
-             y2: +l.getAttribute("y2"),
+             topo: Math.min(...ls.map(l => +l.getAttribute("y1"))),
+             pe: Math.max(...ls.map(l => +l.getAttribute("y2"))),
              alturaDoGrafico: +document.getElementById("chart").getAttribute("height"),
-             cor: l.getAttribute("stroke"), rotulo: rot.textContent,
-             depoisDeHoje: [...document.querySelectorAll("#chart *")].indexOf(hoje) >
-                           [...document.querySelectorAll("#chart *")].indexOf(l) };`);
-  check(r.x1 === r.esperado && r.x2 === r.esperado,
+             cor: ls[0].getAttribute("stroke"), rotulo: rot.textContent,
+             depoisDeHoje: todos.indexOf(hoje) > todos.indexOf(ls[0]) };`);
+  check(r.xs.every((x) => x === r.esperado) && r.xs2.every((x) => x === r.esperado),
         "gantt: a linha cai no meio do dia marcado");
-  check(r.y2 === r.alturaDoGrafico, "gantt: e atravessa o gráfico inteiro");
+  check(r.topo === 0 && r.pe === r.alturaDoGrafico,
+        "gantt: e atravessa o gráfico inteiro, do topo ao pé");
   check(r.cor === "#cb3c33" && r.rotulo === "Entrega",
         "gantt: com a cor e o nome do marco");
   check(r.depoisDeHoje === true,
@@ -3338,6 +3343,72 @@ console.log("gantt · painel de estatísticas");
   check(r.ativa === "Teams", "gantt: a aba escolhida fica marcada");
 
   await new Promise((ok) => setTimeout(ok, 30));
+  close();
+}
+
+console.log("gantt · geometria de quem não pode se sobrepor");
+{
+  // A regra de desenho é uma só: quem passa por cima de um texto abre vão, e
+  // um texto deitado procura altura livre. Aqui vai a GEOMETRIA dela, com
+  // caixas de mentira — nenhum layout é preciso, e é o que o CI roda mesmo
+  // sem navegador. A conferência do resultado na tela de verdade (com fonte,
+  // medida e todos os elementos juntos) está em test/browser/run.js.
+  const { runIn, close } = loadGanttApp();
+
+  const seg = (js) => runIn(`return JSON.stringify(${js});`);
+
+  // linha limpa: um trecho só, do começo ao fim
+  check(seg(`trechosVerticais(100, 0, 500, [])`) === "[[0,500]]",
+        "sem rótulo no caminho, a linha é inteira");
+
+  // rótulo no caminho: dois trechos, com folga dos dois lados
+  check(seg(`trechosVerticais(100, 0, 500, [{x0: 90, x1: 140, y0: 200, y1: 220}])`)
+        === "[[0,197],[223,500]]",
+        "rótulo no caminho parte a linha em dois, com folga");
+
+  // rótulo fora do x da linha não corta nada
+  check(seg(`trechosVerticais(100, 0, 500, [{x0: 200, x1: 260, y0: 200, y1: 220}])`)
+        === "[[0,500]]",
+        "rótulo em outro x não abre vão nenhum");
+
+  // dois rótulos, dois vãos, e a ordem em que chegam não importa
+  const doisA = seg(`trechosVerticais(100, 0, 500, [
+    {x0: 90, x1: 140, y0: 100, y1: 120}, {x0: 90, x1: 140, y0: 300, y1: 320}])`);
+  const doisB = seg(`trechosVerticais(100, 0, 500, [
+    {x0: 90, x1: 140, y0: 300, y1: 320}, {x0: 90, x1: 140, y0: 100, y1: 120}])`);
+  check(doisA === "[[0,97],[123,297],[323,500]]", "dois rótulos, três trechos");
+  check(doisA === doisB, "e o resultado não depende da ordem das caixas");
+
+  // sobra de um pixel entre dois vãos é sujeira, não referência
+  check(seg(`trechosVerticais(100, 0, 500, [
+    {x0: 90, x1: 140, y0: 100, y1: 120}, {x0: 90, x1: 140, y0: 124, y1: 200}])`)
+        === "[[0,97],[203,500]]",
+        "trecho menor que 2px entre dois vãos não é desenhado");
+
+  // a caixa do texto deitado é assimétrica: o glifo fica à DIREITA da âncora
+  // (medido na tela). Seis pixels de erro aqui foi a linha do dia marcado
+  // voltando a comer o próprio nome.
+  const cd = JSON.parse(seg(`caixaDeitada(100, 20, 60)`));
+  check(cd.x0 === 97 && cd.x1 === 111, "o texto deitado ocupa de x-3 a x+11");
+  check(cd.y0 === 20 && cd.y1 === 80, "e desce o comprimento inteiro a partir do y");
+
+  // altura livre: desce até achar espaço, e devolve o topo quando está limpo
+  check(runIn(`return alturaLivre(100, 40, 600, []);`) === 10,
+        "sem nada no caminho, o nome deitado fica no topo");
+  const ocupado = `[{x0: 95, x1: 130, y0: 0, y1: 120}]`;
+  const y = runIn(`return alturaLivre(100, 40, 600, ${ocupado});`);
+  check(y > 120 - 40, `o nome desce para depois do que ocupa o topo (y = ${y})`);
+
+  // ...e "o que ocupa" inclui DESENHO, não só texto: a primeira versão só
+  // desviava de texto e pousava o nome em cima de uma barra
+  const so_barra = runIn(`return alturaLivre(100, 40, 600, [{x0: 95, x1: 130, y0: 0, y1: 300}]);`);
+  check(so_barra > 260, "caixa de barra também empurra o nome para baixo");
+
+  // sem lugar livre nenhum, fica no menos ruim em vez de sumir
+  const semSaida = runIn(`return alturaLivre(100, 40, 200, [{x0: 0, x1: 999, y0: 0, y1: 999}]);`);
+  check(typeof semSaida === "number" && semSaida >= 10,
+        "sem altura livre em lugar nenhum, o nome ainda é desenhado");
+
   close();
 }
 

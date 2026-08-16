@@ -3714,7 +3714,9 @@ function shareViewRow(body, info) {
     : T("A second link that opens the projects and refuses to change them — for a client, a director, the whole site.");
   wrap.append(row, hint);
 
-  for (const u of info.view_urls) {
+  // payload sem o campo (servidor de uma versão anterior, ou um stub) não
+  // pode derrubar o diálogo inteiro: sem lista, não há link a mostrar
+  for (const u of info.view_urls || []) {
     const line = document.createElement("div");
     line.className = "share-url view";
     const code = document.createElement("code");
@@ -3729,7 +3731,7 @@ function shareViewRow(body, info) {
     line.append(code, btn);
     wrap.append(line);
   }
-  if (info.view_keyed && !info.view_urls.length) {
+  if (info.view_keyed && !(info.view_urls || []).length) {
     const off = document.createElement("div");
     off.className = "alias-hint";
     off.textContent = T("Start transmitting to get the read-only link.");
