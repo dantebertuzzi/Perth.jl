@@ -1,669 +1,359 @@
-<p align="center"><img src="frontend/logo.png" alt="Perth.jl" width="300"></p>
+<p align="center"><img src="frontend/logo.png" alt="Perth.jl" width="280"></p>
 
-# Perth.jl
+<h1 align="center">Perth.jl</h1>
 
-Gantt-chart project management with a Julia backend and a local web UI — one command in the REPL starts a localhost
-server and opens the app in your browser, while the REPL stays free to
-manipulate the very same projects programmatically.
+<p align="center">
+  <em>Project schedules, from the REPL to the browser — over the same data, live.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/dantebertuzzi/Perth.jl/actions/workflows/CI.yml"><img alt="CI" src="https://github.com/dantebertuzzi/Perth.jl/actions/workflows/CI.yml/badge.svg"></a>
+  <a href="https://github.com/dantebertuzzi/Perth.jl/actions/workflows/Frontend.yml"><img alt="Frontend" src="https://github.com/dantebertuzzi/Perth.jl/actions/workflows/Frontend.yml/badge.svg"></a>
+  <a href="https://dantebertuzzi.github.io/Perth.jl/stable/"><img alt="Docs" src="https://img.shields.io/badge/docs-stable-9558b2.svg"></a>
+  <a href="https://github.com/dantebertuzzi/Perth.jl/releases"><img alt="Release" src="https://img.shields.io/github/v/release/dantebertuzzi/Perth.jl?color=9558b2&label=release"></a>
+  <img alt="Julia" src="https://img.shields.io/badge/julia-%E2%89%A5%201.10-9558b2.svg">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-389826.svg"></a>
+</p>
+
+<p align="center">
+  <b>English</b> ·
+  <a href="README.pt-BR.md">Português</a> ·
+  <a href="README.es.md">Español</a> ·
+  <a href="README.fr.md">Français</a> ·
+  <a href="README.zh-CN.md">中文</a>
+</p>
+
+<p align="center"><img src="docs/src/assets/screenshot-en.jpg" alt="Perth.jl" width="900"></p>
 
 ```julia
 using Perth
-Perth.run()          # opens http://localhost:8123
+Perth.run()          # opens http://localhost:8123 — the REPL stays free
 ```
 
-## The point: REPL and UI over the same data
+---
+
+## Install
 
 ```julia
-p = create_project("Registry office renovation")
-add_task!(p, "Digitize archive"; start = Date(2026, 8, 1), duration = 15)
-add_task!(p, "Indexing"; start = Date(2026, 8, 16), duration = 10,
-          dependencies = [p.tasks[1].id],
-          deadline = Date(2026, 8, 31))   # a commitment: never moves the task
-
-tasks(p)             # Vector of NamedTuples — Tables.jl-compatible
-projects()           # same — pipe straight into a DataFrame
-
-update_task!(p, p.tasks[1].id; progress = 60)
-update_task!(p, p.tasks[1].id; pinned = true)   # contract date: schedule! leaves it alone
-Perth.stop()
+using Pkg
+Pkg.add("Perth")
 ```
 
-The open page detects REPL-side changes (lightweight polling of a
-revision counter) and reloads on its own. The other direction is just as
-live, with one wrinkle worth knowing: a variable you bound earlier is a
-snapshot, so after editing in the browser ask for the project again —
-`project(id)` (or `projects()`) hands you what the UI just saved, while
-`p` still holds what it held when you assigned it.
+Optional, and picked up automatically when loaded **before** `Perth.run()`:
+
+| Package | What it adds |
+|---|---|
+| `BusinessDays` | business-day calendars (`set_calendar!(p, "Brazil")`) |
+| `QRCoders` | a QR code for the LAN link, in the terminal and in the UI |
+| `CairoMakie` (any Makie backend) | `ganttplot` / `save_chart` for static figures |
+
+---
+
+## Sixty seconds
+
+```julia
+using Perth
+
+p = create_project("Water treatment plant — expansion")
+
+survey  = add_task!(p, "Topographic survey"; start = Date(2026, 9, 1), duration = 5,
+                    assignee = "Ana", progress = 100)
+design  = add_task!(p, "Hydraulic design"; start = Date(2026, 9, 8), duration = 8,
+                    assignee = "Ana", dependencies = [survey.id],
+                    notes = "Check **NBR 12216** before sizing.")
+approve = add_task!(p, "Design approved"; start = Date(2026, 9, 29), milestone = true,
+                    dependencies = [design.id])
+
+# a commitment, not a plan: a deadline never moves the task, it turns slack negative
+add_task!(p, "Pipework and valves"; start = Date(2026, 11, 12), duration = 10,
+          deadline = Date(2026, 11, 20))
+
+schedule!(p)                 # CPM: pushes successors to their earliest date
+critical_path(p)             # the chain with no slack
+tasks(p)                     # Tables.jl rows — pipe straight into a DataFrame
+
+Perth.run()                  # and now look at it
+```
+
+Everything above is also a gesture in the browser, and the two directions are
+live: the open page notices REPL-side changes and reloads on its own.
+
+> **One wrinkle worth knowing.** A variable you bound earlier is a snapshot. After
+> editing in the browser, ask for the project again — `project(id)` hands you what
+> the UI just saved, while `p` still holds what it held when you assigned it.
+
+---
 
 ## Why a Gantt package *in Julia*?
 
-Because the browser is just one of the views. The model and the
-computation live in Julia:
-
-- **CPM scheduling engine** (`schedule.jl`): topological ordering, cycle
-  detection, forward/backward pass, per-task slack, `critical_path`, and
-  `schedule!` — which pushes successors while treating manual dates as
-  *start-no-earlier-than* constraints. Works headless, no server needed.
-- **PERT** (`pert.jl`): three-point estimates (optimistic / most likely /
-  pessimistic) per task, `pert!` turning them into durations, and a
-  probabilistic finish — `pert_finish`, `finish_probability(p, date)`,
-  `pert_date(p, 0.8)` for the P80. Plus `pert_simulate`, a Monte Carlo
-  over the whole schedule that sees the *merge bias* the textbook
-  formula is blind to. No extra dependency: PERT feeds `duration` and
-  reuses the CPM engine above. See *Estimating under uncertainty*.
-- **Business-day calendars** via a BusinessDays.jl package extension:
-  `set_calendar!(p, "Brazil")` and durations become working days —
-  weekends and Brazilian national holidays are skipped by the whole
-  engine. Any BusinessDays calendar works (`"USSettlement"`,
-  `"WeekendsOnly"`, …).
-- **`show(::MIME"text/plain")`**: Unicode Gantt right in the REPL, with
-  the critical path in red.
-- **`show(::MIME"text/html")`**: a `Project` renders as inline SVG in
-  Pluto/Jupyter/Documenter — SVG generated by Julia, not by the app.
-- **Makie extension** (`ganttplot(p)`): publication-quality static
-  figure, loaded automatically when CairoMakie/GLMakie is around.
-- **Tables.jl everywhere**: `tasks(p)`, `projects()` and `slack(p)`
-  return rows ready for DataFrames.
+Because the browser is only one of the views. The model and the engine are
+ordinary Julia, so a plan is something you can compute with:
 
 ```julia
-julia> p                         # Unicode Gantt in the REPL
-julia> schedule!(p)              # push successors, resolve the timeline
-julia> critical_path(p)          # ids with zero slack
-julia> slack(p) |> DataFrame     # slack analysis
-julia> deadline_slip(p)          # commitments already blown, in days
-julia> pert(p) |> DataFrame      # three-point estimates, with σ per task
-julia> pert_date(p, 0.8)         # the date you can actually promise
-julia> workload(p) |> DataFrame  # who is loaded on which day
-julia> icalendar(p, "plan.ics")  # milestones + deadlines for a calendar app
-julia> using BusinessDays; set_calendar!(p, "Brazil")   # durations in business days
-julia> using CairoMakie; save("timeline.png", ganttplot(p))
+using DataFrames
+
+df = DataFrame(tasks(p))
+combine(groupby(df, :assignee), :duration => sum => :days)
+
+# the schedule reacts to your data, not the other way round
+for row in eachrow(measurements)
+    update_task!(p, row.id; progress = row.done_pct)
+end
+schedule!(p)
 ```
 
-## The web UI
+A spreadsheet cannot do that, and a desktop Gantt makes you export first.
 
-- Task table + timeline with **day / week / month** zoom, light and
-  **dark** themes (View → Dark mode, or `D`)
-- Drag a bar to move a task; drag its right edge to resize
-- **Critical path overlay** (`C`): red outline on zero-slack tasks,
-  per-task slack tooltips, project finish date in the status bar
-- **Auto-schedule** (`S`): runs the CPM engine and pushes successors
-- Milestones as diamonds, dependency arrows, today line, weekend shading
-- Double-click a bar (or table row) to edit; **duplicate** a task from
-  the Edit menu or `Ctrl+D` (also `duplicate_task!(p, id)` in the REPL)
-- Tasks with notes show a **red dot** on the bar — hover to read them
-- **Link tasks by dragging**: select a bar and drag from the dot at either end
-  to another bar. The right dot links to what follows, the left to what comes
-  before; a drop that would close a loop, or that lands on a summary, is
-  refused with the reason on screen. Double-click an arrow to remove it.
-- **Drag a row up or down to order the plan by hand.** Row order was always
-  derived — children under their parent, siblings by date — and that is a good
-  order until three tasks start on the same day and the sequence on site is not
-  alphabetical. Drop a row *in the gap* between two rows for a new position, or
-  *on top of* a task to make it a subtask of it: one gesture, two destinations,
-  the way any file tree behaves. The **`#` column** on the left is that order
-  written down (hover it for the task id). In the REPL it is
-  `move_task!(p, id; parent, position)`; a plan nobody reordered still comes out
-  by date, exactly as before.
-- **What the words mean** (Help): a glossary of the vocabulary the UI uses —
-  slack, critical path, baseline, overallocation, P80, the lot. `⚠ 4
-  overallocations` is only a warning to someone who already knows the word.
-- **Zoom: fit** (`4`) computes the step so the whole project lands on screen —
-  day/week/month are three sizes chosen by hand, and none of them suits a
-  two-year plan.
-- **Marked days**: double-click a column in the day ruler and name it — the
-  day gets a vertical line across the whole chart, like the *today* line and
-  for the same reason: some dates matter to every task at once. A delivery, an
-  audit, the day the scaffolding comes down. Also `add_marker!(p, "Entrega",
-  Date(2026, 4, 30))`. The name lies along the line, so it always lands on
-  something — the slider in *File → Marked days…* (`label_at`, 0–100% of the
-  chart height) slides it down to open sky.
-- **Marked months** (File → Marked months…, or `add_month_mark!(p, Date(2026, 12);
-  name = "recesso")`): a whole month painted in the ruler at the top. Where a
-  marked *day* draws a line across the plan, a marked *month* colours the strip
-  that names it — "this is the month of the shutdown", said once, at the top,
-  instead of repeated on every task inside it. It never touches the body of the
-  chart: shading the work behind it is what a band is for.
-- **Calendar bands** (File → Calendar bands…, or `add_band!`): shade a named
-  stretch of calendar behind the chart — a sprint, a shutdown, the rainy
-  season, the two weeks the crane is on site. Pick its colour, overlap them
-  freely. A band is annotation: it never moves a task or enters the CPM
-  engine, it answers *why this stretch is different*, which until now lived
-  in someone's head.
-- **Statistics by person and by team** (View → Statistics…, or `people_stats`
-  / `team_stats`): tasks, effort, how much is done, days busy, days
-  double-booked and tasks past their deadline — the same weight the S-curve
-  uses. Work with no assignee gets its own row rather than being dropped.
-- **Swimlanes**: group the chart by assignee or by team (`Lanes:` in the
-  toolbar). Collapse a lane and its tasks fold into one bar spanning that
-  person's work — less detail, not less information. WBS summaries stay out of
-  lanes: a summary brackets children who may belong to different people.
-- **Collaborators** (File → Collaborators…, or `add_person!`): a registry of
-  who works on the project — name, role, team, email, notes — feeding the
-  assignee autocomplete. `assignee` stays free text, but every save trims the
-  name and unifies spellings that differ only in case, so `"Ana"`, `"Ana "`
-  and `"ana"` stop becoming three different people to the workload and the
-  overallocation check. Registering a name is how you fix its spelling across
-  the whole project; removing someone from the list leaves their name on their
-  tasks.
-- **Highlight filter** in the toolbar: spotlight tasks by assignee,
-  status (not started / in progress / done / overdue / unassigned /
-  slipped / overallocated) or milestones; everything else fades out
-- **WBS hierarchy**: give a task a parent (edit modal, or
-  `set_parent!(p, id, parent)`); the parent becomes a summary bracket
-  whose start, span and progress roll up from its subtasks. The CPM
-  engine schedules leaves only — summaries are containers, not work.
-  Duplicating or deleting a summary handles the whole subtree, and the `▾`
-  on its row folds it — the bracket stays, so a folded block still says when
-  it happens.
-- **Deadlines and pinned dates**: a task's **deadline** is a
-  *commitment*, not a plan — it never moves the task, it caps its late
-  finish, so busting one turns the slack of that task **and of
-  everything feeding it** negative, measuring the delay in days. A red
-  flag marks it on the chart (grey while the plan still fits), and
-  `deadline_slip(p)` lists what is late. **Pin start date** is the other
-  half: *auto-schedule* pushes every other task around it and leaves a
-  contract date where it is — the pin turns amber when the engine wants
-  to move it, which is how the conflict shows instead of the date
-  changing behind your back. A task's own start date has always been a
-  *start-no-earlier-than* constraint: `schedule!` only ever pushes
-  forward, never pulls back.
-- **Calendar export**: *File → Export calendar (.ics)* (or
-  `icalendar(p)` / `icalendar(p, "obra.ics")`) writes the project's
-  **commitments** — one all-day event per milestone and per deadline —
-  for any calendar app. Ordinary tasks stay out on purpose: a two-week
-  bar is noise in an agenda. Events don't mark the day busy, and their
-  UIDs are stable, so re-importing updates them instead of piling up
-  duplicates.
-- **Three-point estimates**: the task modal has an *Estimate (PERT)* row
-  — optimistic / most likely / pessimistic — with the expected duration
-  and σ computed as you type, and a *use as duration* button that only
-  shows up when the two differ. *Edit → Apply PERT estimates* does the
-  whole project at once. Once anything is estimated, the status bar
-  carries the **P80** finish (hover for the expected date and σ). See
-  *Estimating under uncertainty* below.
-- **Baseline tracking**: *Edit → Set baseline* snapshots the plan;
-  ghost bars show it under the current bars and slipped tasks get a red
-  `+Nd` badge. `set_baseline!(p)` / `slippage(p)` from the REPL.
-- **Overallocation detection**: the status bar warns when someone is
-  assigned to overlapping tasks; `overallocations(p)` returns the pairs
-  as Tables.jl rows.
-- **Resource panel** (*View → Resources*, or `R`): a band per person
-  docked under the chart, on the same time scale as the bars — green
-  where they have one task, amber for two, red for three or more, with
-  the tasks named in the tooltip. Click a band to spotlight that
-  person's tasks in the chart above; the last band is the work with no
-  one on it. From the REPL, `workload(p)` gives the same thing as
-  Tables.jl rows — one per person and day, with the day's tasks, the
-  effort (`cost` when set, otherwise person-days) and the task ids.
-  Under a business-day calendar a holiday carries no load, which is why
-  the bands are computed in Julia and not in the browser.
-- **Tables.jl bridge**: `tasktable(p)` → rows ready for
-  `DataFrame`/`CSV.write`; `add_tasks!(p, table)` builds tasks from any
-  Tables.jl source.
-- **Publication figures**: with CairoMakie loaded,
-  `save_chart(p, "plan.png"; theme = :dracula)` renders the full chart —
-  WBS brackets, baseline ghosts, dependency arrows, critical path —
-  at `px_per_unit = 2`.
-- Welcome dashboard (LazyVim-style) with recent projects and shortcuts
-- **Save-to-file box** (Pluto-style, in the menu bar): type a path and
-  the project is written there as `.perth.jl` **and kept in sync on
-  every save** — with `~` expansion, directory autocomplete, and a
-  filename derived from the project name when you give a folder.
-  The folder button opens a **directory browser** (served by the Julia
-  backend — browsers never expose real paths from the native dialog)
-  with system shortcuts (Home, Documents, Desktop, Downloads; XDG-aware,
-  so localized folder names work on Linux). The folder you pick is
-  **remembered** in `settings.json` and becomes the default starting
-  point next time. Clear the box to unlink. Same thing from the REPL:
-  `set_file_path!(p, "~/plans/site.perth.jl")`
-- Import/export projects as readable Julia source (`.perth.jl`; imports
-  go through a restricted parser that never executes code — legacy JSON
-  is still accepted)
-- **General chat**: the speech-bubble icon in the menubar opens a
-  floating panel over the same presence connection as the cursors —
-  persisted, with a typing indicator and an unread badge. `Perth.chat!`
-  / `Perth.chat_log()` post and read from the REPL.
-- **Presentation mode** (`P`, or the menubar icon — also in the kanban):
-  hides the menubar/toolbar/task table and requests browser fullscreen,
-  leaving just the timeline for showing the plan on a projector; `Esc`
-  or the floating corner button exits
-- Keyboard shortcuts: `N`, `Del`, `Enter`, `1/2/3`, `T`, `S`, `C`, `R`,
-  `D`, `P`, `Esc`, plus `Ctrl+D` (duplicate) and `Ctrl+Z` / `Ctrl+Shift+Z`
+---
 
-### Sharing the Gantt on the network
+## What you get
 
-By default `Perth.run()` is reachable from this machine only — the REPL
-and the browser on the same machine. Pass `share = true` and every
-machine on the local network can open the same project:
+### Planning
+
+| | |
+|---|---|
+| **CPM engine** | `schedule!`, `critical_path`, `slack`, `project_finish` |
+| **Dependencies** | finish-to-start by default; `"SS:id"`, `"FF:id"`, and lag `"id+3"` |
+| **Business days** | `set_calendar!(p, "Brazil")` — weekends and holidays stop counting |
+| **WBS** | give a task a parent; the parent becomes a summary that rolls up dates and progress |
+| **Deadlines** | a *commitment*: never moves a task, turns its slack (and its feeders') negative |
+| **Pinned starts** | a contract date `schedule!` leaves alone — and says so when the plan no longer fits it |
+| **Baseline** | freeze the plan; the ghost bars are what you promised, the gap is the slippage |
+| **Manual order** | `move_task!(p, id; parent, position)` — `order` beats the date where someone chose |
+
+### The chart
+
+- **Drag a bar** to move a task, its right edge to resize, and **drag between bars**
+  to link them: the dot on the right end links to what follows, the left one to what
+  comes before. Double-click an arrow to remove it.
+- **Drag a row up or down to order the plan by hand.** Dropped *in the gap* between
+  two rows it takes that position; dropped *on top of* a task it becomes a subtask
+  of it — one gesture, two destinations. The **`#` column** is that order written
+  down; hover it for the task id.
+- **Zoom day / week / month / fit** (`1`–`4`) and **Ctrl+wheel**, which keeps the
+  date under the pointer where it is. Changing zoom never teleports you to today.
+- **Marked days** — double-click a column in the day ruler and name it: a vertical
+  line across the whole chart, for a date that matters to every task at once.
+- **Marked months** — a whole month painted in the ruler at the top. Said once, up
+  there, instead of repeated on every task inside it.
+- **Calendar bands** — shade a named stretch behind the chart: a sprint, a shutdown,
+  the rainy season. Annotation, never scheduling.
+- **Swimlanes** by person or team, **collapsible WBS summaries** (and what you
+  folded survives the reload), a **highlight filter**, and **presentation mode**.
+- **Notes with markdown**: the red dot opens the note, rendering `**bold**`,
+  `*italic*`, `` `code` ``, `~~strike~~` and links.
+- Nothing on the chart is written on top of anything else: lines open a gap where
+  they cross a label, and sideways names look for a free stretch. A test measures
+  it, in a real browser, at four zooms and two densities.
+
+### Reading the plan
+
+| | |
+|---|---|
+| **S-curve** | planned vs. earned — the gap is the delay measured in work, not days |
+| **Workload** | how much each person has on each day (`workload`, `overallocations`) |
+| **Statistics** | per person and per team: effort, done, days busy, days double-booked |
+| **Warnings** | dependency cycle · past deadline · overdue · overallocation · behind the baseline · *starts before its dependencies allow* |
+| **Glossary** | Help → *What the words mean*: slack, critical path, baseline, P80, the lot |
+
+### Getting it out
+
+Export the project (`.perth.jl`), the tasks (**CSV**), the milestones and deadlines
+(**iCalendar**), the chart (**PNG**), or a static figure through Makie
+(`ganttplot`, `save_chart`). And a **file mirror**: point a project at a path and
+every save also rewrites the `.perth.jl` there, so `git diff` shows what changed in
+the plan.
+
+---
+
+## Sharing a plan
+
+By default `Perth.run()` is reachable from this machine only. Sharing is a **live
+switch**, not a startup-only decision — from the REPL, from the broadcast button in
+the menubar, or from *File → Share / QR…*:
 
 ```julia
-Perth.run()                # this machine only
-Perth.run(share = true)    # prints the LAN links (+ QR code in the
-                            # terminal if `using QRCoders`)
+Perth.run(share = true)          # prints the LAN links (+ a QR code with QRCoders)
+Perth.share!()                   # start transmitting, server already up
+Perth.share!(false)              # stop; remote browsers drop immediately
+Perth.key!("obra-2026")          # require an access key from the network
 ```
 
-Sharing is a **live switch**, not a startup-only decision — turn it on
-and off with the server running, from the REPL, from the broadcast
-button in the menubar (green and pulsing while transmitting), or from
-*File → Share / QR…*, which also shows the links and the QR code:
+Every connected machine shows up as a labelled cursor with its name and IP,
+pair-programming style, and there is a chat in the corner.
+
+### A link that only shows
+
+Sharing used to be all-or-nothing: whoever opened the link could edit. `view_key`
+is a **second key** that grants reading and refuses writing — the link you hand to
+a client, a director, the whole site:
 
 ```julia
-Perth.share!()             # start transmitting to the network
-Perth.share!(false)        # stop; remote browsers drop immediately
+Perth.run(share = true, key = "obra-2026", view_key = "obra-2026-view")
+Perth.view_key!("just-looking")   # change it, live
+Perth.view_key!()                 # end it
 ```
 
-A bind address can't change once the socket is open, so the socket binds
-`0.0.0.0` either way and every connection is checked against the current
-setting: with sharing off, requests from other machines get a 403 and
-machines already connected are disconnected the moment you switch it
-off. Only the machine running the server may flip the switch (the UI
-hides it elsewhere, and the endpoint refuses it). Passing `host`
-explicitly pins the reach in the socket instead and disables the live
-switch.
+The refusal is the **server's**, decided by the method rather than by a list of
+routes, so a route added tomorrow is refused by default. That includes the door the
+interface does not use — the chat on the presence socket persists to disk and
+reaches everyone, so it is writing, and leaving it open would be changing the lock
+and leaving the window open. Viewers show up among the connected machines as a
+hollow ring: present, not writing.
 
-Unlike the kanban — which is WebSocket-authoritative end to end — the
-Gantt keeps its normal model, the REST API plus polling of `/api/rev`;
-`share = true` adds a lightweight WebSocket just for presence: every
-connected machine shows up as a labelled cursor with its name and IP,
-exactly like `Perth.kanban(share = true)`, and edits push an instant
-"rev" notice so other machines reload the moment something changes
-instead of waiting for the next poll. `key = "…"` requires that access
-key from every non-host machine (embedded automatically in the LAN links
-Perth prints, so nobody has to type it) — both on the WebSocket and on
-the REST API. Whoever opens the page without it is asked for the key on
-screen, and the browser keeps it for the rest of the session.
+> **Security.** Without a key, anyone on the network who knows the port can open and
+> edit every project. A read-only link limits what a browser may do; it is not a
+> login, and it is as private as the network it is on. Never expose the port to the
+> internet.
 
-The key is a live setting too, not a startup-only one — same control in
-the Share / QR dialog, for the machine running the server:
+<details>
+<summary><b>Opening the firewall port (Windows, corporate networks)</b></summary>
 
-```julia
-Perth.run(share = true, key = "obra-2026")   # or set it later, mid-session:
-Perth.key!("obra-2026")    # everyone on the network is asked for the new key
-Perth.key!()               # drop it; nobody is disconnected
-Perth.kanban_key!("…")     # same switch on the board, once it is up
-```
+Sharing only helps if the machine accepts inbound connections on the port (8123 for
+the Gantt, 8150 for the kanban). In order of effort:
 
-Changing the key disconnects whoever holds the old one — each is asked
-for the new key on screen, not left with a dead page — while dropping it
-disconnects nobody, since nothing they hold became invalid.
+1. **First-run prompt** — Windows Defender asks about `julia.exe`; tick **Private
+   networks** and *Allow access*. It needs administrator rights, so on a locked-down
+   machine it may be greyed out or never appear.
+2. **If it was dismissed** — Start menu → "Allow an app through Windows Firewall" →
+   *Change settings* → *Allow another app…* → browse to `julia.exe` (run `Sys.BINDIR`
+   in the REPL to find it) and tick *Private*.
+3. **An explicit rule**, which is what IT usually prefers — PowerShell as
+   administrator:
+   ```powershell
+   New-NetFirewallRule -DisplayName "Perth" -Direction Inbound `
+     -Protocol TCP -LocalPort 8123 -Action Allow -Profile Domain,Private
+   ```
+4. **Check the network profile.** A *Private* rule does nothing if Windows filed the
+   office network as *Public*. On domain-joined machines the office network is
+   usually *Domain*, which the rule above already covers.
+5. **No admin at all** — send IT one line: *"Please allow inbound TCP on port 8123
+   for `julia.exe` (Domain/Private, LAN only — an internal plan at
+   `http://<my-ip>:8123`; nothing is exposed to the internet)."*
+6. **Firewall open and still unreachable?** Guest Wi-Fi often has *client isolation*.
+   Test with `Test-NetConnection <ip> -Port 8123`; if it fails with the firewall
+   open, use the wired or staff network.
 
-**A link that only shows.** Sharing used to be all-or-nothing: whoever
-opened the link could edit. `view_key` is a *second* key that grants
-reading and refuses writing — the link you hand to a client, a director,
-the whole site:
+On Linux: `sudo ufw allow 8123/tcp`. macOS prompts on first run, like Windows.
 
-```julia
-Perth.run(share = true, key = "obra-2026", view_key = "obra-2026-ver")
-Perth.view_key!("so-olhar")   # change the read-only link, mid-session
-Perth.view_key!()             # end it
-```
+</details>
 
-Whoever opens it sees everything — chart, table, analytics, exports —
-and every write is refused with 403, including the ones that would go
-through the presence socket (the chat). They show up in the connected
-machines as a hollow ring: present, not writing. The Share / QR dialog
-creates the link and shows it; the machine running the server always
-edits, so the read-only link starts at the network address. The two keys
-cannot be the same string — one link cannot mean both things — and
-changing either one disconnects only the machines it invalidated.
-
-**Security:** without `key`, anyone on the network who knows the port
-can open and edit every project — same caveat as the kanban. Never
-expose the port to the internet. A read-only link is a limit on what a
-browser may do, not a login: it is as private as the network it is on.
-
-### A background image (or a slideshow)
-
-Local images can sit behind the UI — both apps, every connected browser:
-
-```julia
-Perth.background!("~/Pictures/office.jpg")
-Perth.background!("~/Pictures/walls/"; interval = 90)   # a folder: cycles
-Perth.background!(["~/a.jpg", "~/b.png"])
-Perth.background!(opacity = 0.35)   # how much of the image shows through (0–1)
-Perth.background_clear!()
-```
-
-Point at a file, a list of files, or a folder. With more than one image
-the UI cycles: the current one fades out, the next fades in over the
-paper colour. Every browser derives *which* image is showing from the
-wall clock, so all of them are on the same photo without the server
-ticking, and a tab opened late lands in phase.
-
-Files are read from the machine running the server and served at
-`/background`; replacing one on disk changes the background on the next
-reload, and `background!` itself lands live on open browsers. The setting
-stays in `settings.json` in the data directory, next to the other
-preferences. Being the only route that serves bytes from outside the
-frontend, it sits behind the access key like the API does.
-
-**A folder is read once, when you point at it** — it becomes a frozen
-list, not a directory watched live. Anything in it that is not a usable
-image is skipped (the log line says how many were taken and how many
-were left out), and anything dropped in *afterwards* is not published to
-your network behind your back: add photos by calling `background!` on
-the folder again. That also keeps the rotation identical on every
-machine, which is what lets the clock decide the current image with no
-coordination.
-
-There is no upload endpoint on purpose. Both servers listen on `0.0.0.0`
-so sharing can be toggled live, and an upload would be a *write* surface
-on a LAN-reachable port; pointing at a path grants nothing new, since
-whoever has the REPL already has the disk. Every file is validated by
-content (PNG, JPEG, GIF, WebP or AVIF, up to 12 MB each), not by extension, so
-a mistyped path doesn't become a file published to the network.
-
-The default opacity is deliberately low: panels, cards and bars keep
-their solid surfaces and the image fills the space around them. Each
-browser can hide it locally from the settings panel (*Hide background*) —
-a rendering preference, like *Hide other cursors*, not a way to keep the
-image private. Point at a folder you would be comfortable showing on the
-office wall.
+---
 
 ## Estimating under uncertainty (PERT)
 
-A duration is a guess. PERT's idea, from the US Navy in 1958, is that
-nobody knows how long a task takes but everyone can bet on three
-numbers — optimistic `o`, most likely `m`, pessimistic `p` — and that
-those three carry both an expected duration and how sure you are:
-
-```
-te = (o + 4m + p) / 6            σ = (p − o) / 6
-```
+One number for a duration is a guess wearing a suit. Give three:
 
 ```julia
-set_estimate!(p, t.id, 4, 6, 14)   # duration becomes 7 (te), rounded
-pert(p) |> DataFrame               # per task: te, σ, variance
-pert!(p)                           # apply every estimate at once
-schedule!(p)                       # then push successors around them
+set_estimate!(p, foundations.id, 9, 12, 22)   # optimistic, most likely, pessimistic
 
-pert_finish(p)                     # (expected = 2026-10-04, sd_days = 3.6, …)
-finish_probability(p, Date(2026, 10, 10))   # 0.95
-pert_date(p, 0.8)                  # 2026-10-07 — the date you can promise
+pert(p)                                       # expected duration and σ, per task
+pert_finish(p)                                # finish: expected, σ, P10/P50/P80/P90
+finish_probability(p, Date(2026, 12, 10))     # odds of the date you promised
+pert_date(p, 0.8)                             # the date you are right 4 times out of 5
+pert!(p)                                      # apply (o + 4m + p)/6 as the duration
 ```
 
-**PERT feeds `duration`, it does not fork the engine.** That is the
-whole design: once `pert!` has run, CPM, critical path, slack,
-deadlines, business-day calendars and the UI all work exactly as before,
-with no idea PERT exists. And nothing is written until you ask —
-`pert_finish` and friends run the same engine with substitute durations,
-so you can ask what the estimates *imply* without touching the plan.
+The estimates never move anything on their own — `pert!` is what writes them into
+the plan, the same way `schedule!` is what moves dates.
 
 ### The number the formula won't tell you
 
-`pert_finish` is the textbook formula, and the textbook formula has a
-known blind spot: it propagates variance along the critical path only.
-When a project has several fronts merging into one milestone, the
-project waits for the **last** of them — so the expected finish is
-systematically optimistic, no matter how good the estimates are. It's
-called the *merge bias*, and it is the reason PERT has a bad reputation
-it half deserves.
-
-Since the CPM engine is pure and cheap, Perth can just answer the
-question properly: `pert_simulate` draws a duration for every task from
-its Beta-PERT distribution (the one `te` is exactly the mean of),
-re-runs the whole schedule, and does it ten thousand times.
+Analytic PERT assumes one critical chain. When several chains are nearly the same
+length, whichever runs late becomes critical, and the finish drifts later than any
+formula predicts. `pert_simulate` runs the whole engine thousands of times:
 
 ```julia
-julia> pert_finish(p)          # six parallel fronts, all the same size
-(expected = Date("2026-09-13"), sd_days = 2.33, …)
-
-julia> pert_simulate(p; n = 10_000)
-(runs = 10000, p50 = Date("2026-09-16"), p80 = Date("2026-09-18"), …)
+sim = pert_simulate(p; n = 10_000)
+sim.p80        # the date that survives 80% of the futures
 ```
 
-Three days the formula cannot see, and they are the honest ones. Ten
-thousand schedules take milliseconds here — which is a fair answer to
-*why a Gantt package in Julia*.
+The gap between `pert_finish(p).p80` and `sim.p80` is the cost of pretending there
+is only one critical path.
+
+---
 
 ## Kanban: a shared board for the office
 
-`Perth.kanban()` starts a second, independent app: a collaborative kanban
-board. It does not touch the Gantt data model — the board is its own
-entity, persisted as `kanban.json` in the Perth data directory.
-
 ```julia
-Perth.kanban()                       # this machine only, like Perth.run()
-Perth.kanban(share = true)           # prints the LAN links
-Perth.kanban(share = true, key = "…")  # …and requires the key from them
-Perth.kanban_share!(false)           # stop transmitting, board still running
-Perth.kanban_key!("…")               # set/change the key with the board up
+Perth.kanban(share = true)               # a board on your LAN
+kanban_from_project!(p)                  # turn a plan into cards
 ```
 
-Like the Gantt, sharing flips live — from the REPL with
-`kanban_share!`, from the broadcast button in the menubar, or under
-*Board → Share / QR…*, where the same dialog that shows the links and
-the QR code carries the switch.
+WebSocket-authoritative end to end: every change is broadcast live. Cards carry
+`#tags`, `**markdown**`, checklists, due dates and assignees; a linked card dragged
+to *done* completes the task in the Gantt, and back. Per-machine permissions,
+undo/redo, chat, and the same access-key model as above.
 
-With `share = true`, every machine on the local network opens the same
-URL and edits the same board in real time over a WebSocket: dragging a
-card animates on everyone's screen, and each connected machine shows up
-as a labelled cursor with its name and IP — pair-programming style, plus
-a colored outline on any card someone else is moving or editing. Remote
-cursors are anchored to elements (card/column + fractional offset), not
-pixels, so they survive different window sizes and zoom levels. Each
-browser can locally turn off *seeing* other people's cursors (menubar →
-*Hide other cursors*) — a rendering preference remembered per browser,
-not a presence opt-out: everyone else still sees yours.
+---
 
-Cards carry a done state (✓ on hover) and, once done, an **archive**
-button; the archive panel (Board → Archived cards…) can restore or
-permanently delete them. A card created today is marked **new** next to
-its creator stamp — the mark is a word, not a badge, it goes away the
-moment the card is done, and it can be switched off per browser
-(settings → *hide new-card badges*), so a busy day doesn't turn the
-board into a wall of labels. Every card is stamped with the IP of the
-machine that created it, and the **host** — the browser on the server machine, or
-the REPL — can map IPs to names (`192.168.0.23` → `Paulo`) via
-Board → Rename machines… or `kanban_alias!`; the mapping applies to
-cursors, presence chips and card stamps on everyone's screen. `Ctrl+Z` /
-`Ctrl+Shift+Z` undo and redo your own actions (collaborative-style: they
-never revert what a colleague did afterwards).
+## Keyboard
 
-The **host** can also restrict what a given machine is allowed to do:
-`Board → Permissions…` opens a matrix of every card/column action
-(add/edit/delete/move cards, columns and checklist items, WIP limits,
-due dates, sorting — 19 in total) against every IP that has connected,
-toggled individually or in bulk (a whole row, a whole column, or
-everything at once). It's enforced **server-side** — a client can't get
-around it by talking to the WebSocket directly, only the UI hides what's
-denied — and stored inside the board itself, so it survives reconnects
-and server restarts. New boards start unrestricted, so nothing changes
-until you touch the matrix; the host itself can never be restricted.
+| | |
+|---|---|
+| `↑` `↓` | move the selection through the visible rows |
+| `←` `→` | collapse a summary / open it — on a leaf, `←` goes up to the parent |
+| `Home` `End` · `PageUp` `PageDown` | ends of the plan · one screenful |
+| `N` · `Enter` · `Del` · `Ctrl+D` | new · edit · delete · duplicate task |
+| `Ctrl+Z` · `Ctrl+Shift+Z` | undo · redo |
+| `S` · `C` · `R` | auto-schedule · critical path · resource load |
+| `1` `2` `3` `4` · `Ctrl+wheel` | zoom day / week / month / fit · zoom under the pointer |
+| `T` · `/` · `D` · `P` | go to today · find a task · dark mode · presentation |
 
-Flow features: per-column **WIP limits** (the counter turns red when
-exceeded — a signal, not a lock), **due dates** on cards (overdue in red,
-due-soon in amber, one-click sort by due date per column), and `#tags`
-in the card text that render as colored chips; the search box (`/`)
-filters by text, tag or author, dimming everything else. An **activity
-log** (Board → Activity…, or `kanban_log()` in the REPL) records every
-change with author and timestamp, persisted as JSONL next to the board;
-when someone adds, completes or deletes a card, everyone else gets a
-toast notification, and background tabs show an unread counter in the
-title. Board → Share / QR… lists the URLs to hand out — and if you run
-`using QRCoders` before `Perth.kanban()` (optional weak dependency, same
-pattern as the BusinessDays/Makie extensions), you get a scannable QR
-code both in the terminal and in that panel.
+---
 
-True to the Perth philosophy, the REPL operates on the same board and
-broadcasts live to every open browser:
-
-```julia
-kanban_add_card!("backlog", "Ship v0.7")
-kanban_move_card!(id, "doing")
-kanban_alias!("192.168.0.23", "Paulo")
-kanban_cards() |> DataFrame        # (column, id, text) rows
-kanban_chat!("board is ready")     # the chat panel, from the REPL
-Perth.kanban_stop()
-```
-
-Sync model: the server is authoritative; each op is applied under a lock
-and the full board is broadcast (cheap on a LAN, and nobody can diverge —
-concurrent edits resolve as last write wins). Clients apply their own
-edits optimistically and reconnect on their own if the server restarts.
-
-**Security:** `share = true` means no authentication — anyone on the
-network who knows the port can *connect* to the board. The permission
-matrix (above) restricts what a connected machine can then *do*, but it
-is not a login: it doesn't gate the connection itself, and identity is
-just an IP address (spoofable on an untrusted LAN). Treat it as
-reducing blast radius, not as authentication.
-
-Both servers listen on `0.0.0.0` so that sharing can be switched on and
-off live, so the port is visible to a network scan even while sharing is
-off — it just answers 403 to everyone but this machine. Never expose
-either port to the internet.
-
-### Resetting the board
-
-The whole board lives in two files in the Perth data directory, so a
-full reset is: stop the server, delete them, start again.
-
-```julia
-Perth.kanban_stop()                       # stop first — the server keeps the
-                                          # board in memory and rewrites the
-                                          # file on every operation
-datadir = joinpath(homedir(), ".perth")   # or your PERTH_DATA_DIR / data_dir
-rm(joinpath(datadir, "kanban.json"); force = true)        # the board
-rm(joinpath(datadir, "kanban-log.jsonl"); force = true)   # the activity log
-Perth.kanban(share = true)                # fresh board: backlog / doing / done
-```
-
-Deleting the log is optional, but if you keep it the Activity panel
-will show history that refers to the old board. Two useful variants:
-to **keep** the old board instead of deleting it, rename the file
-(`mv(joinpath(datadir, "kanban.json"), joinpath(datadir, "old-board.json"))`)
-and rename it back whenever you want it again; to start a **separate**
-board without touching the current one, point the server at another
-folder — `Perth.kanban(share = true, data_dir = "/path/to/new-board")`.
-
-### Opening the firewall port on Windows (corporate networks)
-
-`share = true` only helps if the server machine accepts inbound
-connections on the port (8150 by default). Home Windows usually just
-works after one click; corporate machines often need more. In order of
-effort:
-
-1. **First-run prompt.** The first time you run
-   `Perth.kanban(share = true)`, Windows Defender Firewall asks about
-   `julia.exe`. Tick **Private networks** and *Allow access*. Note the
-   prompt itself requires administrator rights — on a locked-down
-   machine it may be greyed out or never appear.
-
-2. **If the prompt was dismissed or never showed.** Start menu →
-   type "Allow an app through Windows Firewall" → *Change settings*
-   (admin) → *Allow another app…* → browse to `julia.exe` and tick
-   *Private*. To find the exact path, run `Sys.BINDIR` in the Julia
-   REPL — `julia.exe` is in that folder (typically under
-   `%LOCALAPPDATA%\Programs\Julia-1.x\bin\`, or inside `.julia\juliaup\`
-   if installed via juliaup).
-
-3. **Explicit rule** (what IT departments usually prefer) — PowerShell
-   *as administrator*:
-
-   ```powershell
-   New-NetFirewallRule -DisplayName "Perth kanban" -Direction Inbound `
-     -Protocol TCP -LocalPort 8150 -Action Allow -Profile Domain,Private
-   ```
-
-4. **Check the network profile.** Rules scoped to *Private* do nothing
-   if Windows classified the office network as *Public*: either switch
-   it (Settings → Network & internet → your connection → *Network
-   profile* → Private) or scope the rule to the right profile — on
-   domain-joined machines the office network is usually the *Domain*
-   profile, which the rule above already covers.
-
-5. **No admin at all / Group Policy.** On managed machines, local rules
-   can be overridden by GPO and you may not be able to elevate. Send IT
-   a request with everything they need in one line:
-
-   > Please allow inbound TCP on port 8150 for `julia.exe`
-   > (Domain/Private profile, LAN only — an internal team board at
-   > `http://<my-ip>:8150`; nothing is exposed to the internet).
-
-6. **Still unreachable with the firewall open?** Guest/corporate Wi-Fi
-   often has *client isolation* (devices can't see each other). Test
-   from a colleague's machine with
-   `Test-NetConnection <server-ip> -Port 8150` in PowerShell — if
-   `TcpTestSucceeded` is `False` on an open firewall, isolation is the
-   usual suspect; use the wired or staff network instead.
-
-On Linux the equivalent is `sudo ufw allow 8150/tcp` (or your distro's
-firewall tool); macOS shows a first-run prompt like Windows. If you run
-the board on a custom port, replace 8150 accordingly everywhere above.
-
-## Persistence
+## Where things live
 
 Each project is a JSON file under `~/.perth` (or `$PERTH_DATA_DIR`, or
-`Perth.run(data_dir = ...)`) — readable, git-friendly, and importable
-from the UI. `.perth.jl` is the interchange format for humans and
-version control; JSON is the machine format for fast, unambiguous
-startup. A project linked to a file (save box in the UI, or
-`set_file_path!` in the REPL) is additionally mirrored to that
-`.perth.jl` on every save — handy for keeping the plan inside a git
-repository. The mirror path is machine-local and never leaks into
-exported/imported files.
+`Perth.run(data_dir = ...)`). JSON is the machine format; **`.perth.jl` is the
+interchange format for humans and version control**:
+
+```julia
+Perth.save(p, "plans/plant.perth.jl")        # readable, diffable Julia source
+q = Perth.load("plans/plant.perth.jl")
+set_file_path!(p, "plans/plant.perth.jl")    # mirror: every save rewrites it
+```
+
+`Perth.load` uses a **restricted parser**, not `eval`: only `Project`, `GanttTask`,
+`Person`, `Band`, `Marker`, `MonthMark`, `Date` and `DateTime` may be constructed,
+and any other call is refused. A plan you received by e-mail cannot run code.
+
+---
 
 ## Architecture
 
 ```
-src/
-  Perth.jl       module, exports
-  types.jl       GanttTask, Project (Base.@kwdef) + StructTypes for JSON3
-  storage.jl     in-memory state behind a lock, mirrored as JSON on disk,
-                 revision counter, REPL-facing API
-  schedule.jl    CPM engine + calendar abstraction (hooks with a
-                 calendar-days fallback), deadlines and pinned dates
-  wbs.jl         parent/child hierarchy, summary rollup
-  insights.jl    baseline slippage, overallocation, workload, S-curve
-  pert.jl        three-point estimates, probabilistic finish, Monte Carlo
-                 over the CPM engine (no extra dependency)
-  icalendar.jl   .ics export of milestones and deadlines
-  juliafile.jl   .perth.jl writer + restricted AST reader (no eval)
-  show.jl        REPL Unicode Gantt, inline SVG for notebooks
-  splash.jl      REPL banner and startup panel
-  api.jl         REST routes (HTTP.Router) + static files
-  server.jl      Perth.run / Perth.stop, port fallback, browser launch,
-                 the gatekeeper (sharing + access key)
-  presence.jl    presence hub shared by both apps: cursors, chat, QR,
-                 which routes the key protects
-  kanban.jl      the board: its own server, WebSocket ops, permissions
-  background.jl  the UI background image (Perth.background!)
-ext/
-  PerthBusinessDaysExt.jl   working-day calendars (weakdep)
-  PerthMakieExt.jl          ganttplot / save_chart (weakdep)
-  PerthQRCodersExt.jl       QR code in the terminal and in the dialog (weakdep)
-frontend/
-  index.html, style.css, app.js   the gantt — vanilla JS, no build step
-  kanban/                         the board, same stack
-  shared/                         ui.css, presence.js, i18n.js,
-                                  draggable.js, background.js, sw.js
+REPL  ──►  AppState (in-memory projects + revision counter)  ◄──  HTTP API
+                     │                                              │
+               JSON on disk                            browser (vanilla JS)
+               .perth.jl mirror                        + WebSocket presence
 ```
 
-Both servers bind `0.0.0.0` and decide per connection who gets in (see
-*Sharing the Gantt on the network*), so sharing and the access key are
-live switches; neither blocks the REPL (`HTTP.listen!` — the WebSocket
-upgrade needs the stream). If port 8123 is busy Perth tries the next
-ones (8124, 8125, …).
+No framework, no build step, no `node_modules`: the frontend is plain JS and CSS
+served by the same Julia process. Three suites keep it honest — Julia
+(`Pkg.test()`), jsdom for DOM logic, and a real headless Chrome for geometry, event
+chains and overlap measurement.
 
-## Security & known limitations
+---
 
-- No authentication beyond the access key: any process on your machine
-  can talk to the API (the machine running the server is always exempt),
-  and without `key = "…"` so can any machine on the local network while
-  sharing is on. The key is a shared secret in a URL, good for a LAN,
-  not a login. Never expose the port to the internet.
-- Last write wins: simultaneous edits from the REPL and the UI to the
-  same project may overwrite each other.
-- With a business-day calendar, bar widths in the web timeline are
-  engine-fed after CPM runs; while dragging, previews use calendar days
-  until the next sync.
-- `.perth.jl` import uses a whitelist AST evaluator (only `Project`,
-  `GanttTask`, `Person`, `Band`, `Marker`, `Date`, `DateTime`, literals
-  and vectors); everything else is rejected before any execution.
+## Known limitations
 
-## What is next
+- **Not multi-user by identity.** Everyone on the network shares the same projects;
+  the access key is a door, not a login.
+- **Local-first by design.** No cloud, no accounts, no sync between machines beyond
+  the LAN — the file is the sync.
+- **Resource levelling is not automatic.** Perth reports overallocation; it does not
+  resolve it for you.
 
-[CHANGELOG.md](CHANGELOG.md) says what Perth does and when it started doing
-it. [ROADMAP.md](ROADMAP.md) says what it still does not, and why each gap is
-worth closing.
+What comes next lives in [ROADMAP.md](ROADMAP.md), with the reasoning for each item.
+Issues and contributions are welcome — including telling me that a plan of yours
+broke something.
+
+---
+
+<p align="center">
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="ROADMAP.md">Roadmap</a> ·
+  <a href="https://dantebertuzzi.github.io/Perth.jl/stable/">Documentation</a> ·
+  MIT
+</p>
