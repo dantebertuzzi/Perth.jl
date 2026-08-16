@@ -8,6 +8,81 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Calendar bands** (`Band`, `bands`, `bands!`, `add_band!`, `remove_band!`,
+  and File → Calendar bands…): a named stretch of calendar shaded behind the
+  chart, with the name written along its left edge — a sprint, a shutdown, the
+  rainy season, the fortnight the crane is on site. The colour is yours to
+  pick (the swatch starts on the next colour of the palette, so two bands in a
+  row are never the same by accident), and bands may overlap: a crunch week
+  inside a sprint is a real thing to say.
+- A band is **annotation**, not scheduling: it never moves a task, constrains
+  a date or enters the CPM engine. It answers "why is this stretch different?",
+  which until now had to live in someone's head or in a note nobody opens.
+  Inverted ranges are swapped on save, the way a negative duration is clamped,
+  and a nameless band is dropped — shading that does not say why is noise.
+
+- **Statistics by person and by team** (`people_stats`, `team_stats`, and
+  View → Statistics…). The engine already knew all of it and never added it
+  up: how much each person carries, how much of that is done, how many days
+  they are double-booked, how many of their tasks are past their deadline.
+  The weight is the same one the S-curve uses (`cost` when set, otherwise
+  person-days) — two screens telling different stories about the same work
+  would be worse than one screen fewer.
+- Overloaded days are a *person* fact: two people from the same team working
+  the same day is normal, and only an individual can be double-booked, so a
+  team row sums its members' overloaded days rather than recomputing them.
+  Team `busy_days`, in contrast, counts days on which anything in the team was
+  running.
+- WBS summaries are never counted — adding them would count their children's
+  work twice — and work with no assignee gets its own row instead of being
+  dropped: unowned work is a fact about the plan, not a gap to hide.
+
+- **Swimlanes** (`Lanes:` in the toolbar): group the chart by assignee or by
+  team. The lane header is a row like any other — same height, same grid — so
+  the table and the timeline stay one drawing; a header one pixel taller would
+  slide every bar below it. Collapsing a lane hides the tasks, not the person:
+  what is left is a single bar from the first day of their work to the last,
+  because whoever collapses wants less detail, not to lose the fact that they
+  are busy from March to May.
+- Lanes come from the collaborator registry, which is why the names had to be
+  clean first: with `assignee` fragmenting silently, the same "Ana" would have
+  shown up as three separate lanes.
+- WBS summaries are left out while lanes are on. A summary is the bracket over
+  children who may belong to different people, and hanging it in someone's
+  lane would claim they own the whole block — the CPM engine already treats
+  them that way, scheduling leaves only. For the same reason the search does
+  not count them while grouping: the counter promises every hit is reachable.
+- Grouping never repaints: a bar's automatic color comes from its position in
+  the *project*, not on screen. Dependency arrows are drawn only between
+  visible rows — an arrow into a collapsed lane points at nothing. And finding
+  a task inside a collapsed lane **opens** the lane.
+- **A collaborator registry** (`people`, `person`, `people!`, `add_person!`,
+  `remove_person!`, and File → Collaborators…). `assignee` was — and stays —
+  free text, and free text *fragments in silence*: `"Ana"`, `"Ana "` and
+  `"ana"` become three different people to the workload, the overallocation
+  check and the highlight, with nothing on screen explaining why. Now every
+  save trims the name (ends and middle) and unifies spellings that differ only
+  in case, adopting the first one the project already knows — the registry
+  first, then task order. Accents are deliberately **not** unified: `"Ana"`
+  and `"Âna"` may be two real people, and the computer cannot know they are
+  not.
+- Registering a name is therefore how you **fix a spelling everywhere**:
+  because the registry is consulted first, `add_person!(p, "Ana Paula")`
+  re-spells every `"ana paula"` on the tasks. Typing a registered name with a
+  different case in the panel does the same — doing nothing there would be the
+  worst of both worlds, the user typing the correction and the screen not
+  moving.
+- Each collaborator is a `Person`: **name, role, team, email and notes**. A
+  name alone in a plan needs a side channel to be understood; the role and
+  team ride along in the assignee autocomplete, where they pay for themselves
+  at the moment of choosing. Only `name` matters to the schedule.
+- The assignee field is now an autocomplete fed by the registry **plus every
+  name already used by a task**. Offering only the registry would hide names
+  that already exist and invite retyping them — and retyping is what
+  fragments. Names used but not registered are listed at the foot of the
+  panel, where the fragmentation is visible, with one button to absorb them.
+- Removing someone from the registry **keeps their name on their tasks**: they
+  leave the list, not the work.
 - **A warnings panel** — one place for everything wrong with the plan. The
   engine already knew all of it, scattered: a dependency cycle surfaced as an
   exception when scheduling, a blown deadline as a `+8d` on the bar, an
@@ -37,6 +112,24 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   built-in WebSocket. With no browser on the machine the file declares itself
   skipped and exits 0 — a test that says it did not run, rather than one that
   pretends to be green.
+
+### Changed
+- The WBS summary bracket is no longer a solid block in the text colour: a
+  black bar among pastel ones pulled the eye to the container instead of the
+  work. It is now a thin neutral rail whose filled part is the progress that
+  already rolls up from the children — a number the summary had and showed
+  nowhere on the chart.
+
+### Fixed
+- The collaborator panel could **lose an edit**: it reloaded the whole project
+  after saving, and a second edit made during that reload was overwritten when
+  the older response landed. Both panels now adopt the answer to their own
+  `PUT`, which is already the normalized state, and never reload underneath
+  themselves.
+- Four translation keys were defined twice with **different** wording in the
+  same dictionary, where the last one silently wins; 27 duplicate definitions
+  in total were removed. The suite now fails on any repeated key, and on any
+  key that is missing from one of the four languages.
 
 ## [0.8.4] - 2026-08-15
 

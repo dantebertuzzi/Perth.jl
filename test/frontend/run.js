@@ -150,6 +150,52 @@ function loadGanttApp(opts = {}) {
   return { w, runIn, simulate, close: () => w.close() };
 }
 
+console.log("i18n · o dicionário não pode ter chave repetida");
+{
+  // Num objeto literal de JS a chave repetida não é erro: a última vence, em
+  // silêncio. O sintoma é a tradução MUDAR por causa de uma linha adicionada
+  // 200 linhas abaixo — foi assim que quatro chaves acabaram com duas
+  // traduções diferentes cada. O dicionário é grande e cresce por blocos;
+  // achar isso com o olho não é plano.
+  //
+  // A varredura é sobre o TEXTO do bloco, não linha a linha: muito par está
+  // quebrado em duas linhas (chave numa, tradução na outra), e uma varredura
+  // por linha simplesmente não os vê.
+  const fonte = read("frontend/shared/i18n.js");
+  const linhaDe = (pos) => fonte.slice(0, pos).split(/\r?\n/).length;
+  const blocos = [...fonte.matchAll(/^\s*(pt|es|fr|zh)\s*:\s*\{/gm)];
+  const par = /"((?:[^"\\]|\\.)*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+
+  const chaves = {};
+  const repetidas = [];
+  for (const [i, b] of blocos.entries()) {
+    const lang = b[1];
+    const texto = fonte.slice(b.index, i + 1 < blocos.length ? blocos[i + 1].index : fonte.length);
+    const vistos = new Map();
+    for (const p of texto.matchAll(par)) {
+      if (vistos.has(p[1])) repetidas.push(`${lang}:${linhaDe(b.index + p.index)} "${p[1]}"`);
+      else vistos.set(p[1], p[2]);
+    }
+    chaves[lang] = new Set(vistos.keys());
+  }
+  check(blocos.length === 4, "os quatro blocos de idioma foram encontrados");
+  check(repetidas.length === 0,
+        `nenhuma chave repetida${repetidas.length ? " — " + repetidas.join(", ") : ""}`);
+
+  // e todo idioma tem que traduzir as MESMAS chaves: uma chave só no pt
+  // aparece em inglês no meio de uma tela em francês
+  const faltando = [];
+  for (const a of Object.keys(chaves)) {
+    for (const b of Object.keys(chaves)) {
+      if (a === b) continue;
+      for (const k of chaves[a]) if (!chaves[b].has(k)) faltando.push(`${b}: "${k}"`);
+    }
+  }
+  check(faltando.length === 0,
+        `os quatro idiomas cobrem as mesmas chaves${faltando.length
+          ? " — falta " + faltando.slice(0, 5).join("; ") + ` (${faltando.length})` : ""}`);
+}
+
 console.log("i18n · gantt");
 {
   const w = loadPage("frontend/index.html");
@@ -2480,6 +2526,417 @@ console.log("gantt · busca de tarefa");
     return { valor: cx.value, acesas: state.current.tasks.filter(taskMatchesHighlight).length };`);
   check(r.valor === "" && r.acesas === 4, "gantt: Esc na busca limpa e devolve tudo");
 
+  close();
+}
+
+console.log("gantt · cadastro de colaboradores");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // gravar() salva e recarrega do servidor; aqui não há rede, então os dois
+  // viram no-op e o teste guarda o que TERIA sido salvo
+  const seed = `
+    const mk = (id, assignee) => ({
+      id, name: id, start: "2026-03-02", duration: 1, assignee, progress: 0,
+      dependencies: [], color: "", notes: "", milestone: false, parent: "",
+      baseline_start: null, baseline_duration: 0, cost: 0 });
+    window.__salvos = [];
+    window.saveNowAfterDirty = async () => {
+      window.__salvos.push(JSON.parse(JSON.stringify(state.current.people))); };
+    window.loadProjects = async () => {};
+    state.current = { id: "p1", name: "P",
+      people: [{ name: "Bruno", role: "Eletricista", team: "Obra",
+                 email: "", notes: "" }],
+      tasks: [mk("t1", "Ana"), mk("t2", "Ana"), mk("t3", ""), mk("t4", "Chen Wei")] };
+    state.cpm = { cycle: false, finish: "2026-03-03", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  // O autocompletar oferece cadastrados E quem já aparece em alguma tarefa:
+  // oferecer só o cadastro esconderia nomes existentes e convidaria a
+  // redigitá-los — e redigitar é o que fragmenta
+  let r = runIn(`${seed}
+    fillPeopleList();
+    return [...document.querySelectorAll("#people-list option")]
+      .map((o) => o.value + "/" + o.label);`);
+  check(r.join("|") === "Ana/|Bruno/Eletricista · Obra|Chen Wei/",
+        "gantt: autocompletar junta cadastrados e usados, com cargo e setor");
+
+  r = runIn(`showPeople();
+    return { nomes: [...document.querySelectorAll(".people-name")].map((x) => x.textContent),
+             cargos: [...document.querySelectorAll(".people-role")].map((x) => x.textContent),
+             contas: [...document.querySelectorAll(".people-count")].map((x) => x.textContent),
+             fichas: document.querySelectorAll(".people-form").length,
+             soltos: document.querySelector(".people-loose").textContent };`);
+  check(r.nomes.join("|") === "Bruno", "gantt: a lista mostra os cadastrados");
+  check(r.cargos[0] === "Eletricista · Obra", "gantt: com cargo e setor na linha");
+  check(r.contas[0] === "—", "gantt: cadastrado sem tarefa aparece com um travessão");
+  check(r.fichas === 0, "gantt: a ficha começa fechada");
+  check(/Ana/.test(r.soltos) && /Chen Wei/.test(r.soltos) && !/Bruno/.test(r.soltos),
+        "gantt: quem trabalha sem estar cadastrado aparece no rodapé");
+
+  // clicar na linha abre a ficha; o alvo é o nome inteiro, não um lápis
+  r = runIn(`document.querySelector(".people-row").click();
+    return [...document.querySelectorAll(".people-form input")]
+      .map((i) => i.dataset.field + "=" + i.value);`);
+  check(r.join("|") === "role=Eletricista|team=Obra|email=|notes=",
+        "gantt: clicar na linha abre a ficha preenchida");
+
+  // grava no change (sair do campo), não a cada tecla: uma letra por PUT
+  // seria um PUT por letra
+  runIn(`const i = document.querySelector(".people-form input[data-field=email]");
+    i.value = " bruno@obra.com ";
+    i.dispatchEvent(new Event("input"));
+    return 0;`);
+  check(runIn(`return window.__salvos.length;`) === 0,
+        "gantt: digitar na ficha não salva a cada tecla");
+  runIn(`document.querySelector(".people-form input[data-field=email]")
+    .dispatchEvent(new Event("change")); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  check(runIn(`return window.__salvos.at(-1)[0].email;`) === "bruno@obra.com",
+        "gantt: sair do campo salva a ficha, sem o espaço sobrando");
+
+  r = runIn(`document.querySelector(".people-row").click();
+    return document.querySelectorAll(".people-form").length;`);
+  check(r === 0, "gantt: clicar de novo fecha a ficha");
+
+  // é exatamente aqui que a fragmentação fica visível — e some com um clique
+  runIn(`[...document.querySelectorAll(".people-loose button")][0].click(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return { salvo: window.__salvos.at(-1).map((pe) => pe.name),
+             contas: [...document.querySelectorAll(".people-count")].map((x) => x.textContent),
+             soltos: document.querySelector(".people-loose").textContent };`);
+  check(r.salvo.join("|") === "Bruno|Ana|Chen Wei",
+        "gantt: \"cadastrar estes\" absorve os nomes soltos");
+  check(r.soltos === "", "gantt: e o rodapé fica vazio depois disso");
+  check(r.contas.join("|") === "—|2 tasks|1 task",
+        "gantt: a contagem de tarefas por pessoa, no singular e no plural");
+
+  // digitar um nome que já está lá com outra caixa é CORRIGIR a grafia,
+  // não cadastrar de novo — e não pode ser um nada silencioso
+  r = runIn(`const f = document.querySelector(".people-add");
+    f.querySelector("input").value = "  BRUNO ";
+    f.dispatchEvent(new Event("submit"));
+    return f.querySelector("input").value;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return window.__salvos.at(-1);`);
+  check(r.map((pe) => pe.name).join("|") === "BRUNO|Ana|Chen Wei",
+        "gantt: grafia digitada substitui a cadastrada, sem duplicar");
+  check(r[0].role === "Eletricista", "gantt: e o resto da ficha fica de pé");
+
+  runIn(`const f = document.querySelector(".people-add");
+    f.querySelector("input").value = "Diego";
+    f.dispatchEvent(new Event("submit")); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return { nomes: window.__salvos.at(-1).map((pe) => pe.name),
+             aberta: [...document.querySelectorAll(".people-item")]
+               .findIndex((x) => x.querySelector(".people-form")) };`);
+  check(r.nomes.join("|") === "BRUNO|Ana|Chen Wei|Diego",
+        "gantt: nome novo entra no cadastro");
+  check(r.aberta === 3, "gantt: e a ficha dele já abre, convidando a preencher");
+
+  // tirar do cadastro tira da lista, não do trabalho
+  runIn(`[...document.querySelectorAll(".people-row .icon-btn")][1].click(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  r = runIn(`return { salvo: window.__salvos.at(-1).map((pe) => pe.name),
+             assignees: state.current.tasks.map((t) => t.assignee) };`);
+  check(!r.salvo.includes("Ana"), "gantt: remover tira o nome do cadastro");
+  check(r.assignees.join("|") === "Ana|Ana||Chen Wei",
+        "gantt: e as tarefas dela continuam com o nome dela");
+
+  close();
+}
+
+console.log("gantt · raias por responsável");
+{
+  const { runIn, close } = loadGanttApp();
+
+  const seed = `
+    const mk = (id, name, start, dur, assignee, extra = {}) => ({
+      id, name, start, duration: dur, assignee, progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", baseline_start: null,
+      baseline_duration: 0, cost: 0, deadline: null, pinned: false, ...extra });
+    state.current = { id: "p1", name: "P", people: [
+        { name: "Ana", role: "Arquiteta", team: "Projetos", email: "", notes: "" },
+        { name: "Bruno", role: "Eletricista", team: "Obra", email: "", notes: "" }],
+      tasks: [
+        mk("pai", "Estrutura", "2026-03-02", 12, ""),
+        mk("t1", "Fundação", "2026-03-02", 5, "Ana", { parent: "pai" }),
+        mk("t2", "Alvenaria", "2026-03-09", 5, "Bruno", { parent: "pai" }),
+        mk("t3", "Pintura", "2026-03-16", 3, "Ana"),
+        mk("t4", "Telhado", "2026-03-20", 2, "")] };
+    state.cpm = { cycle: false, finish: "2026-03-21", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  const linhas = `[...document.querySelectorAll("#task-rows > div")]
+    .map((d) => (d.className.split(" ")[0] === "tt-lane"
+      ? "lane:" + d.querySelector(".lane-name").textContent + ":" +
+        d.querySelector(".lane-count").textContent
+      : "task:" + d.querySelector(".c-name").textContent))`;
+
+  // sem raias, a tela é a ordem do projeto e nada mais
+  let r = runIn(`${seed} return ${linhas};`);
+  check(r.join("|") === "task:▾Estrutura|task:Fundação|task:Alvenaria|task:Pintura|task:Telhado",
+        "gantt: sem agrupamento, as linhas são as tarefas do projeto");
+
+  const agrupar = (modo) => `el.groupSelect.value = ${JSON.stringify(modo)};
+    el.groupSelect.dispatchEvent(new Event("change"));`;
+
+  r = runIn(`${agrupar("assignee")} return ${linhas};`);
+  check(r.join("|") === "lane:Ana:2|task:Fundação|task:Pintura|lane:Bruno:1|" +
+        "task:Alvenaria|lane:(unassigned):1|task:Telhado",
+        "gantt: raias em ordem alfabética, sem responsável por último");
+  // Um resumo é o colchete de filhos que podem ser de gente diferente:
+  // pendurá-lo numa raia diria que aquela pessoa é dona do bloco inteiro
+  check(!r.some((x) => /Estrutura/.test(x)),
+        "gantt: resumo de WBS não entra em raia nenhuma");
+
+  r = runIn(`return [...document.querySelectorAll(".tt-row .c-name")]
+    .map((x) => x.style.paddingLeft);`);
+  check(r.every((x) => x === "0px"),
+        "gantt: dentro da raia o recuo de hierarquia some — o pai está fora");
+
+  // O invariante das duas metades: a barra tem que cair na MESMA linha do
+  // nome, senão a tela mente sobre quem faz o quê
+  r = runIn(`const y = (id) => +[...document.querySelectorAll("#chart .bar")]
+      .find((b) => b.dataset.id === id).getAttribute("y");
+    const linha = (nome) => [...document.querySelectorAll("#task-rows > div")]
+      .findIndex((d) => d.textContent.includes(nome));
+    return { yAlv: y("t2"), rowAlv: linha("Alvenaria"),
+             yPin: y("t3"), rowPin: linha("Pintura"), h: ROW_H };`);
+  check(r.yAlv === r.rowAlv * r.h + 6 && r.yPin === r.rowPin * r.h + 6,
+        "gantt: a barra cai na mesma linha do nome, com raias no meio");
+
+  // agrupar não pode repintar: a cor vem da posição no PROJETO
+  const cor = `[...document.querySelectorAll("#chart .bar")]
+    .find((b) => b.dataset.id === "t3").getAttribute("fill")`;
+  const comRaia = runIn(`return ${cor};`);
+  const semRaia = runIn(`${agrupar("")} return ${cor};`);
+  check(comRaia === semRaia, "gantt: ligar a raia não muda a cor da barra");
+
+  // recolher esconde as tarefas, não a pessoa: sobra uma barra do começo do
+  // primeiro trabalho ao fim do último
+  r = runIn(`${agrupar("assignee")} toggleLane("Ana");
+    const roll = document.querySelector("#chart .lane-roll");
+    return { linhas: ${linhas}, x: +roll.getAttribute("x"),
+             w: +roll.getAttribute("width"),
+             x0: xOf(parseDate("2026-03-02")),
+             x1: xOf(parseDate("2026-03-18")) + PPD[state.zoom] };`);
+  check(!r.linhas.includes("task:Fundação") && !r.linhas.includes("task:Pintura"),
+        "gantt: raia recolhida esconde as tarefas dela");
+  check(r.linhas[0] === "lane:Ana:2", "gantt: e o cabeçalho continua contando 2");
+  check(r.x === r.x0 && r.x + r.w === r.x1,
+        "gantt: a barra da raia recolhida vai do primeiro dia ao último");
+
+  // seta entre raias existe; com uma ponta recolhida, some — apontar para
+  // uma linha que não está na tela é pior do que seta nenhuma
+  r = runIn(`toggleLane("Ana");
+    state.current.tasks.find((t) => t.id === "t2").dependencies = ["t1"];
+    renderChart();
+    const antes = document.querySelectorAll("#chart .dep").length;
+    toggleLane("Ana");
+    return { antes, depois: document.querySelectorAll("#chart .dep").length };`);
+  check(r.antes === 1 && r.depois === 0,
+        "gantt: seta de dependência some quando uma ponta está numa raia fechada");
+
+  // buscar tem que ALCANÇAR: se a tarefa está numa raia fechada, a raia abre
+  r = runIn(`state.current.tasks.find((t) => t.id === "t2").dependencies = [];
+    el.taskSearch.value = "fund";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    el.taskSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    return { linhas: ${linhas}, conta: el.taskSearchCount.textContent,
+             sel: state.selected };`);
+  check(r.linhas.includes("task:Fundação") && r.sel === "t1",
+        "gantt: buscar numa raia fechada abre a raia e seleciona a tarefa");
+  check(r.conta === "1/1", "gantt: e a contagem bate com o que dá para alcançar");
+
+  // o resumo escondido não pode entrar na contagem: ela promete que dá para
+  // chegar em todas as ocorrências
+  r = runIn(`el.taskSearch.value = "estrutura";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    return el.taskSearchCount.textContent;`);
+  check(r === "0/0", "gantt: resumo escondido pela raia não conta como ocorrência");
+
+  // por setor: a raia sai da FICHA da pessoa, não da tarefa
+  r = runIn(`el.taskSearch.value = "";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    ${agrupar("team")} return ${linhas};`);
+  check(r.join("|") === "lane:Obra:1|task:Alvenaria|lane:Projetos:2|task:Fundação|" +
+        "task:Pintura|lane:(no team):1|task:Telhado",
+        "gantt: raias por setor vêm do cadastro de colaboradores");
+
+  // O init() do app é assíncrono e continua pendente enquanto o bloco roda
+  // só com runIn síncrono. Fechar a janela com ele pendente não dá erro
+  // AQUI: ele acorda no primeiro await do bloco SEGUINTE, já sem document, e
+  // derruba a suíte num lugar que não tem nada a ver. Ceder o loop antes de
+  // fechar deixa o init terminar enquanto a janela ainda existe.
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
+console.log("gantt · faixas do calendário");
+{
+  const { runIn, close } = loadGanttApp();
+
+  const seed = `
+    window.__salvos = [];
+    window.saveNowAfterDirty = async () => {
+      window.__salvos.push(JSON.parse(JSON.stringify(state.current.bands)));
+      // devolve o que o servidor devolveria: ordenado por início
+      return { ...state.current,
+               bands: [...state.current.bands].sort((a, b) => a.from < b.from ? -1 : 1) };
+    };
+    state.current = { id: "p1", name: "P", people: [], bands: [], tasks: [{
+      id: "t1", name: "A", start: "2026-03-02", duration: 5, assignee: "",
+      progress: 0, dependencies: [], color: "", notes: "", milestone: false,
+      parent: "", baseline_start: null, baseline_duration: 0, cost: 0,
+      deadline: null, pinned: false }] };
+    state.cpm = { cycle: false, finish: "2026-03-06", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  const addFaixa = (nome, de, ate) => `
+    { const f = document.querySelector(".cal-add");
+      const i = f.querySelectorAll("input");
+      i[0].value = ${JSON.stringify(nome)};
+      i[1].value = ${JSON.stringify(de)};
+      i[2].value = ${JSON.stringify(ate)};
+      f.dispatchEvent(new Event("submit")); }`;
+
+  runIn(`${seed} showBands();
+    ${addFaixa("Sprint 1", "2026-03-02", "2026-03-27")} return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+
+  // ponta invertida é engano de digitação, não plano
+  runIn(`${addFaixa("Chuvas", "2026-04-20", "2026-03-25")} return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  let r = runIn(`return window.__salvos.at(-1);`);
+  check(r.length === 2, "gantt: duas edições seguidas não se atropelam");
+  check(r[1].from === "2026-03-25" && r[1].to === "2026-04-20",
+        "gantt: ponta invertida é virada na hora de gravar");
+
+  // a cor sai da paleta automática e ANDA: duas faixas seguidas iguais
+  // seriam duas faixas que não dá para distinguir
+  check(r[0].color !== r[1].color, "gantt: cada faixa nova pega a próxima cor da paleta");
+
+  r = runIn(`return { nomes: [...document.querySelectorAll(".cal-row .people-name")]
+                        .map((x) => x.textContent),
+             tipos: [...document.querySelectorAll(".cal-dot")].map((x) => x.type) };`);
+  check(r.nomes.join("|") === "Sprint 1|Chuvas", "gantt: a lista mostra as faixas");
+  check(r.tipos.join("|") === "color|color",
+        "gantt: a bolinha da linha É o seletor de cor");
+
+  // trocar a cor de uma faixa existente grava só isso
+  r = runIn(`const dot = document.querySelector(".cal-dot");
+    dot.value = "#123456";
+    dot.dispatchEvent(new Event("change"));
+    return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  check(runIn(`return window.__salvos.at(-1)[0].color;`) === "#123456",
+        "gantt: mudar a cor no seletor grava a faixa");
+
+  // e a faixa aparece no gráfico, do primeiro ao último dia (fim inclusive)
+  r = runIn(`renderChart();
+    const b = [...document.querySelectorAll("#chart .cal-band")];
+    return { n: b.length, fill: b[0].getAttribute("fill"),
+             x: +b[0].getAttribute("x"), w: +b[0].getAttribute("width"),
+             x0: xOf(parseDate("2026-03-02")),
+             x1: xOf(parseDate("2026-03-27")) + PPD[state.zoom],
+             rotulos: [...document.querySelectorAll("#chart .cal-label")]
+               .map((t) => t.textContent),
+             alturaDaFaixa: +b[0].getAttribute("height"),
+             alturaDoGrafico: +document.getElementById("chart").getAttribute("height") };`);
+  check(r.n === 2, "gantt: uma faixa desenhada para cada período");
+  check(r.x === r.x0 && r.x + r.w === r.x1,
+        "gantt: a faixa cobre do primeiro ao último dia, fim inclusive");
+  check(r.fill === "#123456", "gantt: com a cor escolhida");
+  check(r.alturaDaFaixa === r.alturaDoGrafico,
+        "gantt: e vai de cima a baixo — é fundo, não mais uma barra");
+  check(r.rotulos.join("|") === "Sprint 1|Chuvas", "gantt: cada faixa leva o nome");
+
+  // faixa é anotação: não mexe em tarefa nenhuma
+  check(runIn(`return state.current.tasks[0].start;`) === "2026-03-02",
+        "gantt: sombrear o calendário não move tarefa");
+
+  r = runIn(`[...document.querySelectorAll(".cal-row .icon-btn")][0].click(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  check(runIn(`return window.__salvos.at(-1).map((f) => f.name).join("|");`) === "Chuvas",
+        "gantt: o ✕ remove a faixa");
+
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
+console.log("gantt · painel de estatísticas");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // a conta é do servidor (mesmo motor da curva-S); aqui o teste dá a
+  // resposta pronta e olha o que a tela faz com ela
+  const seed = `
+    state.current = { id: "p1", name: "P", people: [], tasks: [] };
+    // só a rota de estatísticas: deixar o stub responder a TUDO faria o
+    // init do app seguir adiante e mexer no DOM depois do teste fechar a
+    // janela — a rede aqui tem que continuar falhando como nos outros blocos
+    window.api = async (url) => {
+      if (!String(url).includes("/stats")) throw new Error("sem rede no teste");
+      return {
+      people: [
+        { assignee: "Ana", role: "Arquiteta", team: "Projetos", tasks: 2,
+          milestones: 0, effort: 10.0, done: 8.25, progress: 83,
+          first: "2026-03-02", last: "2026-03-08", busy_days: 7,
+          over_days: 3, late: 1 },
+        { assignee: "", role: "", team: "", tasks: 1, milestones: 0,
+          effort: 3.5, done: 0, progress: 0, first: "2026-04-01",
+          last: "2026-04-03", busy_days: 3, over_days: 0, late: 0 }],
+      teams: [
+        { team: "Projetos", members: 2, people: ["Ana", "Bruno"], tasks: 2,
+          milestones: 0, effort: 10.0, done: 8.25, progress: 83,
+          first: "2026-03-02", last: "2026-03-08", busy_days: 7,
+          over_days: 3, late: 1 }] };
+    };`;
+
+  runIn(`${seed} showStats(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+
+  let r = runIn(`return {
+    cab: [...document.querySelectorAll(".stats-row.head .stats-cell")].map((c) => c.textContent),
+    nomes: [...document.querySelectorAll(".stats-name")].map((x) => x.textContent),
+    sub: [...document.querySelectorAll(".stats-sub")].map((x) => x.textContent),
+    nums: [...document.querySelectorAll(".stats-row:not(.head)")]
+      .map((l) => [...l.querySelectorAll(".stats-cell.num")].map((c) => c.textContent).join("|")),
+    ruins: [...document.querySelectorAll(".stats-cell.num.bad")].map((c) => c.textContent) };`);
+  check(r.cab.join("|") === "Person|tasks|effort|done|days|over|late",
+        "gantt: cabeçalho com as sete colunas");
+  check(r.nomes.join("|") === "Ana|(unassigned)",
+        "gantt: trabalho sem dono aparece nomeado, não sumido");
+  check(r.sub[0] === "Arquiteta · Projetos", "gantt: cargo e setor embaixo do nome");
+  check(r.nums[0] === "2|10|83%|7|3|1",
+        "gantt: 10.0 pessoa-dias vira \"10\" — casa decimal que o plano não tem");
+  check(r.nums[1].startsWith("1|3.5|"), "gantt: e 3.5 continua 3.5");
+  // zero é o normal em excesso e atraso: colorir tudo seria a tabela gritando
+  check(r.ruins.join("|") === "3|1",
+        "gantt: só sobrecarga e atraso diferentes de zero ganham cor");
+
+  r = runIn(`const barra = document.querySelector(".stats-bar > span");
+    return barra.style.width;`);
+  check(r === "83%", "gantt: a barra de progresso acompanha o número");
+
+  // a aba de setores usa a MESMA resposta: trocar de aba não vai à rede de
+  // novo, e as duas leituras não podem ser de épocas diferentes
+  r = runIn(`window.api = async () => { throw new Error("não devia buscar de novo"); };
+    [...document.querySelectorAll(".stats-tabs button")][1].click();
+    return { cab: document.querySelector(".stats-row.head .stats-cell").textContent,
+             nome: document.querySelector(".stats-name").textContent,
+             sub: document.querySelector(".stats-sub").textContent,
+             ativa: document.querySelector(".stats-tabs .active").textContent };`);
+  check(r.cab === "Team" && r.nome === "Projetos",
+        "gantt: a aba de setores mostra os setores, sem nova ida à rede");
+  check(r.sub === "Ana, Bruno", "gantt: e diz quem está no setor");
+  check(r.ativa === "Teams", "gantt: a aba escolhida fica marcada");
+
+  await new Promise((ok) => setTimeout(ok, 30));
   close();
 }
 

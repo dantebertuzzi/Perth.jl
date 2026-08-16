@@ -91,6 +91,28 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 - Double-click a bar (or table row) to edit; **duplicate** a task from
   the Edit menu or `Ctrl+D` (also `duplicate_task!(p, id)` in the REPL)
 - Tasks with notes show a **red dot** on the bar — hover to read them
+- **Calendar bands** (File → Calendar bands…, or `add_band!`): shade a named
+  stretch of calendar behind the chart — a sprint, a shutdown, the rainy
+  season, the two weeks the crane is on site. Pick its colour, overlap them
+  freely. A band is annotation: it never moves a task or enters the CPM
+  engine, it answers *why this stretch is different*, which until now lived
+  in someone's head.
+- **Statistics by person and by team** (View → Statistics…, or `people_stats`
+  / `team_stats`): tasks, effort, how much is done, days busy, days
+  double-booked and tasks past their deadline — the same weight the S-curve
+  uses. Work with no assignee gets its own row rather than being dropped.
+- **Swimlanes**: group the chart by assignee or by team (`Lanes:` in the
+  toolbar). Collapse a lane and its tasks fold into one bar spanning that
+  person's work — less detail, not less information. WBS summaries stay out of
+  lanes: a summary brackets children who may belong to different people.
+- **Collaborators** (File → Collaborators…, or `add_person!`): a registry of
+  who works on the project — name, role, team, email, notes — feeding the
+  assignee autocomplete. `assignee` stays free text, but every save trims the
+  name and unifies spellings that differ only in case, so `"Ana"`, `"Ana "`
+  and `"ana"` stop becoming three different people to the workload and the
+  overallocation check. Registering a name is how you fix its spelling across
+  the whole project; removing someone from the list leaves their name on their
+  tasks.
 - **Highlight filter** in the toolbar: spotlight tasks by assignee,
   status (not started / in progress / done / overdue / unassigned /
   slipped / overallocated) or milestones; everything else fades out

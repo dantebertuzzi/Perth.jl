@@ -43,6 +43,8 @@ const state = {
   cpm: null,           // análise CPM do servidor {cycle, finish, byId: Map}
   showCritical: false,
   highlight: null,      // {kind: "assignee"|"status"|"type", value} ou null
+  groupBy: "",          // "" | "assignee" | "team" — raias na tabela e no gráfico
+  lanesClosed: new Set(),  // chaves de raia recolhidas
   search: "",           // busca por nome de tarefa (ver matchesSearch)
   searchAt: 0,          // ocorrência atual, percorrida com Enter
   warnings: [],         // problemas do plano, vindos do servidor
@@ -204,6 +206,7 @@ const el = {
   fbHint: $("#fb-hint"),
   fbChoose: $("#fb-choose"),
   highlightSelect: $("#highlight-select"),
+  groupSelect: $("#group-select"),
   taskSearch: $("#task-search"),
   warningsChip: $("#warnings-chip"),
   taskSearchCount: $("#task-search-count"),
@@ -457,6 +460,9 @@ async function openProject(id) {
   state.current = await api(`/api/projects/${id}`);
   noteBase();
   state.selected = null;
+  // raia recolhida é sobre AQUELE projeto: "Ana" fechada aqui não quer
+  // dizer "Ana" fechada no projeto seguinte
+  state.lanesClosed.clear();
   el.projectSelect.value = id;
   localStorage.setItem("perth-last-project", id);
   await fetchAnalytics();
@@ -537,17 +543,19 @@ function markDirty() {
 async function saveNow() {
   if (!state.current || !state.dirty) return;
   try {
-    await api(`/api/projects/${state.current.id}`, {
+    // guarda a resposta: é o projeto DEPOIS das normalizações do servidor
+    // (grafia de nome, ordem das faixas, ponta invertida virada), e quem
+    // editou precisa ver o que ficou gravado, não o que digitou
+    const salvo = await api(`/api/projects/${state.current.id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         "X-Perth-Base": state.baseUpdatedAt || "",
       },
       body: JSON.stringify(state.current),
-    }).then((saved) => {
-      state.current.updated_at = saved.updated_at;
-      noteBase();
     });
+    state.current.updated_at = salvo.updated_at;
+    noteBase();
     state.dirty = false;
     state.knownRev = await fetchRev();
     await fetchAnalytics();
@@ -559,6 +567,7 @@ async function saveNow() {
     const hh = String(t.getHours()).padStart(2, "0");
     const mm = String(t.getMinutes()).padStart(2, "0");
     setSaveStatus("saved", `saved ${hh}:${mm} ✓`);
+    return salvo;
   } catch (err) {
     if (err && err.status === 409) {
       // outra máquina salvou antes: recarrega em vez de sobrescrever
@@ -1122,29 +1131,110 @@ function renderHeader() {
   }
 }
 
+/* A ficha cadastrada de um nome de responsável (ou null). */
+function personOf(nome) {
+  const k = (nome || "").trim().toLowerCase();
+  if (!k) return null;
+  return (state.current?.people || [])
+    .find((pe) => pe.name.toLowerCase() === k) || null;
+}
+
+function laneKeyOf(t) {
+  if (state.groupBy === "team") return (personOf(t.assignee)?.team || "").trim();
+  return (t.assignee || "").trim();
+}
+
+const laneLabel = (chave) => chave ||
+  T(state.groupBy === "team" ? "(no team)" : "(unassigned)");
+
+/* As linhas da tela. A tabela e o gráfico percorrem ESTA lista, na mesma
+   ordem — as duas metades são um só desenho, e um índice fora de sincronia
+   desalinha o nome da barra.
+
+   Sem agrupamento, é a ordem do projeto e nada mais. Com raias, resumos de
+   WBS ficam de fora: um resumo é o colchete de filhos que podem ser de gente
+   diferente, e pendurá-lo na raia de alguém diria que aquela pessoa é dona do
+   bloco inteiro. O motor de CPM já os trata assim — agenda folhas, resumos
+   são recipientes. */
+function displayRows() {
+  const tasks = state.current?.tasks || [];
+  if (!state.groupBy) return tasks.map((task) => ({ kind: "task", task }));
+
+  const raias = new Map();
+  for (const t of tasks) {
+    if (state.wbs?.summary.has(t.id)) continue;
+    const k = laneKeyOf(t);
+    if (!raias.has(k)) raias.set(k, []);
+    raias.get(k).push(t);
+  }
+  // sem dono por último: é uma pendência, não uma pessoa — mesmo motivo de
+  // ela ficar no pé do painel de recursos
+  const chaves = [...raias.keys()].sort((a, b) =>
+    !a ? 1 : !b ? -1 : a.localeCompare(b));
+
+  const rows = [];
+  for (const key of chaves) {
+    const tarefas = raias.get(key);
+    const closed = state.lanesClosed.has(key);
+    rows.push({ kind: "lane", key, tasks: tarefas, closed });
+    if (!closed) for (const task of tarefas) rows.push({ kind: "task", task });
+  }
+  return rows;
+}
+
+function toggleLane(key) {
+  state.lanesClosed.has(key) ? state.lanesClosed.delete(key)
+                             : state.lanesClosed.add(key);
+  renderTable();
+  renderChart();
+}
+
 function renderTable() {
   el.taskRows.innerHTML = "";
-  for (const t of state.current.tasks) {
-    const row = document.createElement("div");
-    const info = state.cpm?.byId.get(t.id);
-    const crit = state.showCritical && info?.critical;
-    const depth = state.wbs?.depth.get(t.id) ?? 0;
-    const isSum = state.wbs?.summary.has(t.id) ?? false;
-    row.className = "tt-row" + (t.id === state.selected ? " selected" : "")
-      + (crit ? " critical" : "")
-      + (isSum ? " summary" : "")
-      + (taskMatchesHighlight(t) ? "" : " dim");
-    if (state.showCritical && info) row.title = `slack: ${info.slack_days}d`;
-    row.dataset.id = t.id;
-    row.innerHTML = `
-      <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? '<span class="sum-mark">▾</span>' : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
-      <span class="c-date">${t.start}</span>
-      <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
-      <span class="c-num">${t.progress}</span>`;
-    row.addEventListener("click", () => selectTask(t.id));
-    row.addEventListener("dblclick", () => openModal(t.id));
-    el.taskRows.appendChild(row);
+  for (const row of displayRows()) {
+    el.taskRows.appendChild(row.kind === "lane" ? laneRow(row) : taskRow(row.task));
   }
+}
+
+/* Cabeçalho de raia: quem é, o que faz, quantas tarefas. A linha inteira
+   recolhe a raia — o alvo é o nome, não uma seta de 10px. */
+function laneRow(row) {
+  const div = document.createElement("div");
+  div.className = "tt-lane" + (row.closed ? " closed" : "");
+  div.dataset.lane = row.key;
+  const pe = state.groupBy === "assignee" ? personOf(row.key) : null;
+  const legenda = pe ? [pe.role, pe.team].filter(Boolean).join(" · ") : "";
+  div.innerHTML = `
+    <span class="lane-mark">${row.closed ? "▸" : "▾"}</span>
+    <span class="lane-name">${escapeHTML(laneLabel(row.key))}</span>
+    <span class="lane-role">${escapeHTML(legenda)}</span>
+    <span class="lane-count">${row.tasks.length}</span>`;
+  div.addEventListener("click", () => toggleLane(row.key));
+  return div;
+}
+
+function taskRow(t) {
+  const row = document.createElement("div");
+  const info = state.cpm?.byId.get(t.id);
+  const crit = state.showCritical && info?.critical;
+  // dentro de uma raia a hierarquia não vale: o pai pode estar em outra
+  // raia, e o recuo apontaria para uma linha que não está ali
+  const depth = state.groupBy ? 0 : (state.wbs?.depth.get(t.id) ?? 0);
+  const isSum = state.wbs?.summary.has(t.id) ?? false;
+  row.className = "tt-row" + (t.id === state.selected ? " selected" : "")
+    + (crit ? " critical" : "")
+    + (isSum ? " summary" : "")
+    + (taskMatchesHighlight(t) ? "" : " dim");
+  if (state.showCritical && info) row.title = `slack: ${info.slack_days}d`;
+  row.dataset.id = t.id;
+  row.innerHTML = `
+    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? '<span class="sum-mark">▾</span>' : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
+    <span class="c-date">${t.start}</span>
+    <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
+    <span class="c-num">${t.progress}</span>`;
+  row.addEventListener("click", () => selectTask(t.id));
+  row.addEventListener("dblclick", () => openModal(t.id));
+  return row;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1165,9 +1255,12 @@ function svgTitle(text) {
 function renderChart() {
   const ppd = PPD[state.zoom];
   const { start, days } = state.range;
-  const tasks = state.current.tasks;
+  const rows = displayRows();
+  // cor por posição no PROJETO, não na tela: agrupar em raias não pode
+  // repintar as barras, senão a mesma tarefa muda de cor ao ligar a raia
+  const corDe = new Map(state.current.tasks.map((t, i) => [t.id, i]));
   const totalW = days * ppd;
-  const totalH = Math.max(tasks.length * ROW_H + 40, el.tlBody.clientHeight);
+  const totalH = Math.max(rows.length * ROW_H + 40, el.tlBody.clientHeight);
 
   const chart = el.chart;
   chart.innerHTML = "";
@@ -1186,6 +1279,31 @@ function renderChart() {
       }
     }
   }
+
+  /* Faixas nomeadas do calendário (sprint, parada, chuvas). Vêm antes da
+     grade e das barras porque são fundo: sombrear é dizer "este trecho é
+     diferente", não competir com o trabalho desenhado em cima. */
+  (state.current.bands || []).forEach((f, i) => {
+    const x0 = Math.max(xOf(parseDate(f.from)), 0);
+    const x1 = Math.min(xOf(parseDate(f.to)) + ppd, totalW);
+    if (x1 <= x0) return;   // faixa inteira fora da janela desenhada
+    const cor = f.color || AUTO_COLORS[i % AUTO_COLORS.length];
+    chart.appendChild(svg("rect", {
+      class: "cal-band", x: x0, y: 0, width: x1 - x0, height: totalH,
+      fill: cor,
+    }));
+    chart.appendChild(svg("line", {
+      class: "cal-edge", x1: x0, y1: 0, x2: x0, y2: totalH, stroke: cor,
+    }));
+    // nome deitado na borda esquerda: horizontal ele seria a primeira coisa
+    // que o zoom corta, e some justo quando a faixa fica estreita
+    const rot = svg("text", {
+      class: "cal-label", x: x0 + 13, y: 10,
+      transform: `rotate(90 ${x0 + 13} 10)`,
+    });
+    rot.textContent = f.name;
+    chart.appendChild(rot);
+  });
 
   // Grade vertical: dias (zoom dia) ou segundas-feiras
   if (state.zoom === "day") {
@@ -1206,19 +1324,27 @@ function renderChart() {
   }
 
   // Linhas horizontais das linhas de tarefa
-  for (let r = 1; r <= tasks.length; r++) {
+  for (let r = 1; r <= rows.length; r++) {
     chart.appendChild(svg("line", {
       class: "row-line", x1: 0, y1: r * ROW_H, x2: totalW, y2: r * ROW_H,
     }));
   }
 
-  // Setas de dependência (desenhadas antes das barras para ficarem por baixo)
-  const rowOf = new Map(tasks.map((t, i) => [t.id, i]));
-  for (const t of tasks) {
+  // Setas de dependência (desenhadas antes das barras para ficarem por baixo).
+  // Só entre linhas visíveis: numa raia fechada a tarefa não tem linha, e uma
+  // seta apontando para o vazio é pior do que seta nenhuma.
+  const rowOf = new Map();
+  const byId = new Map();
+  rows.forEach((r, i) => {
+    if (r.kind !== "task") return;
+    rowOf.set(r.task.id, i);
+    byId.set(r.task.id, r.task);
+  });
+  for (const t of byId.values()) {
     for (const depRef of t.dependencies || []) {
       const dep = depId(depRef);
       if (!rowOf.has(dep)) continue;
-      const pred = tasks[rowOf.get(dep)];
+      const pred = byId.get(dep);
       const x1 = xOf(addDays(taskEnd(pred), 1));
       const y1 = rowOf.get(dep) * ROW_H + ROW_H / 2;
       const x2 = xOf(parseDate(t.start));
@@ -1232,10 +1358,12 @@ function renderChart() {
   }
 
   // Barras e marcos
-  tasks.forEach((t, i) => {
+  rows.forEach((row, i) => {
+    if (row.kind === "lane") { drawLane(chart, row, i, totalW, ppd); return; }
+    const t = row.task;
     const y = i * ROW_H + 6;
     const h = ROW_H - 12;
-    const color = t.color || AUTO_COLORS[i % AUTO_COLORS.length];
+    const color = t.color || AUTO_COLORS[corDe.get(t.id) % AUTO_COLORS.length];
     const x = xOf(parseDate(t.start));
     const dim = taskMatchesHighlight(t) ? "" : " dim";
     const hasNotes = (t.notes || "").trim().length > 0;
@@ -1253,14 +1381,32 @@ function renderChart() {
     }
 
     if (isSum) {
-      // Colchete de resumo (estilo MS Project): barra fina + presilhas
+      /* Colchete de resumo: trilho arredondado + presilhas nas pontas.
+         Antes era um polígono chapado na cor do texto, e um bloco preto no
+         meio de barras pastel puxava o olho para o recipiente em vez do
+         trabalho. Agora o traço é neutro e fino — e o pedaço cheio é o
+         progresso que já sobe dos filhos, que estava sendo jogado fora: o
+         resumo tem esse número e não o mostrava em lugar nenhum do gráfico. */
       const w = Math.max(t.duration, 1) * ppd;
-      const sy = i * ROW_H + 7;
-      const g = svg("path", {
-        class: "bar-summary" + dim,
-        d: `M ${x} ${sy} H ${x + w} V ${sy + 10} L ${x + w - 7} ${sy + 4} H ${x + 7} L ${x} ${sy + 10} Z`,
-        "data-id": t.id,
+      const alt = 6;
+      const sy = i * ROW_H + ROW_H / 2 - alt / 2 - 2;
+      const g = svg("g", { class: "bar-summary" + dim, "data-id": t.id });
+      g.appendChild(svg("rect", {
+        class: "sum-track", x, y: sy, width: w, height: alt, rx: alt / 2,
+      }));
+      if (t.progress > 0) {
+        g.appendChild(svg("rect", {
+          class: "sum-fill", x, y: sy, width: (w * t.progress) / 100,
+          height: alt, rx: alt / 2,
+        }));
+      }
+      // presilhas: é o que faz o traço ler como colchete, e não como barra
+      const capa = (bx, dir) => svg("path", {
+        class: "sum-cap",
+        d: `M ${bx} ${sy} L ${bx + dir * 7} ${sy} L ${bx} ${sy + alt + 5} Z`,
       });
+      g.appendChild(capa(x, 1));
+      g.appendChild(capa(x + w, -1));
       if (hasNotes) g.appendChild(svgTitle(t.notes));
       g.addEventListener("click", () => selectTask(t.id));
       g.addEventListener("dblclick", () => openModal(t.id));
@@ -1271,16 +1417,16 @@ function renderChart() {
         }));
       }
       if (ui.labels) {
-        const label = svg("text", { class: "bar-label" + dim, x: x + w + 8, y: sy + 9 });
+        const label = svg("text", { class: "bar-label" + dim, x: x + w + 8, y: sy + alt + 4 });
         label.textContent = t.name;
         chart.appendChild(label);
       }
       if (t.id === state.selected) {
         chart.appendChild(svg("rect", {
-          class: "bar-sel", x: x - 3, y: sy - 4, width: w + 6, height: 18,
+          class: "bar-sel", x: x - 3, y: sy - 3, width: w + 6, height: alt + 11,
         }));
       }
-      return;   // resumo não tem barra normal, progresso nem drag
+      return;   // resumo não tem barra normal nem drag
     }
 
     if (t.milestone) {
@@ -1411,6 +1557,25 @@ function renderChart() {
   chart.appendChild(svg("line", {
     class: "today-line", x1: tx, y1: 0, x2: tx, y2: totalH,
   }));
+}
+
+/* A faixa da raia no gráfico. Fechada, ela vira uma barra só, do começo do
+   primeiro trabalho ao fim do último: recolher a raia esconde as tarefas,
+   não a pessoa — quem fecha quer ver menos detalhe, não perder a informação
+   de que ela está ocupada de março a maio. */
+function drawLane(chart, row, i, totalW, ppd) {
+  chart.appendChild(svg("rect", {
+    class: "lane-band", x: 0, y: i * ROW_H, width: totalW, height: ROW_H,
+  }));
+  if (!row.closed) return;
+  const x0 = Math.min(...row.tasks.map((t) => xOf(parseDate(t.start))));
+  const x1 = Math.max(...row.tasks.map((t) => xOf(taskEnd(t)) + ppd));
+  const roll = svg("rect", {
+    class: "lane-roll", x: x0, y: i * ROW_H + ROW_H / 2 - 4,
+    width: Math.max(x1 - x0, 3), height: 8, rx: 4,
+  });
+  roll.appendChild(svgTitle(`${laneLabel(row.key)} — ${row.tasks.length}`));
+  chart.appendChild(roll);
 }
 
 /* Caminho em cotovelo entre fim da predecessora e início da sucessora */
@@ -1567,6 +1732,7 @@ function openModal(id) {
   $("#modal-title").textContent = T(state.editingNew ? "New task" : "Edit task");
   $("#f-name").value = t.name;
   $("#f-assignee").value = t.assignee || "";
+  fillPeopleList();
   $("#f-start").value = t.start;
   $("#f-duration").value = t.duration;
   $("#f-progress").value = t.progress;
@@ -1846,6 +2012,427 @@ function submitModal() {
 /* ------------------------------------------------------------------ */
 /* Overlay genérico (Activity, S-curve) — mesmo visual do modal de form  */
 /* ------------------------------------------------------------------ */
+
+/* Vocabulário de pessoas do projeto: o cadastro MAIS quem já aparece em
+   alguma tarefa. Oferecer só o cadastro esconderia nomes que já existem e
+   convidaria a redigitá-los — e é redigitar que fragmenta. */
+function peopleOptions() {
+  const usados = (state.current?.tasks || [])
+    .map((t) => (t.assignee || "").trim()).filter(Boolean);
+  const cadastrados = (state.current?.people || []).map((pe) => pe.name);
+  const vistos = new Map();   // minúscula => grafia (a cadastrada ganha)
+  for (const n of [...cadastrados, ...usados]) {
+    const k = n.toLowerCase();
+    if (!vistos.has(k)) vistos.set(k, n);
+  }
+  return [...vistos.values()].sort((a, b) => a.localeCompare(b));
+}
+
+function fillPeopleList() {
+  const dl = $("#people-list");
+  if (!dl) return;
+  dl.textContent = "";
+  const ficha = new Map((state.current?.people || [])
+    .map((pe) => [pe.name.toLowerCase(), pe]));
+  for (const nome of peopleOptions()) {
+    const o = document.createElement("option");
+    o.value = nome;
+    // o navegador mostra a legenda ao lado do nome na lista suspensa:
+    // é onde cargo e setor pagam por si mesmos, na hora de escolher
+    const pe = ficha.get(nome.toLowerCase());
+    const legenda = pe && [pe.role, pe.team].filter(Boolean).join(" · ");
+    if (legenda) o.label = legenda;
+    dl.append(o);
+  }
+}
+
+/* Cadastro de colaboradores: nome, cargo, setor, e-mail, observações. A
+   lista é conveniência, não cerca — o campo responsável continua aceitando
+   texto livre, e tirar alguém do cadastro NÃO tira o nome das tarefas dele:
+   some da lista, não do trabalho. */
+const PEOPLE_FIELDS = [["role", "Role"], ["team", "Team"],
+                       ["email", "Email"], ["notes", "Notes"]];
+
+function showPeople() {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "people-box";
+
+  const form = document.createElement("form");
+  form.className = "people-add";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.autocomplete = "off";
+  input.placeholder = T("Name");
+  const add = document.createElement("button");
+  add.type = "submit";
+  add.className = "primary";
+  add.textContent = T("Add");
+  form.append(input, add);
+
+  const lista = document.createElement("div");
+  lista.className = "people-list";
+  const rodape = document.createElement("div");
+  rodape.className = "people-loose";
+  let aberto = "";   // nome da ficha expandida (uma por vez)
+
+  const contar = (nome) => (state.current.tasks || [])
+    .filter((t) => (t.assignee || "").toLowerCase() === nome.toLowerCase()).length;
+
+  async function gravar(pessoas) {
+    state.current.people = pessoas;
+    // adota a resposta do servidor, que é quem arruma grafia, ordem e
+    // repetição. Recarregar o projeto INTEIRO aqui era pior do que parecia:
+    // uma segunda edição feita durante o recarregamento era engolida quando
+    // a resposta antiga chegava e trocava state.current debaixo dela.
+    const salvo = await saveNowAfterDirty();
+    if (salvo) state.current.people = salvo.people;
+    fillPeopleList();
+    renderTable();
+    renderChart();
+    desenhar();
+  }
+
+  function desenhar() {
+    const cadastrados = state.current.people || [];
+    lista.textContent = "";
+    if (!cadastrados.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("No collaborators registered yet.");
+      lista.append(vazio);
+    }
+    for (const pe of cadastrados) {
+      const bloco = document.createElement("div");
+      bloco.className = "people-item";
+      const linha = document.createElement("div");
+      linha.className = "people-row";
+      const n = document.createElement("span");
+      n.className = "people-name";
+      n.textContent = pe.name;
+      const cargo = document.createElement("span");
+      cargo.className = "people-role";
+      cargo.textContent = [pe.role, pe.team].filter(Boolean).join(" · ");
+      const c = document.createElement("span");
+      c.className = "people-count";
+      const q = contar(pe.name);
+      c.textContent = q ? `${q} ${T(q === 1 ? "task" : "tasks")}` : "—";
+      const x = document.createElement("button");
+      x.className = "icon-btn";
+      x.type = "button";
+      x.textContent = "✕";
+      x.title = T("Remove from list (tasks keep the name)");
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        gravar(cadastrados.filter((o) => o !== pe));
+      });
+      linha.append(n, cargo, c, x);
+      // a linha inteira abre a ficha: o alvo de clique é o nome, não um
+      // lápis de 12px que ninguém acha
+      linha.addEventListener("click", () => {
+        aberto = aberto === pe.name ? "" : pe.name;
+        desenhar();
+      });
+      bloco.append(linha);
+      if (aberto === pe.name) bloco.append(fichaDe(pe, cadastrados));
+      lista.append(bloco);
+    }
+
+    // Nomes que já trabalham no projeto mas não estão no cadastro: é
+    // exatamente aqui que a fragmentação aparece, então mostrar é o ponto
+    const nomes = cadastrados.map((pe) => pe.name.toLowerCase());
+    const soltos = peopleOptions().filter((n) => !nomes.includes(n.toLowerCase()));
+    rodape.textContent = "";
+    if (soltos.length) {
+      const txt = document.createElement("span");
+      txt.textContent = `${T("Also assigned in this project")}: ${soltos.join(", ")}`;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = T("Register these");
+      b.addEventListener("click", () =>
+        gravar([...cadastrados, ...soltos.map((name) => ({ name }))]));
+      rodape.append(txt, b);
+    }
+  }
+
+  /* A ficha: o que a pessoa é, além do nome. Grava ao sair do campo (blur)
+     em vez de a cada tecla — salvar por tecla mandaria um PUT por letra. */
+  function fichaDe(pe, cadastrados) {
+    const ficha = document.createElement("div");
+    ficha.className = "people-form";
+    for (const [campo, rotulo] of PEOPLE_FIELDS) {
+      const lab = document.createElement("label");
+      lab.textContent = T(rotulo);
+      const ip = document.createElement("input");
+      ip.type = "text";
+      ip.autocomplete = "off";
+      ip.dataset.field = campo;
+      ip.value = pe[campo] || "";
+      ip.addEventListener("change", () => {
+        if ((pe[campo] || "") === ip.value.trim()) return;
+        pe[campo] = ip.value.trim();
+        gravar(cadastrados);
+      });
+      lab.append(ip);
+      ficha.append(lab);
+    }
+    return ficha;
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const nome = input.value.trim();
+    if (!nome) return;
+    const cadastrados = state.current.people || [];
+    // Digitar um nome que já existe com outra caixa é o gesto de CORRIGIR a
+    // grafia: a digitada substitui a cadastrada (e o resto da ficha fica
+    // como estava), e o servidor reescreve as tarefas dela. Não fazer nada
+    // seria o pior dos mundos — o usuário digita a correção, aperta
+    // Adicionar, e a tela fica igual.
+    const igual = (pe) => pe.name.toLowerCase() === nome.toLowerCase();
+    const antigo = cadastrados.find(igual);
+    if (antigo) antigo.name = nome;
+    aberto = nome;   // abre a ficha do recém-cadastrado: é o convite a preenchê-la
+    gravar(antigo ? cadastrados : [...cadastrados, { name: nome }]);
+    input.value = "";
+    input.focus();
+  });
+
+  desenhar();
+  body.append(form, lista, rodape);
+  showOverlay("Collaborators", body);
+  input.focus();
+}
+
+/* Estatísticas por pessoa e por setor. O gantt já sabia tudo isto e não
+   somava em lugar nenhum: quanto cada um carrega, quanto disso está feito,
+   quantos dias de sobrecarga, quantas tarefas passaram do prazo. A conta sai
+   do servidor, do mesmo motor que desenha a curva-S — duas telas contando
+   histórias diferentes sobre o mesmo trabalho seria pior do que nenhuma. */
+const STATS_COLS = [
+  ["tasks", "tasks"], ["effort", "effort"], ["progress", "done"],
+  ["busy_days", "days"], ["over_days", "over"], ["late", "late"],
+];
+
+async function showStats() {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "stats-box";
+  const abas = document.createElement("div");
+  abas.className = "seg stats-tabs";
+  const tabela = document.createElement("div");
+  tabela.className = "stats-table";
+  body.append(abas, tabela);
+  showOverlay("Statistics", body);
+
+  let dados;
+  try {
+    dados = await api(`/api/projects/${state.current.id}/stats`);
+  } catch (err) {
+    tabela.textContent = `${T("Could not load statistics")}: ${err.message}`;
+    return;
+  }
+
+  let aba = "people";
+  for (const [chave, rotulo] of [["people", "People"], ["teams", "Teams"]]) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = T(rotulo);
+    b.dataset.tab = chave;
+    b.addEventListener("click", () => { aba = chave; desenhar(); });
+    abas.append(b);
+  }
+
+  function desenhar() {
+    for (const b of abas.children) b.classList.toggle("active", b.dataset.tab === aba);
+    const linhas = dados[aba] || [];
+    tabela.textContent = "";
+    if (!linhas.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("Nothing assigned yet.");
+      tabela.append(vazio);
+      return;
+    }
+
+    const head = document.createElement("div");
+    head.className = "stats-row head";
+    head.append(celula(T(aba === "people" ? "Person" : "Team"), "who"));
+    for (const [, rotulo] of STATS_COLS) head.append(celula(T(rotulo), "num"));
+    tabela.append(head);
+
+    for (const r of linhas) {
+      const linha = document.createElement("div");
+      linha.className = "stats-row";
+      const nome = aba === "people"
+        ? (r.assignee || T("(unassigned)"))
+        : (r.team || T("(no team)"));
+      const detalhe = aba === "people"
+        ? [r.role, r.team].filter(Boolean).join(" · ")
+        : r.people.join(", ");
+      const quem = celula("", "who");
+      const n = document.createElement("span");
+      n.className = "stats-name";
+      n.textContent = nome;
+      const d = document.createElement("span");
+      d.className = "stats-sub";
+      d.textContent = detalhe;
+      d.title = `${r.first} → ${r.last}`;
+      quem.append(n, d);
+      linha.append(quem);
+
+      for (const [campo] of STATS_COLS) {
+        const c = celula("", "num");
+        if (campo === "progress") {
+          // barra e número juntos: 83% sem barra some no meio de outros
+          // números, e barra sem número não dá para comparar duas pessoas
+          const barra = document.createElement("span");
+          barra.className = "stats-bar";
+          const dentro = document.createElement("span");
+          dentro.style.width = `${Math.max(0, Math.min(100, r.progress))}%`;
+          barra.append(dentro);
+          const txt = document.createElement("span");
+          txt.textContent = `${r.progress}%`;
+          c.append(barra, txt);
+        } else {
+          const v = r[campo];
+          c.textContent = campo === "effort" ? numeroCurto(v) : String(v);
+          // zero é o normal em "over" e "late": só o diferente de zero
+          // merece cor, senão a tabela inteira fica gritando
+          if ((campo === "over_days" || campo === "late") && v > 0) {
+            c.classList.add("bad");
+          }
+        }
+        linha.append(c);
+      }
+      tabela.append(linha);
+    }
+  }
+
+  desenhar();
+}
+
+function celula(texto, cls) {
+  const c = document.createElement("span");
+  c.className = `stats-cell ${cls}`;
+  if (texto) c.textContent = texto;
+  return c;
+}
+
+/* 12.0 vira "12"; 12.53 vira "12.5". Pessoa-dias com três casas decimais é
+   precisão que o plano não tem. */
+const numeroCurto = (v) => (Math.round(v * 10) / 10).toString();
+
+const corAutomatica = (i) => AUTO_COLORS[i % AUTO_COLORS.length];
+
+/* Editor de faixas do calendário. Faixa sem nome não entra: um trecho
+   sombreado que não diz por quê é ruído, não informação. */
+function showBands() {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "people-box cal-box";
+
+  const form = document.createElement("form");
+  form.className = "cal-add";
+  const nome = document.createElement("input");
+  nome.type = "text";
+  nome.autocomplete = "off";
+  nome.placeholder = T("Name");
+  const de = document.createElement("input");
+  de.type = "date";
+  const ate = document.createElement("input");
+  ate.type = "date";
+  // o seletor já vem na cor que a faixa teria de graça: quem não liga para
+  // cor não precisa escolher nenhuma, e quem liga muda uma que já existe
+  const cor = document.createElement("input");
+  cor.type = "color";
+  cor.className = "cal-pick";
+  cor.title = T("Colour");
+  cor.value = corAutomatica((state.current.bands || []).length);
+  const add = document.createElement("button");
+  add.type = "submit";
+  add.className = "primary";
+  add.textContent = T("Add");
+  form.append(nome, de, ate, cor, add);
+
+  const lista = document.createElement("div");
+  lista.className = "people-list";
+
+  async function gravar(faixas) {
+    state.current.bands = faixas;
+    // ver o comentário do gravar() dos colaboradores: a resposta do PUT já
+    // é o estado normalizado, e recarregar o projeto abriria uma janela em
+    // que a edição seguinte se perde
+    const salvo = await saveNowAfterDirty();
+    if (salvo) state.current.bands = salvo.bands;
+    renderChart();
+    desenhar();
+  }
+
+  function desenhar() {
+    const faixas = state.current.bands || [];
+    lista.textContent = "";
+    if (!faixas.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("No bands yet.");
+      lista.append(vazio);
+    }
+    faixas.forEach((f, i) => {
+      const linha = document.createElement("div");
+      linha.className = "people-row cal-row";
+      // a bolinha É o seletor: mostrar a cor e obrigar a abrir outro lugar
+      // para trocá-la seria duas coisas onde cabe uma
+      const cor = document.createElement("input");
+      cor.type = "color";
+      cor.className = "cal-dot";
+      cor.title = T("Colour");
+      cor.value = f.color || corAutomatica(i);
+      cor.addEventListener("change", () => {
+        f.color = cor.value;
+        gravar(faixas);
+      });
+      const n = document.createElement("span");
+      n.className = "people-name";
+      n.textContent = f.name;
+      const quando = document.createElement("span");
+      quando.className = "people-count";
+      quando.textContent = `${f.from} → ${f.to}`;
+      const x = document.createElement("button");
+      x.className = "icon-btn";
+      x.type = "button";
+      x.textContent = "✕";
+      x.title = T("Remove");
+      x.addEventListener("click", () => gravar(faixas.filter((o) => o !== f)));
+      linha.append(cor, n, quando, x);
+      lista.append(linha);
+    });
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const texto = nome.value.trim();
+    if (!texto || !de.value || !ate.value) return;
+    const escolhida = cor.value;
+    // mesma regra do REPL: nome repetido MOVE a faixa em vez de duplicar,
+    // e ponta invertida é engano de digitação, não plano
+    const [from, to] = de.value <= ate.value ? [de.value, ate.value]
+                                             : [ate.value, de.value];
+    const resto = (state.current.bands || [])
+      .filter((f) => f.name.toLowerCase() !== texto.toLowerCase());
+    gravar([...resto, { name: texto, from, to, color: escolhida }]);
+    // próxima faixa já vem com a próxima cor da paleta, para duas seguidas
+    // não saírem iguais sem ninguém pedir
+    cor.value = corAutomatica(resto.length + 1);
+    nome.value = "";
+    nome.focus();
+  });
+
+  desenhar();
+  body.append(form, lista);
+  showOverlay("Calendar bands", body);
+  nome.focus();
+}
 
 function showOverlay(title, bodyEl) {
   document.getElementById("perth-overlay")?.remove();
@@ -2600,7 +3187,7 @@ async function renameProject() {
 async function saveNowAfterDirty() {
   state.dirty = true;
   clearTimeout(saveTimer);
-  await saveNow();
+  return saveNow();
 }
 
 async function deleteProject() {
@@ -2765,6 +3352,8 @@ const ACTIONS = {
   "close-welcome": () => state.current && hideWelcome(),
   "new-project": newProject,
   "rename-project": renameProject,
+  "people": showPeople,
+  "bands": showBands,
   "delete-project": deleteProject,
   "import": importProject,
   "export": exportProject,
@@ -2785,6 +3374,7 @@ const ACTIONS = {
   "share-toggle": toggleShare,
   "scurve": showSCurve,
   "resources": toggleResources,
+  "stats": showStats,
   "export-csv": () => state.current &&
     window.open(withKey(`/api/projects/${state.current.id}/export.csv`)),
   "export-ics": () => state.current &&
@@ -2877,9 +3467,13 @@ $$(".zoom-group button").forEach((b) =>
    seguinte, e um índice guardado apontaria para a tarefa errada. */
 function searchHits() {
   if (!state.current || !state.search) return [];
-  const out = [];
-  state.current.tasks.forEach((t, i) => matchesSearch(t) && out.push(i));
-  return out;
+  // ids, não índices: a tarefa pode estar numa raia fechada (revealTask
+  // abre) ou ser um resumo que o agrupamento esconde — e aí ela não pode
+  // contar, porque a contagem promete que dá para chegar em todas
+  return state.current.tasks
+    .filter((t) => matchesSearch(t) &&
+                   !(state.groupBy && state.wbs?.summary.has(t.id)))
+    .map((t) => t.id);
 }
 
 /* Leva à k-ésima ocorrência, dando a volta nas duas pontas. Seleciona a
@@ -2890,8 +3484,7 @@ function goToHit(k) {
   if (!hits.length) return;
   const n = hits.length;
   state.searchAt = ((k % n) + n) % n;              // volta nas duas direções
-  const linha = hits[state.searchAt];
-  state.selected = state.current.tasks[linha].id;
+  state.selected = hits[state.searchAt];
   revealTask(state.selected);
   el.taskSearchCount.textContent = `${state.searchAt + 1}/${n}`;
 }
@@ -2901,12 +3494,17 @@ function goToHit(k) {
    aviso tem que levar ao problema, não só nomeá-lo. */
 function revealTask(id) {
   if (!state.current) return;
-  const linha = state.current.tasks.findIndex((x) => x.id === id);
-  if (linha < 0) return;
-  const t = state.current.tasks[linha];
+  const t = state.current.tasks.find((x) => x.id === id);
+  if (!t) return;
   state.selected = id;
+  // numa raia fechada é preciso ABRIR a raia: apontar para uma linha que não
+  // está na tela é pior do que não apontar
+  if (state.groupBy) state.lanesClosed.delete(laneKeyOf(t));
   renderTable();
   renderChart();
+  const linha = displayRows()
+    .findIndex((r) => r.kind === "task" && r.task.id === id);
+  if (linha < 0) return;   // resumo, escondido enquanto há raias
   // Rolar só na vertical não basta: a linha acende na tabela e a BARRA fica
   // fora da vista, porque ela está no tempo, não na lista. Num projeto de um
   // ano há meses de distância entre uma tarefa e a seguinte.
@@ -2964,6 +3562,16 @@ el.taskSearch.addEventListener("keydown", (ev) => {
     ev.stopPropagation();          // nem abrir o modal pelo atalho global
     goToHit(state.searchAt + (ev.shiftKey ? -1 : 1));
   }
+});
+
+/* Raias ficam guardadas por navegador, como o zoom e o tema: é preferência
+   de quem olha, não dado do projeto — cada um vê o mesmo plano do seu jeito. */
+el.groupSelect.addEventListener("change", () => {
+  state.groupBy = el.groupSelect.value;
+  state.lanesClosed.clear();
+  localStorage.setItem("perth-lanes", state.groupBy);
+  renderTable();
+  renderChart();
 });
 
 el.highlightSelect.addEventListener("change", () => {
@@ -3303,6 +3911,11 @@ function bootFailed(err) {
 
 (async function init() {
   applyUI();
+  state.groupBy = localStorage.getItem("perth-lanes") || "";
+  el.groupSelect.value = state.groupBy;
+  // um valor guardado de uma versão futura/antiga não pode deixar o seletor
+  // dizendo uma coisa e a tela mostrando outra
+  if (el.groupSelect.value !== state.groupBy) state.groupBy = "";
   try {
     await bootData();
   } catch (err) {

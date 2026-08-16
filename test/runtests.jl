@@ -1045,6 +1045,204 @@ end
         delete_project(p.id)
     end
 
+    @testset "cadastro de colaboradores" begin
+        p = create_project("Time")
+        a = add_task!(p, "A"; start = Date(2026, 3, 2), duration = 1,
+                      assignee = "  ana  paula ")
+        b = add_task!(p, "B"; start = Date(2026, 3, 2), duration = 1,
+                      assignee = "Ana Paula")
+
+        # espaço nas pontas e no meio some; a segunda grafia adota a que o
+        # projeto já conhecia, em vez de reescrever a tarefa alheia
+        @test a.assignee == "ana paula"
+        @test b.assignee == "ana paula"
+
+        # cadastrar é o jeito explícito de CORRIGIR a grafia de todo mundo
+        @test [pe.name for pe in add_person!(p, "Ana Paula")] == ["Ana Paula"]
+        @test all(t -> t.assignee == "Ana Paula", p.tasks)
+
+        # acento NÃO é unificado: podem ser duas pessoas de verdade
+        r = create_project("Acento")
+        add_task!(r, "A"; start = Date(2026, 3, 2), duration = 1, assignee = "Ana")
+        add_task!(r, "B"; start = Date(2026, 3, 2), duration = 1, assignee = "Âna")
+        @test Set(t.assignee for t in r.tasks) == Set(["Ana", "Âna"])
+
+        # o cadastro aceita nome solto, NamedTuple e Person; apara, tira
+        # repetido (ignorando caixa) e ordena por nome
+        lista = people!(p, ["  Chen  Wei ", (name = "bruno", role = " Eletricista "),
+                            "BRUNO", "", Person(name = "Dara", team = "Obra")])
+        @test [pe.name for pe in lista] == ["bruno", "Chen Wei", "Dara"]
+        @test lista[1].role == "Eletricista"      # espaço aparado nos campos
+        @test lista[3].team == "Obra"
+        @test_throws ArgumentError people!(p, [42])
+
+        # person() acha ignorando caixa; quem não existe devolve nothing
+        @test person(p, "CHEN wei").name == "Chen Wei"
+        @test person(p, "ninguém") === nothing
+
+        # add_person! num nome que já existe ATUALIZA, não duplica: só os
+        # campos passados mudam, o resto da ficha fica de pé
+        add_person!(p, "Bruno"; team = "Obra")
+        @test length(people(p)) == 3
+        @test person(p, "bruno").name == "Bruno"   # a grafia nova vence
+        @test person(p, "bruno").role == "Eletricista"
+        @test person(p, "bruno").team == "Obra"
+
+        # people() devolve cópia: mexer no resultado não mexe no projeto
+        copia = people(p); push!(copia, Person(name = "Intruso"))
+        @test length(people(p)) == 3
+
+        # tirar do cadastro não tira o nome das tarefas
+        add_person!(p, "Ana Paula")
+        @test [pe.name for pe in remove_person!(p, "ana paula")] ==
+              ["Bruno", "Chen Wei", "Dara"]
+        @test all(t -> t.assignee == "Ana Paula", project(p.id).tasks)
+
+        # sobrevive à ida e volta pelo .perth.jl e pelo JSON
+        dir = mktempdir()
+        arq = joinpath(dir, "time.perth.jl")
+        set_file_path!(p, arq)
+        fonte = read(arq, String)
+        @test occursin("Person(name = \"Bruno\", role = \"Eletricista\", team = \"Obra\")",
+                       fonte)
+        @test occursin("Person(name = \"Chen Wei\")", fonte)   # campo vazio não é escrito
+        lido = Perth.load(arq)
+        @test [pe.name for pe in lido.people] == ["Bruno", "Chen Wei", "Dara"]
+        @test person(lido, "bruno").role == "Eletricista"
+        volta = JSON3.read(JSON3.write(p), Project)
+        @test person(volta, "bruno").team == "Obra"
+        # projeto antigo, gravado antes do campo existir, ainda abre
+        sem = replace(JSON3.write(p), r"\"people\":\[.*?\]," => "")
+        @test JSON3.read(sem, Project).people == Person[]
+
+        # a mudança no cadastro entra no diário de atividade — por nome:
+        # mexer no cargo de alguém não é cadastrar nem descadastrar
+        outro = JSON3.read(JSON3.write(p), Project)
+        outro.people = filter(pe -> pe.name != "Dara", outro.people)
+        linhas = Perth._describe_diff(project(p.id), outro)
+        @test any(l -> occursin("unregistered Dara", l), linhas)
+        outro.people = [outro.people; Person(name = "Elis")]
+        @test any(l -> occursin("registered Elis", l),
+                  Perth._describe_diff(project(p.id), outro))
+        so_cargo = JSON3.read(JSON3.write(p), Project)
+        person(so_cargo, "Dara").role = "Mestre de obras"
+        @test isempty(Perth._describe_diff(project(p.id), so_cargo))
+
+        delete_project(p.id); delete_project(r.id)
+    end
+
+    @testset "faixas do calendário" begin
+        p = create_project("Sprints")
+        add_task!(p, "A"; start = Date(2026, 3, 2), duration = 5)
+
+        @test isempty(bands(p))
+        add_band!(p, "Sprint 2", Date(2026, 3, 30), Date(2026, 4, 24))
+        # ponta invertida é engano de digitação, não plano: vira em vez de
+        # desenhar uma faixa de largura negativa
+        add_band!(p, "Sprint 1", Date(2026, 3, 27), Date(2026, 3, 2))
+        fs = bands(p)
+        @test [f.name for f in fs] == ["Sprint 1", "Sprint 2"]   # por início
+        @test (fs[1].from, fs[1].to) == (Date(2026, 3, 2), Date(2026, 3, 27))
+
+        # faixa sem nome não entra: trecho sombreado que não diz por quê é
+        # ruído, não informação
+        @test length(bands!(p, [fs; Band(from = Date(2026, 5, 1),
+                                             to = Date(2026, 5, 5))])) == 2
+
+        # nome repetido MOVE a faixa em vez de duplicar
+        add_band!(p, "sprint 1", Date(2026, 2, 2), Date(2026, 2, 9))
+        @test length(bands(p)) == 2
+        @test person(p, "x") === nothing   # cadastro segue intacto ao lado
+        movida = bands(p)[1]
+        @test movida.name == "sprint 1" && movida.from == Date(2026, 2, 2)
+
+        # cor é livre; faixas podem se sobrepor (semana crítica dentro de um
+        # sprint é coisa que se quer dizer)
+        add_band!(p, "Crítico", Date(2026, 2, 4), Date(2026, 2, 6); color = "#cb3c33")
+        @test bands(p)[2].color == "#cb3c33"
+        @test length(bands(p)) == 3
+
+        @test length(remove_band!(p, "CRÍTICO")) == 2
+
+        # ida e volta pelo .perth.jl e pelo JSON
+        dir = mktempdir()
+        arq = joinpath(dir, "s.perth.jl")
+        set_file_path!(p, arq)
+        fonte = read(arq, String)
+        @test occursin("Band(name = \"sprint 1\", from = Date(\"2026-02-02\"), " *
+                       "to = Date(\"2026-02-09\"))", fonte)
+        lido = Perth.load(arq)
+        @test [f.name for f in lido.bands] == ["sprint 1", "Sprint 2"]
+        @test JSON3.read(JSON3.write(p), Project).bands[2].to == Date(2026, 4, 24)
+        # projeto gravado antes do campo existir ainda abre
+        sem = replace(JSON3.write(p), r"\"bands\":\[.*?\}\]," => "")
+        @test JSON3.read(sem, Project).bands == Band[]
+
+        # a faixa é anotação: não move tarefa nem entra no motor
+        @test p.tasks[1].start == Date(2026, 3, 2)
+        @test project_finish(p) == Date(2026, 3, 6)
+
+        delete_project(p.id)
+    end
+
+    @testset "estatísticas por pessoa e por setor" begin
+        p = create_project("Obra")
+        pai = add_task!(p, "Estrutura"; start = Date(2026, 3, 2), duration = 1)
+        a = add_task!(p, "Projeto"; start = Date(2026, 3, 2), duration = 5,
+                      assignee = "Ana", progress = 100)
+        b = add_task!(p, "Fundação"; start = Date(2026, 3, 4), duration = 5,
+                      assignee = "Ana")
+        set_parent!(p, b.id, pai.id)
+        c = add_task!(p, "Alvenaria"; start = Date(2026, 3, 9), duration = 4,
+                      assignee = "Chen", cost = 40.0, progress = 50)
+        m = add_task!(p, "Entrega"; start = Date(2026, 3, 20), duration = 1,
+                      assignee = "Chen", milestone = true, deadline = Date(2026, 3, 10))
+        add_task!(p, "Telhado"; start = Date(2026, 4, 1), duration = 3)
+        people!(p, [(name = "Ana", role = "Arquiteta", team = "Projetos"),
+                    (name = "Chen", role = "Pedreiro", team = "Obra")])
+
+        linhas = people_stats(p)
+        @test [r.assignee for r in linhas] == ["Ana", "Chen", ""]   # sem dono por último
+        ana = linhas[1]
+        @test (ana.role, ana.team) == ("Arquiteta", "Projetos")
+        @test ana.tasks == 2 && ana.milestones == 0
+        @test ana.effort == 10.0                    # 5 + 5 pessoa-dias
+        @test ana.done == 5.0 && ana.progress == 50
+        @test (ana.first, ana.last) == (Date(2026, 3, 2), Date(2026, 3, 8))
+        @test ana.busy_days == 7                    # 2..6 e 4..8, sobrepostos
+        @test ana.over_days == 3                    # 4, 5 e 6
+        @test ana.late == 0
+
+        chen = linhas[2]
+        @test chen.milestones == 1
+        @test chen.effort == 41.0                   # custo quando informado + marco
+        @test chen.late == 1                        # a entrega passou do prazo
+
+        # o resumo de WBS não conta: somá-lo contaria o trabalho dos filhos
+        # duas vezes
+        @test sum(r.tasks for r in linhas) == 5
+        @test all(r -> r.assignee != "Estrutura", linhas)
+        # tarefa sem dono não some: trabalho sem responsável é fato do plano
+        @test linhas[3].tasks == 1 && linhas[3].role == ""
+
+        setores = team_stats(p)
+        @test [r.team for r in setores] == ["Obra", "Projetos", ""]
+        @test setores[1].members == 1 && setores[1].people == ["Chen"]
+        @test setores[2].effort == ana.effort
+        # dias de sobrecarga são por pessoa e o setor SOMA os das suas: duas
+        # pessoas do mesmo setor no mesmo dia é o normal
+        @test setores[2].over_days == ana.over_days
+        # quem não tem setor (nem cadastro) cai na faixa vazia, junto com o
+        # trabalho sem dono
+        @test setores[3].tasks == 1 && setores[3].members == 0
+
+        # projeto sem tarefa nenhuma não quebra as duas tabelas
+        vazio = create_project("Vazio")
+        @test isempty(people_stats(vazio)) && isempty(team_stats(vazio))
+
+        delete_project(p.id); delete_project(vazio.id)
+    end
+
     @testset "superalocação de responsáveis" begin
         p = create_project("Aloc")
         pai = add_task!(p, "Grupo"; start = Date(2026, 11, 2), duration = 1)

@@ -278,7 +278,15 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   background: var(--panel);
   border-bottom: 1px solid var(--line);
 }
-#highlight-select { max-width: 200px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+/* Os dois seletores da toolbar são uma família só: destacar e agrupar
+   respondem à mesma pergunta (o que a tela mostra), e fonte diferente entre
+   vizinhos lê como dois controles de origens diferentes. */
+#highlight-select, #group-select {
+  max-width: 200px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
 
 /* Modo apresentação: some com a toolbar e a tabela de tarefas — sobra só
    a timeline do gráfico, em tela cheia */
@@ -307,7 +315,13 @@ body.presenting .task-table { display: none; }
 /* WBS: resumos e indentação */
 .tt-row.summary .c-name { font-weight: 650; }
 .sum-mark { color: var(--muted); margin-right: 5px; font-size: 10px; }
-.bar-summary { fill: var(--ink); cursor: pointer; }
+/* Resumo de WBS: recipiente, não trabalho — traço neutro e fino, com o
+   progresso que sobe dos filhos preenchendo o trilho. Chapado na cor do
+   texto ele competia com as barras pastel e vencia. */
+.bar-summary { cursor: pointer; }
+.sum-track { fill: var(--ink); opacity: .18; }
+.sum-fill  { fill: var(--ink); opacity: .5; }
+.sum-cap   { fill: var(--ink); opacity: .55; }
 .summary-hint {
   margin: 0;
   font-size: 11.5px;
@@ -372,6 +386,40 @@ body.presenting .task-table { display: none; }
   cursor: pointer;
 }
 .tt-row:hover { background: var(--line-soft); }
+
+/* Raias: cabeçalho de grupo na tabela e faixa correspondente no gráfico.
+   A faixa é o que faz as duas metades lerem como um desenho só. */
+.tt-lane {
+  display: grid;
+  grid-template-columns: 14px auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+  height: var(--row-h);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sel);
+  cursor: pointer;
+  user-select: none;
+}
+.tt-lane:hover { background: var(--line-soft); }
+.lane-mark { color: var(--muted); font-size: 10px; }
+.lane-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-role {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.lane-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.lane-band { fill: var(--sel); pointer-events: none; }
+.lane-roll { fill: var(--muted); opacity: .5; }
 .tt-row.selected { background: var(--sel); box-shadow: inset 2px 0 0 var(--purple); }
 .tt-row .c-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-row .c-name .ms { color: var(--amber); margin-right: 4px; }
@@ -1020,3 +1068,144 @@ body.presenting .res-pane { display: none; }
   background: color-mix(in srgb, var(--red) 13%, transparent);
 }
 .warn-text { flex: 1; font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
+
+/* Cadastro de colaboradores */
+.people-box { display: flex; flex-direction: column; gap: 10px; min-width: 380px; }
+.people-add { display: flex; gap: 8px; }
+.people-add input { flex: 1 1 auto; min-width: 0; }
+.people-list { display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; }
+.people-item {
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+}
+.people-item:has(.people-form) { border-color: var(--line); background: var(--field); }
+.people-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 6px 5px 10px;
+  cursor: pointer;
+}
+.people-item:hover { background: var(--sel); border-color: var(--line); }
+.people-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.people-role {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.people-count { flex: 0 0 auto; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.people-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+  padding: 4px 10px 10px;
+}
+.people-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+.people-form input { width: 100%; }
+.people-loose:empty { display: none; }
+.people-loose {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* Estatísticas por pessoa e por setor */
+/* Sete colunas não cabem na largura de um modal de formulário: a última
+   ficava cortada na borda, que é o pior lugar para esconder "atrasadas". */
+.modal:has(.stats-box) { width: min(780px, 94vw); }
+.stats-box { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stats-tabs { align-self: flex-start; }
+.stats-table { display: flex; flex-direction: column; max-height: 52vh; overflow-y: auto; }
+.stats-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.8fr) repeat(6, minmax(0, .75fr));
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.stats-row:last-child { border-bottom: 0; }
+.stats-row:not(.head):hover { background: var(--sel); }
+.stats-row.head {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  text-transform: lowercase;
+  letter-spacing: .12em;
+  border-bottom: 1px solid var(--line);
+}
+.stats-cell.num {
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.stats-cell.num.bad { color: #e5484d; font-weight: 650; }
+.stats-cell.who { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.stats-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+/* progresso: barra e número na mesma célula — a barra compara, o número diz */
+.stats-row .stats-cell.num:has(.stats-bar) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.stats-bar {
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.stats-bar > span { display: block; height: 100%; background: var(--purple); }
+
+/* Faixas nomeadas do calendário: fundo que diz "este trecho é diferente",
+   sem competir com as barras desenhadas em cima. */
+.cal-band { opacity: .13; pointer-events: none; }
+.cal-edge { opacity: .45; stroke-width: 1; pointer-events: none; }
+.cal-label {
+  fill: var(--ink);
+  opacity: .45;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  pointer-events: none;
+}
+.cal-box { min-width: 420px; }
+.cal-add { display: flex; gap: 8px; align-items: center; }
+.cal-add input[type=text] { flex: 1 1 auto; min-width: 0; }
+.cal-add input[type=date] { flex: 0 0 auto; }
+.cal-row { gap: 8px; }
+/* input[type=color] tem moldura e recheio do sistema: some com os dois e
+   sobra a cor, que é o que interessa. */
+.cal-dot, .cal-pick {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+.cal-dot { width: 14px; height: 14px; border-radius: 4px; }
+.cal-dot::-webkit-color-swatch-wrapper, .cal-pick::-webkit-color-swatch-wrapper { padding: 0; }
+.cal-dot::-webkit-color-swatch, .cal-pick::-webkit-color-swatch { border: 0; border-radius: 3px; }
+.cal-dot::-moz-color-swatch, .cal-pick::-moz-color-swatch { border: 0; border-radius: 3px; }

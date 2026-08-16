@@ -10,6 +10,8 @@
 const _SAFE_CONSTRUCTORS = Dict{Symbol,Any}(
     :Project   => Project,
     :GanttTask => GanttTask,
+    :Person    => Person,
+    :Band     => Band,
     :Date      => Dates.Date,
     :DateTime  => Dates.DateTime,
 )
@@ -30,6 +32,29 @@ function _to_julia_source(p::Project)
     println(io, "    name = ", repr(p.name), ",")
     isempty(p.calendar) ||
         println(io, "    calendar = ", repr(p.calendar), ",")
+    if !isempty(p.bands)
+        println(io, "    bands = [")
+        for f in p.bands
+            campos = ["name = " * repr(f.name),
+                     "from = Date(" * repr(string(f.from)) * ")",
+                     "to = Date(" * repr(string(f.to)) * ")"]
+            isempty(f.color) || push!(campos, "color = " * repr(f.color))
+            println(io, "        Band(", join(campos, ", "), "),")
+        end
+        println(io, "    ],")
+    end
+    if !isempty(p.people)
+        println(io, "    people = [")
+        for pe in p.people
+            campos = ["name = " * repr(pe.name)]
+            for c in (:role, :team, :email, :notes)
+                v = getfield(pe, c)
+                isempty(v) || push!(campos, string(c) * " = " * repr(v))
+            end
+            println(io, "        Person(", join(campos, ", "), "),")
+        end
+        println(io, "    ],")
+    end
     p.baseline_at === nothing ||
         println(io, "    baseline_at = DateTime(", repr(string(p.baseline_at)), "),")
     println(io, "    created_at = DateTime(", repr(string(p.created_at)), "),")

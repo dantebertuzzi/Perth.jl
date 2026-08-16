@@ -142,6 +142,41 @@ const SEMENTE = `
       check(r.dentro === true, "e a barra ficou inteira dentro da área visível");
     }
 
+    console.log("navegador · raia e barra na mesma altura");
+    {
+      // A altura da linha de raia vem do CSS (--row-h), que o jsdom não
+      // aplica: lá o alinhamento é aritmética, aqui é layout. Um cabeçalho
+      // de raia um pixel mais alto desloca TODAS as barras abaixo dele.
+      const r = await pg.avaliar(`
+        state.current.people = [{ name: "Ana", role: "Arquiteta", team: "Obra",
+                                  email: "", notes: "" }];
+        state.current.tasks[0].assignee = "Ana";
+        state.current.tasks[1].assignee = "Bruno";
+        el.groupSelect.value = "assignee";
+        el.groupSelect.dispatchEvent(new Event("change"));
+        const meio = (n) => { const b = n.getBoundingClientRect();
+                              return Math.round(b.top + b.height / 2); };
+        const linha = (id) => meio(document.querySelector(\`.tt-row[data-id="\${id}"]\`));
+        const barra = (id) => meio(document.querySelector(\`#chart .bar[data-id="\${id}"]\`));
+        return { raias: document.querySelectorAll(".tt-lane").length,
+                 alturaRaia: Math.round(document.querySelector(".tt-lane")
+                               .getBoundingClientRect().height),
+                 alturaLinha: Math.round(document.querySelector(".tt-row")
+                                .getBoundingClientRect().height),
+                 t1: [linha("t1"), barra("t1")],
+                 t2: [linha("t2"), barra("t2")],
+                 t4: [linha("t4"), barra("t4")] };`);
+      check(r.raias === 3, "três raias: Ana, Bruno e sem responsável");
+      check(r.alturaRaia === r.alturaLinha,
+            "o cabeçalho de raia tem a MESMA altura de uma linha de tarefa");
+      for (const id of ["t1", "t2", "t4"]) {
+        check(Math.abs(r[id][0] - r[id][1]) <= 1,
+              `a barra de ${id} está na altura do nome dela (${r[id].join(" vs ")})`);
+      }
+      await pg.avaliar(`el.groupSelect.value = "";
+        el.groupSelect.dispatchEvent(new Event("change")); return 1;`);
+    }
+
     console.log("navegador · campo travado parece travado");
     {
       const r = await pg.avaliar(`
