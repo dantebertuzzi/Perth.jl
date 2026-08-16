@@ -3685,6 +3685,36 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("gantt · modo leitura não deixa separador órfão");
+{
+  // Esconder os itens de escrita deixava os <hr> para trás: o Edit ficava
+  // com um único item ("View selected task") e três traços embaixo dele —
+  // um vão no fim da caixa que parecia menu quebrado. Um separador só se
+  // justifica ENTRE dois itens visíveis.
+  const { w, runIn, close } = loadGanttApp();
+  const visiveis = (menu) => `
+    return [...document.querySelector('[data-menu="${menu}"] .menu-drop').children]
+      .filter((c) => !c.hidden).map((c) => c.tagName);`;
+
+  let itens = runIn("applyReadOnly(true);" + visiveis("edit"));
+  check(itens.join(",") === "BUTTON",
+        "Edit somente-leitura fica com o item e nenhum traço");
+
+  itens = runIn(visiveis("file"));
+  check(itens.at(-1) === "BUTTON",
+        "File somente-leitura não termina num traço pendurado");
+  check(!itens.some((t, i) => t === "HR" && (i === 0 || itens[i - 1] === "HR")),
+        "nem traço no topo nem dois colados");
+
+  // voltar a poder editar devolve os separadores todos
+  const cheio = runIn("applyReadOnly(false);" + visiveis("edit"));
+  check(cheio.filter((t) => t === "HR").length === 3,
+        "sair do modo leitura devolve os três traços do Edit");
+  check(w.document.querySelector('[data-menu="edit"]').hidden === false,
+        "e o menu Edit volta a aparecer");
+  close();
+}
+
 })().then(() => {
   console.log(failures ? `\n${failures} falha(s)` : "\nTodos os testes passaram.");
   process.exit(failures ? 1 : 0);

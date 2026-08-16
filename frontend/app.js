@@ -627,6 +627,25 @@ function canEdit() {
   return false;
 }
 
+/* Esconder itens deixa separadores órfãos: um traço no topo da caixa,
+ * dois colados um no outro, ou um pendurado no fim — era o vão embaixo do
+ * "View selected task" no modo leitura. Um <hr> só se justifica entre dois
+ * itens visíveis, então recalcula quais sobrevivem à visibilidade atual. */
+function tidySeparators(drop) {
+  let itemAntes = false, penduradoNoFim = null;
+  for (const filho of drop.children) {
+    if (filho.tagName === "HR") {
+      filho.hidden = !itemAntes;        // nada antes: traço no topo ou repetido
+      if (!filho.hidden) penduradoNoFim = filho;
+      itemAntes = false;
+    } else if (!filho.hidden) {
+      itemAntes = true;
+      penduradoNoFim = null;            // o traço anterior ganhou seu par
+    }
+  }
+  if (penduradoNoFim) penduradoNoFim.hidden = true;
+}
+
 function applyReadOnly(on) {
   state.readOnly = !!on;
   document.body.classList.toggle("readonly", state.readOnly);
@@ -649,7 +668,9 @@ function applyReadOnly(on) {
   // Edit inteiro é edição, e abriria uma caixa vazia
   for (const m of $$(".menu[data-menu]")) {
     const drop = m.querySelector(".menu-drop");
-    if (drop) m.hidden = state.readOnly && !drop.querySelector("button:not([hidden])");
+    if (!drop) continue;
+    tidySeparators(drop);
+    m.hidden = state.readOnly && !drop.querySelector("button:not([hidden])");
   }
   // não há o que salvar: o lugar do "saved 14:03 ✓" diz o que esta aba é
   if (state.readOnly) setSaveStatus("readonly", T("read-only"));
