@@ -468,9 +468,8 @@ async function openProject(id) {
   noteBase();
   state.selected = null;
   // o que está recolhido é sobre AQUELE projeto: "Ana" fechada aqui não quer
-  // dizer "Ana" fechada no projeto seguinte
-  state.lanesClosed.clear();
-  state.wbsClosed.clear();
+  // dizer "Ana" fechada no projeto seguinte — e é lembrado por projeto
+  restauraDobras(state.current);
   el.projectSelect.value = id;
   localStorage.setItem("perth-last-project", id);
   await fetchAnalytics();
@@ -1309,6 +1308,7 @@ function displayRows() {
 function toggleLane(key) {
   state.lanesClosed.has(key) ? state.lanesClosed.delete(key)
                              : state.lanesClosed.add(key);
+  gravaDobras();
   renderTable();
   renderChart();
 }
@@ -1555,8 +1555,117 @@ function aplicaArrasto(t, destino) {
 
 function toggleSummary(id) {
   state.wbsClosed.has(id) ? state.wbsClosed.delete(id) : state.wbsClosed.add(id);
+  gravaDobras();
   renderTable();
   renderChart();
+}
+
+/* ------------------------------------------------------------------ */
+/* Andar pelo plano com o teclado                                       */
+/* ------------------------------------------------------------------ */
+
+/* A seleção já existia — clique, busca, aviso —, mas só o mouse a movia. E
+ * mover a seleção é a coisa que mais se faz num plano grande.
+ *
+ * As setas seguem a convenção de árvore de arquivos, que é o que o olho já
+ * espera de uma lista com triângulos: ↑/↓ andam nas linhas VISÍVEIS (uma fase
+ * recolhida conta como uma linha, não como as vinte que ela esconde), ← fecha
+ * o resumo — e, numa folha, sobe para o pai — e → abre. Home/End vão às
+ * pontas; PageUp/PageDown andam uma tela.
+ *
+ * Quem rola até a linha é revealTask: ele já abre o que está fechado no
+ * caminho e só mexe no eixo horizontal quando a barra saiu de vista. Navegar
+ * não é editar, então isto vale igual no link somente-leitura. */
+function navegarComTeclado(ev) {
+  if (!state.current || ev.ctrlKey || ev.metaKey || ev.altKey) return false;
+  const linhas = displayRows().filter((r) => r.kind === "task").map((r) => r.task);
+  if (!linhas.length) return false;
+  const i = linhas.findIndex((t) => t.id === state.selected);
+  const porTela = Math.max(1, Math.floor(el.tlBody.clientHeight / ROW_H) - 1);
+  const ir = (k) => {
+    const alvo = linhas[Math.min(Math.max(k, 0), linhas.length - 1)];
+    if (!alvo) return false;
+    revealTask(alvo.id);
+    return true;
+  };
+  const atual = i < 0 ? null : linhas[i];
+  const eResumo = (t) => !state.groupBy && (state.wbs?.summary.has(t.id) ?? false);
+
+  switch (ev.key) {
+    // sem nada selecionado, ↓ começa do topo e ↑ do fim — a tecla diz de que
+    // lado da lista se está entrando
+    case "ArrowDown":  return ir(i < 0 ? 0 : i + 1);
+    case "ArrowUp":    return ir(i < 0 ? linhas.length - 1 : i - 1);
+    case "PageDown":   return ir(i < 0 ? 0 : i + porTela);
+    case "PageUp":     return ir(i < 0 ? linhas.length - 1 : i - porTela);
+    case "Home":       return ir(0);
+    case "End":        return ir(linhas.length - 1);
+    case "ArrowRight":
+      if (!atual || !eResumo(atual) || !state.wbsClosed.has(atual.id)) return false;
+      toggleSummary(atual.id);
+      return true;
+    case "ArrowLeft":
+      if (!atual) return false;
+      if (eResumo(atual) && !state.wbsClosed.has(atual.id)) {
+        toggleSummary(atual.id);
+        return true;
+      }
+      // folha (ou resumo já fechado): sobe um nível, como em qualquer árvore
+      if (!state.groupBy && atual.parent) {
+        revealTask(atual.parent);
+        return true;
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* O que está dobrado é lembrado                                        */
+/* ------------------------------------------------------------------ */
+
+/* Recolher as fases É o modo de trabalhar num plano de cento e poucas
+ * tarefas — e isso se perdia a cada F5, a cada ida ao kanban e volta, a cada
+ * troca de projeto. Vai para o localStorage como o zoom, o tema e as raias:
+ * é preferência de quem olha, não dado do plano, e por isso não entra no
+ * projeto nem viaja para as outras máquinas.
+ *
+ * Uma chave por projeto: "Ana" fechada aqui não quer dizer "Ana" fechada no
+ * projeto seguinte. */
+const chaveDobras = (id) => "perth-folds-" + id;
+
+function gravaDobras() {
+  if (!state.current) return;
+  const dados = { wbs: [...state.wbsClosed], lanes: [...state.lanesClosed] };
+  try {
+    if (!dados.wbs.length && !dados.lanes.length) {
+      localStorage.removeItem(chaveDobras(state.current.id));
+    } else {
+      localStorage.setItem(chaveDobras(state.current.id), JSON.stringify(dados));
+    }
+  } catch {
+    /* cota cheia ou armazenamento bloqueado: dobrar continua funcionando,
+       só não sobrevive ao reload — não é motivo para derrubar a tela */
+  }
+}
+
+function restauraDobras(p) {
+  state.wbsClosed.clear();
+  state.lanesClosed.clear();
+  if (!p) return;
+  let dados = null;
+  try {
+    dados = JSON.parse(localStorage.getItem(chaveDobras(p.id)) || "null");
+  } catch {
+    dados = null;
+  }
+  if (!dados) return;
+  // id que não existe mais é descartado: um resumo apagado não pode continuar
+  // dobrando nada, e sem a poda a chave cresceria para sempre
+  const ids = new Set(p.tasks.map((t) => t.id));
+  for (const id of dados.wbs || []) if (ids.has(id)) state.wbsClosed.add(id);
+  for (const k of dados.lanes || []) state.lanesClosed.add(k);
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -2498,6 +2607,29 @@ document.querySelector(".task-table").addEventListener("wheel", (ev) => {
 // o elemento já tem não dispara evento nenhum.
 const mirrorX = (target, left) => target.scrollTo({ left, behavior: "instant" });
 
+/* Ctrl+roda aproxima e afasta, mantendo parada a data sob o ponteiro — o
+ * gesto que todo mundo tenta antes de procurar o botão. O passo anda entre as
+ * três escalas nomeadas (mês → semana → dia); vindo do "caber", entra pela
+ * mais parecida com a escala que ele calculou, senão o primeiro giro daria um
+ * salto sem relação com o que está na tela. */
+el.tlBody.addEventListener("wheel", (ev) => {
+  if (!ev.ctrlKey || !state.current) return;
+  ev.preventDefault();
+  const escadas = ["month", "week", "day"];
+  let base = escadas.indexOf(state.zoom);
+  if (base < 0) {   // "caber": acha o degrau de escala mais próxima
+    let melhor = 0, dist = Infinity;
+    escadas.forEach((z, i) => {
+      const d = Math.abs(PPD[z] - PPD.fit);
+      if (d < dist) { dist = d; melhor = i; }
+    });
+    base = melhor;
+  }
+  const alvo = escadas[Math.min(Math.max(base + (ev.deltaY < 0 ? 1 : -1), 0),
+                                escadas.length - 1)];
+  if (alvo !== state.zoom) setZoom(alvo, { ancoraX: ev.clientX });
+}, { passive: false });
+
 el.tlBody.addEventListener("scroll", () => {
   el.tlHead.scrollLeft = el.tlBody.scrollLeft;
   el.ttBody.scrollTop = el.tlBody.scrollTop;
@@ -2513,8 +2645,22 @@ el.resBody.addEventListener("scroll", () => {
 
 function scrollToToday() {
   if (!state.range) return;  // sem projeto aberto, não há timeline
-  const x = xOf(todayUTC());
-  el.tlBody.scrollLeft = Math.max(0, x - el.tlBody.clientWidth / 3);
+  rolaTimeline(xOf(todayUTC()) - el.tlBody.clientWidth / 3);
+}
+
+/* Rolagem horizontal por código, num lugar só.
+ *
+ * scrollTo instantâneo porque a timeline rola com scroll-behavior:smooth, e
+ * atribuir scrollLeft ali dispara uma ANIMAÇÃO — que o próximo redesenho
+ * engole (é a pedra em que revealTask já tinha tropeçado).
+ *
+ * E a régua é espelhada na mão, sem esperar o evento de scroll: ele chega
+ * DEPOIS, e até lá cabeçalho e gráfico discordam — quem clicasse na régua
+ * nesse intervalo marcaria um dia que não é o que está sob o dedo. */
+function rolaTimeline(left) {
+  const alvo = Math.max(0, left);
+  el.tlBody.scrollTo({ left: alvo, behavior: "instant" });
+  el.tlHead.scrollLeft = el.tlBody.scrollLeft;
 }
 
 /* ------------------------------------------------------------------ */
@@ -4248,15 +4394,38 @@ el.importFile.addEventListener("change", async () => {
   }
 });
 
-function setZoom(z) {
+/* Trocar o zoom guardava o lugar de ninguém: terminava sempre em
+ * scrollToToday(). Você rolava até novembro, aproximava para ver o detalhe —
+ * e voltava para hoje. Agora a DATA que estava sob os olhos (o meio da tela,
+ * ou o ponteiro quando o zoom vem da roda) fica parada no mesmo ponto da
+ * tela, que é o que qualquer mapa faz. Guardar pixel não serviria: o zoom
+ * muda justamente quantos pixels vale um dia.
+ *
+ * Voltar para hoje continua a um toque de distância — é o botão Hoje e o `T`,
+ * que existem exatamente para isso. */
+function setZoom(z, { ancoraX = null } = {}) {
+  const antes = state.range ? pontoDeVista(ancoraX) : null;
   state.zoom = z;
   localStorage.setItem("perth-zoom", z);
   $$(".zoom-group button").forEach((b) =>
     b.classList.toggle("active", b.dataset.zoom === z));
   renderAll();
-  // no "caber" o projeto inteiro já está na tela: rolar até hoje seria
-  // desfazer o que o botão acabou de fazer
-  if (z !== "fit") scrollToToday();
+  // no "caber" o projeto inteiro já está na tela: rolar seria desfazer o que
+  // o botão acabou de fazer
+  if (z === "fit") return;
+  antes ? voltaAoPontoDeVista(antes) : scrollToToday();
+}
+
+// Onde o olho está, em data + distância da borda esquerda da janela
+function pontoDeVista(ancoraX = null) {
+  const caixa = el.tlBody.getBoundingClientRect();
+  const dx = ancoraX === null ? el.tlBody.clientWidth / 2
+                              : Math.min(Math.max(ancoraX - caixa.left, 0), caixa.width);
+  return { data: dateAt(el.tlBody.scrollLeft + dx), dx };
+}
+
+function voltaAoPontoDeVista({ data, dx }) {
+  rolaTimeline(xOf(data) - dx);
 }
 
 /* ------------------------------------------------------------------ */
@@ -4421,6 +4590,9 @@ const ACTIONS = {
  * é desenhada por shared/shortcuts.js, que o kanban também usa. */
 function showShortcuts() {
   showOverlay("Keyboard shortcuts", PerthShortcuts.list([
+    ["↑ / ↓", "move the selection"],
+    ["← / →", "collapse / expand a summary"],
+    ["Home / End", "first / last task"],
     ["N", "new task"],
     ["Enter / duplo clique", "edit task"],
     ["Del", "delete selected task"],
@@ -4433,6 +4605,7 @@ function showShortcuts() {
     ["D", "toggle dark mode"],
     ["P", "presentation mode"],
     ["1 / 2 / 3 / 4", "zoom day / week / month / fit"],
+    ["Ctrl+roda", "zoom keeping the date under the pointer"],
     ["T", "go to today"],
     ["Esc", "close / deselect / exit presentation"],
   ]));
@@ -4613,6 +4786,7 @@ function revealTask(id) {
   for (let pai = t.parent; pai; pai = byId.get(pai)?.parent || "") {
     state.wbsClosed.delete(pai);
   }
+  gravaDobras();   // abrir para revelar também é uma dobra a menos
   renderTable();
   renderChart();
   const linha = displayRows()
@@ -4682,6 +4856,7 @@ el.taskSearch.addEventListener("keydown", (ev) => {
 el.groupSelect.addEventListener("change", () => {
   state.groupBy = el.groupSelect.value;
   state.lanesClosed.clear();
+  gravaDobras();
   localStorage.setItem("perth-lanes", state.groupBy);
   renderTable();
   renderChart();
@@ -4730,6 +4905,7 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
   if (typing) return;
+  if (navegarComTeclado(ev)) { ev.preventDefault(); return; }
   // Undo / Redo globais
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !ev.shiftKey) {
     ev.preventDefault();

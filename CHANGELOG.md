@@ -5,6 +5,45 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **What you folded survives the reload.** Collapsing the phases *is* how you
+  work a plan of a hundred-odd tasks, and it was thrown away on every reload,
+  every trip to the kanban and back, every project switch. It now lives in the
+  browser next to the zoom, the theme and the lanes — one key per project,
+  because "Ana" folded here does not mean "Ana" folded in the next plan, and
+  ids that no longer exist are dropped on the way back in.
+- **Walking the plan from the keyboard.** The selection existed but only the
+  mouse moved it — and moving the selection is the thing you do most. `↑`/`↓`
+  walk the *visible* rows (a folded phase counts as one row, not as the twenty
+  it hides), `←` closes a summary and, on a leaf, goes up to its parent, `→`
+  opens it, `Home`/`End` jump to the ends and `PageUp`/`PageDown` move a
+  screenful. The scrolling is `revealTask`'s, so it opens what is closed on the
+  way and only touches the horizontal axis when the bar has left the view.
+- **Ctrl+wheel zooms**, keeping the date under the pointer where it is.
+
+### Changed
+- **Changing the zoom no longer teleports you to today.** It ended in
+  `scrollToToday()` every time: you would scroll out to November, zoom in to
+  read the detail, and land back on today. Now the date you were looking at —
+  the middle of the screen, or the pointer when the zoom comes from the wheel —
+  stays where it is, the way any map behaves. Going back to today is still one
+  key away: that is what `T` and the Hoje button are for.
+- **The interface is monospaced end to end.** The menubar, the table headers and
+  the numbers were already; task names and bar labels were not, which made a
+  name look like it came from a different application than the header right
+  above it. Perth looks like the REPL it comes from.
+
+### Fixed
+- **A programmatic scroll no longer leaves the ruler behind.** Mirroring the
+  day ruler waited for the scroll *event*, which arrives later; in between,
+  header and chart disagreed, and a click on the ruler in that window marked a
+  day other than the one under the finger. All horizontal scrolling now goes
+  through one function that scrolls instantly (the timeline animates by
+  default, and an animation is eaten by the next redraw) and mirrors the ruler
+  on the spot.
+
 ## [0.8.9] - 2026-08-16
 
 ### Added
