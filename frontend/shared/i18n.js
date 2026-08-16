@@ -823,6 +823,115 @@ window.PerthI18n = (function () {
       "can start on": "puede empezar el",
       "Label position": "Posición del texto",
       "Baseline": "Línea base",
+      // glossário e vocabulário novo (0.8.8/0.8.9)
+      "A date fixed by hand — a contract, a delivery window. Auto-schedule leaves it alone, and says so when the plan no longer fits it.":
+        "Una fecha fijada a mano — un contrato, una ventana de entrega. La programación automática no la mueve, y avisa cuando el plan ya no cabe en ella.",
+      "A date the task must not finish after. It never moves anything: it turns the slack of this task, and of everything feeding it, negative.":
+        "Una fecha después de la cual la tarea no puede terminar. No mueve nada: vuelve negativa la holgura de esta tarea y de todo lo que la alimenta.",
+      "A date with nothing lasting: a delivery, an approval, a signature. Drawn as a diamond and never has a duration.":
+        "Una fecha sin nada que dure: una entrega, una aprobación, una firma. Se dibuja como rombo y nunca tiene duración.",
+      "A frozen copy of the plan — what was promised. The ghost bars are the baseline; the difference between them and the bars is the slippage.":
+        "Una copia congelada del plan — lo prometido. Las barras fantasma son la línea base; la diferencia entre ellas y las barras es el desvío.",
+      "A named stretch of calendar shaded behind the chart: a sprint, a shutdown, the rainy season. Annotation — it never moves a task.":
+        "Un tramo de calendario con nombre, sombreado detrás del gráfico: un sprint, una parada, la temporada de lluvias. Es anotación — nunca mueve una tarea.",
+      "A named vertical line across the chart, like the today line: an inspection, a hand-over, a holiday.":
+        "Una línea vertical con nombre que cruza el gráfico, como la línea de hoy: una inspección, una entrega, un feriado.",
+      "A piece of work with a start and a duration — a bar on the chart.":
+        "Un trabajo con un inicio y una duración — una barra en el gráfico.",
+      "A task with subtasks. Its dates and its progress are not typed in — they are rolled up from its children.":
+        "Una tarea con subtareas. Sus fechas y su avance no se escriben — suben desde sus hijas.",
+      "A waits for B and B waits for A. Nothing can be scheduled until the loop is cut — this is the one warning that stops the engine.":
+        "A espera a B y B espera a A. Nada puede programarse hasta cortar el lazo — es el único aviso que detiene el motor.",
+      "Auto-schedule":
+        "Programar automáticamente",
+      "Calendar band":
+        "Banda del calendario",
+      "Dependency":
+        "Dependencia",
+      "Duration":
+        "Duración",
+      "Finish":
+        "Término",
+      "Group the rows by person or by team, instead of by the WBS.":
+        "Agrupan las filas por persona o por equipo, en vez de por la EDT.",
+      "How many days a task can slip before it starts pushing the finish. Zero slack is the critical path; negative slack is a promise already broken.":
+        "Cuántos días puede atrasarse una tarea antes de empujar el término. Holgura cero es la ruta crítica; holgura negativa es una promesa ya rota.",
+      "How much each person has on each day. It is what turns a plan into a question about people.":
+        "Cuánto tiene cada persona cada día. Es lo que convierte un plan en una pregunta sobre gente.",
+      "How much of the task is done, in percent. A summary averages its children, weighted by duration.":
+        "Cuánto de la tarea está hecho, en porcentaje. Un resumen promedia sus hijas, ponderado por duración.",
+      "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days.":
+        "Cuánto del trabajo estaba previsto para cada fecha, dibujado contra cuánto está hecho. La distancia entre las dos curvas es el atraso, medido en trabajo y no en días.",
+      "Lanes":
+        "Carriles",
+      "Length of the task in days. With a business-day calendar set, weekends and holidays do not count.":
+        "El largo de la tarea en días. Con un calendario de días hábiles, fines de semana y feriados no cuentan.",
+      "Marked day":
+        "Día marcado",
+      "Moves every task to the earliest date its dependencies allow. It never invents work — it only closes the gaps the plan does not need.":
+        "Lleva cada tarea a la fecha más temprana que permiten sus dependencias. No inventa trabajo — solo cierra los huecos que el plan no necesita.",
+      "On the chart":
+        "En el gráfico",
+      "P80":
+        "P80",
+      "Progress":
+        "Avance",
+      "Sequence (#)":
+        "Secuencia (#)",
+      "Slack":
+        "Holgura",
+      "Summary":
+        "Resumen",
+      "Task order — drag a row to change it":
+        "Orden de las tareas — arrastra una fila para cambiarlo",
+      "The breakdown of the plan into blocks and sub-blocks: which task is inside which. The indentation in the table is the WBS.":
+        "El desglose del plan en bloques y subbloques: qué tarea está dentro de cuál. La sangría de la tabla es la EDT.",
+      "The chain of tasks with no slack. A day lost in any of them is a day lost by the whole project — which is why it is worth looking at first.":
+        "La cadena de tareas sin holgura. Un día perdido en cualquiera de ellas es un día perdido por todo el proyecto — por eso es lo primero que hay que mirar.",
+      "The dates say one thing and the arrows say another: the task begins earlier than its predecessors let it. A dependency never moves anything on its own — auto-schedule (S) is what puts it where it can go, unless the start is pinned.":
+        "Las fechas dicen una cosa y las flechas otra: la tarea empieza antes de lo que permiten sus predecesoras. Una dependencia no mueve nada por sí sola — quien la pone donde cabe es la programación automática (S), salvo que la fecha esté fijada.",
+      "The day has passed and the task is not at 100%.":
+        "El día pasó y la tarea no está al 100%.",
+      "The end of the project as the engine computes it, from the dependencies and the durations.":
+        "El fin del proyecto según lo calcula el motor, a partir de las dependencias y las duraciones.",
+      "The finish date with an 80% chance of being met, from the PERT estimates. The date to promise when the plan has uncertainty in it.":
+        "La fecha de término con 80% de probabilidad de cumplirse, a partir de las estimaciones PERT. Es la fecha que se promete cuando el plan tiene incertidumbre.",
+      "The plan":
+        "El plan",
+      "The planned weight of the task, in whatever unit you use. Left at zero, the duration in person-days is the weight in the S-curve.":
+        "El peso previsto de la tarea, en la unidad que uses. Dejado en cero, la duración en persona-día es el peso en la curva S.",
+      "The position of the row. Drag a row up or down to choose it; where nobody chose, rows come by start date.":
+        "La posición de la fila. Arrástrala hacia arriba o abajo para elegirla; donde nadie eligió, las filas van por fecha de inicio.",
+      "The same person on two tasks on the same day.":
+        "La misma persona en dos tareas el mismo día.",
+      "The task finishes after the date it had promised.":
+        "La tarea termina después de la fecha que había prometido.",
+      "The task is later than it was in the frozen plan.":
+        "La tarea está más tarde de lo que estaba en el plan congelado.",
+      "Three estimates instead of one — optimistic, most likely, pessimistic — worth (o + 4m + p) / 6 as the expected duration. It says how uncertain a task is, not only how long it is.":
+        "Tres estimaciones en vez de una — optimista, más probable, pesimista — que valen (o + 4m + p) / 6 como duración esperada. Dice cuán incierta es una tarea, no solo cuánto dura.",
+      "Time":
+        "Tiempo",
+      "Turn lanes off to reorder tasks by hand.":
+        "Apaga los carriles para ordenar las tareas a mano.",
+      "View selected task":
+        "Ver tarea seleccionada",
+      "WBS":
+        "EDT (WBS)",
+      "What overallocation, slack, baseline, PERT and the rest actually mean":
+        "Qué significan de verdad sobrecarga, holgura, línea base, PERT y el resto",
+      "What the engine computes":
+        "Lo que calcula el motor",
+      "What the words mean":
+        "Qué quieren decir las palabras",
+      "Workload":
+        "Carga",
+      "\"This only starts after that.\" Finish-to-start is the default; start-to-start and finish-to-finish tie the two starts or the two finishes; lag adds or removes days.":
+        "\"Esto solo empieza después de aquello.\" Fin-inicio es lo normal; inicio-inicio y fin-fin atan los dos comienzos o los dos finales; el desfase suma o resta días.",
+      "overallocation":
+        "sobrecarga",
+      "past deadline":
+        "plazo vencido",
       "read-only": "solo lectura",
       "Read-only link — ask for an editing link to change anything.":
         "Enlace de solo lectura — pide un enlace de edición para cambiar algo.",
@@ -1218,6 +1327,115 @@ window.PerthI18n = (function () {
       "can start on": "peut commencer le",
       "Label position": "Position du nom",
       "Baseline": "Ligne de base",
+      // glossário e vocabulário novo (0.8.8/0.8.9)
+      "A date fixed by hand — a contract, a delivery window. Auto-schedule leaves it alone, and says so when the plan no longer fits it.":
+        "Une date fixée à la main — un contrat, une fenêtre de livraison. La planification automatique n'y touche pas, et le dit quand le plan n'y tient plus.",
+      "A date the task must not finish after. It never moves anything: it turns the slack of this task, and of everything feeding it, negative.":
+        "Une date après laquelle la tâche ne doit pas finir. Elle ne déplace rien : elle rend négative la marge de cette tâche et de tout ce qui l'alimente.",
+      "A date with nothing lasting: a delivery, an approval, a signature. Drawn as a diamond and never has a duration.":
+        "Une date sans rien qui dure : une livraison, une approbation, une signature. Dessinée en losange, elle n'a jamais de durée.",
+      "A frozen copy of the plan — what was promised. The ghost bars are the baseline; the difference between them and the bars is the slippage.":
+        "Une copie gelée du plan — ce qui a été promis. Les barres fantômes sont la ligne de base ; l'écart entre elles et les barres, c'est le glissement.",
+      "A named stretch of calendar shaded behind the chart: a sprint, a shutdown, the rainy season. Annotation — it never moves a task.":
+        "Une portion de calendrier nommée, ombrée derrière le graphique : un sprint, un arrêt, la saison des pluies. C'est une annotation — elle ne déplace jamais une tâche.",
+      "A named vertical line across the chart, like the today line: an inspection, a hand-over, a holiday.":
+        "Une ligne verticale nommée en travers du graphique, comme la ligne d'aujourd'hui : une inspection, une remise, un jour férié.",
+      "A piece of work with a start and a duration — a bar on the chart.":
+        "Un travail avec un début et une durée — une barre sur le graphique.",
+      "A task with subtasks. Its dates and its progress are not typed in — they are rolled up from its children.":
+        "Une tâche avec des sous-tâches. Ses dates et son avancement ne se saisissent pas — ils remontent de ses enfants.",
+      "A waits for B and B waits for A. Nothing can be scheduled until the loop is cut — this is the one warning that stops the engine.":
+        "A attend B et B attend A. Rien ne peut être planifié tant que la boucle n'est pas coupée — c'est le seul avertissement qui arrête le moteur.",
+      "Auto-schedule":
+        "Planifier automatiquement",
+      "Calendar band":
+        "Bande de calendrier",
+      "Dependency":
+        "Dépendance",
+      "Duration":
+        "Durée",
+      "Finish":
+        "Fin",
+      "Group the rows by person or by team, instead of by the WBS.":
+        "Regroupent les lignes par personne ou par équipe, au lieu du WBS.",
+      "How many days a task can slip before it starts pushing the finish. Zero slack is the critical path; negative slack is a promise already broken.":
+        "Combien de jours une tâche peut glisser avant de pousser la fin. Marge nulle, c'est le chemin critique ; marge négative, c'est une promesse déjà rompue.",
+      "How much each person has on each day. It is what turns a plan into a question about people.":
+        "Ce que chaque personne a chaque jour. C'est ce qui transforme un plan en une question sur les gens.",
+      "How much of the task is done, in percent. A summary averages its children, weighted by duration.":
+        "Quelle part de la tâche est faite, en pourcentage. Un récapitulatif fait la moyenne de ses enfants, pondérée par la durée.",
+      "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days.":
+        "Quelle part du travail était prévue à chaque date, tracée contre ce qui est fait. L'écart entre les deux courbes est le retard, mesuré en travail plutôt qu'en jours.",
+      "Lanes":
+        "Couloirs",
+      "Length of the task in days. With a business-day calendar set, weekends and holidays do not count.":
+        "La longueur de la tâche en jours. Avec un calendrier de jours ouvrés, week-ends et jours fériés ne comptent pas.",
+      "Marked day":
+        "Jour marqué",
+      "Moves every task to the earliest date its dependencies allow. It never invents work — it only closes the gaps the plan does not need.":
+        "Amène chaque tâche à la date la plus tôt que ses dépendances permettent. N'invente aucun travail — ferme seulement les trous dont le plan n'a pas besoin.",
+      "On the chart":
+        "Sur le graphique",
+      "P80":
+        "P80",
+      "Progress":
+        "Avancement",
+      "Sequence (#)":
+        "Séquence (#)",
+      "Slack":
+        "Marge",
+      "Summary":
+        "Récapitulatif",
+      "Task order — drag a row to change it":
+        "Ordre des tâches — faites glisser une ligne pour le changer",
+      "The breakdown of the plan into blocks and sub-blocks: which task is inside which. The indentation in the table is the WBS.":
+        "Le découpage du plan en blocs et sous-blocs : quelle tâche est dans laquelle. L'indentation du tableau, c'est le WBS.",
+      "The chain of tasks with no slack. A day lost in any of them is a day lost by the whole project — which is why it is worth looking at first.":
+        "La chaîne des tâches sans marge. Un jour perdu sur l'une d'elles est un jour perdu par tout le projet — d'où l'intérêt de la regarder en premier.",
+      "The dates say one thing and the arrows say another: the task begins earlier than its predecessors let it. A dependency never moves anything on its own — auto-schedule (S) is what puts it where it can go, unless the start is pinned.":
+        "Les dates disent une chose et les flèches une autre : la tâche commence plus tôt que ses prédécesseurs ne le permettent. Une dépendance ne déplace rien toute seule — c'est la planification automatique (S) qui la met là où elle tient, sauf si la date est fixée.",
+      "The day has passed and the task is not at 100%.":
+        "Le jour est passé et la tâche n'est pas à 100 %.",
+      "The end of the project as the engine computes it, from the dependencies and the durations.":
+        "La fin du projet telle que le moteur la calcule, à partir des dépendances et des durées.",
+      "The finish date with an 80% chance of being met, from the PERT estimates. The date to promise when the plan has uncertainty in it.":
+        "La date de fin qui a 80 % de chances d'être tenue, d'après les estimations PERT. C'est la date à promettre quand le plan porte de l'incertitude.",
+      "The plan":
+        "Le plan",
+      "The planned weight of the task, in whatever unit you use. Left at zero, the duration in person-days is the weight in the S-curve.":
+        "Le poids prévu de la tâche, dans l'unité que vous employez. Laissé à zéro, la durée en jours-personne fait office de poids dans la courbe en S.",
+      "The position of the row. Drag a row up or down to choose it; where nobody chose, rows come by start date.":
+        "La position de la ligne. Faites-la glisser vers le haut ou le bas pour la choisir ; là où personne n'a choisi, les lignes viennent par date de début.",
+      "The same person on two tasks on the same day.":
+        "La même personne sur deux tâches le même jour.",
+      "The task finishes after the date it had promised.":
+        "La tâche finit après la date qu'elle avait promise.",
+      "The task is later than it was in the frozen plan.":
+        "La tâche est plus tard qu'elle ne l'était dans le plan gelé.",
+      "Three estimates instead of one — optimistic, most likely, pessimistic — worth (o + 4m + p) / 6 as the expected duration. It says how uncertain a task is, not only how long it is.":
+        "Trois estimations au lieu d'une — optimiste, la plus probable, pessimiste — valant (o + 4m + p) / 6 comme durée attendue. Elle dit à quel point une tâche est incertaine, pas seulement combien elle dure.",
+      "Time":
+        "Temps",
+      "Turn lanes off to reorder tasks by hand.":
+        "Désactivez les couloirs pour ordonner les tâches à la main.",
+      "View selected task":
+        "Voir la tâche sélectionnée",
+      "WBS":
+        "WBS (OTP)",
+      "What overallocation, slack, baseline, PERT and the rest actually mean":
+        "Ce que veulent vraiment dire surcharge, marge, ligne de base, PERT et le reste",
+      "What the engine computes":
+        "Ce que le moteur calcule",
+      "What the words mean":
+        "Ce que veulent dire les mots",
+      "Workload":
+        "Charge",
+      "\"This only starts after that.\" Finish-to-start is the default; start-to-start and finish-to-finish tie the two starts or the two finishes; lag adds or removes days.":
+        "« Ceci ne commence qu'après cela. » Fin-début est la règle par défaut ; début-début et fin-fin lient les deux débuts ou les deux fins ; le décalage ajoute ou retire des jours.",
+      "overallocation":
+        "surcharge",
+      "past deadline":
+        "délai dépassé",
       "read-only": "lecture seule",
       "Read-only link — ask for an editing link to change anything.":
         "Lien en lecture seule — demandez un lien d'édition pour changer quoi que ce soit.",
@@ -1612,6 +1830,115 @@ window.PerthI18n = (function () {
       "can start on": "最早可开始于",
       "Label position": "标签位置",
       "Baseline": "基线",
+      // glossário e vocabulário novo (0.8.8/0.8.9)
+      "A date fixed by hand — a contract, a delivery window. Auto-schedule leaves it alone, and says so when the plan no longer fits it.":
+        "手工钉住的日期 — 一份合同、一个交付窗口。自动排程不会挪动它，计划装不下时会明说。",
+      "A date the task must not finish after. It never moves anything: it turns the slack of this task, and of everything feeding it, negative.":
+        "任务不得晚于此日完成。它不挪动任何东西：它让这个任务以及上游所有任务的浮时变成负数。",
+      "A date with nothing lasting: a delivery, an approval, a signature. Drawn as a diamond and never has a duration.":
+        "没有持续时间的日期：一次交付、一次批准、一个签字。画成菱形，永远没有工期。",
+      "A frozen copy of the plan — what was promised. The ghost bars are the baseline; the difference between them and the bars is the slippage.":
+        "计划的冻结副本 — 当初承诺的样子。虚影条就是基线；它和实条之间的差就是偏移。",
+      "A named stretch of calendar shaded behind the chart: a sprint, a shutdown, the rainy season. Annotation — it never moves a task.":
+        "在图后加底色的一段有名字的日历：一个冲刺、一次停工、雨季。它是标注 — 从不挪动任务。",
+      "A named vertical line across the chart, like the today line: an inspection, a hand-over, a holiday.":
+        "横贯图表的一条有名字的竖线，就像今天线：一次验收、一次移交、一个节日。",
+      "A piece of work with a start and a duration — a bar on the chart.":
+        "有开始日期和工期的一段工作 — 图上的一根条。",
+      "A task with subtasks. Its dates and its progress are not typed in — they are rolled up from its children.":
+        "带子任务的任务。它的日期和进度不是填写的 — 是从子任务汇总上来的。",
+      "A waits for B and B waits for A. Nothing can be scheduled until the loop is cut — this is the one warning that stops the engine.":
+        "A 等 B，B 等 A。不剪断这个环就什么都排不了 — 这是唯一会让引擎停下的警告。",
+      "Auto-schedule":
+        "自动排程",
+      "Calendar band":
+        "日历色带",
+      "Dependency":
+        "依赖",
+      "Duration":
+        "工期",
+      "Finish":
+        "完工",
+      "Group the rows by person or by team, instead of by the WBS.":
+        "按人或按团队分组显示行，取代 WBS 的层级。",
+      "How many days a task can slip before it starts pushing the finish. Zero slack is the critical path; negative slack is a promise already broken.":
+        "任务可以拖延几天而不推迟完工。浮时为零就是关键路径；浮时为负说明承诺已经落空。",
+      "How much each person has on each day. It is what turns a plan into a question about people.":
+        "每个人每天有多少活。它把一份计划变成一个关于人的问题。",
+      "How much of the task is done, in percent. A summary averages its children, weighted by duration.":
+        "任务完成的百分比。摘要任务按工期加权取子任务的平均值。",
+      "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days.":
+        "到每个日期原计划完成多少工作，与实际完成量对照。两条曲线之间的差距就是延误 — 以工作量计，而非天数。",
+      "Lanes":
+        "泳道",
+      "Length of the task in days. With a business-day calendar set, weekends and holidays do not count.":
+        "任务的天数。设了工作日日历后，周末和节假日不计入。",
+      "Marked day":
+        "标记日",
+      "Moves every task to the earliest date its dependencies allow. It never invents work — it only closes the gaps the plan does not need.":
+        "把每个任务挪到依赖允许的最早日期。它不会凭空造出工作 — 只是合上计划不需要的空档。",
+      "On the chart":
+        "图上",
+      "P80":
+        "P80",
+      "Progress":
+        "进度",
+      "Sequence (#)":
+        "序号 (#)",
+      "Slack":
+        "浮时",
+      "Summary":
+        "摘要任务",
+      "Task order — drag a row to change it":
+        "任务顺序 — 拖动一行即可更改",
+      "The breakdown of the plan into blocks and sub-blocks: which task is inside which. The indentation in the table is the WBS.":
+        "把计划拆成块与子块：哪个任务在哪个之内。表格里的缩进就是 WBS。",
+      "The chain of tasks with no slack. A day lost in any of them is a day lost by the whole project — which is why it is worth looking at first.":
+        "没有浮时的任务链。其中任何一个耽误一天，整个项目就耽误一天 — 所以要先看它。",
+      "The dates say one thing and the arrows say another: the task begins earlier than its predecessors let it. A dependency never moves anything on its own — auto-schedule (S) is what puts it where it can go, unless the start is pinned.":
+        "日期说的是一回事，箭头说的是另一回事：任务的开始早于前置任务所允许的时间。依赖本身从不挪动任何东西 — 把它放到能放的位置的是自动排程 (S)，除非开始日期被钉住。",
+      "The day has passed and the task is not at 100%.":
+        "日子过去了，任务还不到 100%。",
+      "The end of the project as the engine computes it, from the dependencies and the durations.":
+        "引擎依据依赖和工期算出的项目结束日。",
+      "The finish date with an 80% chance of being met, from the PERT estimates. The date to promise when the plan has uncertainty in it.":
+        "由 PERT 估计得出、有 80% 把握达成的完工日期。计划中存在不确定性时，就承诺这个日期。",
+      "The plan":
+        "计划",
+      "The planned weight of the task, in whatever unit you use. Left at zero, the duration in person-days is the weight in the S-curve.":
+        "任务的计划权重，单位随你。留为零时，以人天工期作为 S 曲线中的权重。",
+      "The position of the row. Drag a row up or down to choose it; where nobody chose, rows come by start date.":
+        "行的位置。上下拖动一行即可指定；没有人指定的地方，按开始日期排列。",
+      "The same person on two tasks on the same day.":
+        "同一个人同一天被安排了两个任务。",
+      "The task finishes after the date it had promised.":
+        "任务的完成时间晚于它承诺的日期。",
+      "The task is later than it was in the frozen plan.":
+        "任务比冻结计划里的时间更晚。",
+      "Three estimates instead of one — optimistic, most likely, pessimistic — worth (o + 4m + p) / 6 as the expected duration. It says how uncertain a task is, not only how long it is.":
+        "用三个估计代替一个 — 乐观、最可能、悲观 — 期望工期为 (o + 4m + p) / 6。它说明任务有多不确定，而不只是有多长。",
+      "Time":
+        "时间",
+      "Turn lanes off to reorder tasks by hand.":
+        "关掉泳道才能手工调整任务顺序。",
+      "View selected task":
+        "查看所选任务",
+      "WBS":
+        "WBS 工作分解",
+      "What overallocation, slack, baseline, PERT and the rest actually mean":
+        "超负荷、浮时、基线、PERT 等词到底是什么意思",
+      "What the engine computes":
+        "引擎算出来的",
+      "What the words mean":
+        "这些词是什么意思",
+      "Workload":
+        "负荷",
+      "\"This only starts after that.\" Finish-to-start is the default; start-to-start and finish-to-finish tie the two starts or the two finishes; lag adds or removes days.":
+        "「这个要等那个结束才开始。」默认是完成-开始；开始-开始和完成-完成绑定两者的开始或结束；延时可加减天数。",
+      "overallocation":
+        "超负荷",
+      "past deadline":
+        "超过期限",
       "read-only": "只读",
       "Read-only link — ask for an editing link to change anything.":
         "只读链接 — 需要改动请索取可编辑链接。",

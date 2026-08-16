@@ -1605,6 +1605,7 @@ function renderChart() {
   /* Faixas nomeadas do calendário (sprint, parada, chuvas). Vêm antes da
      grade e das barras porque são fundo: sombrear é dizer "este trecho é
      diferente", não competir com o trabalho desenhado em cima. */
+  const faixasVisiveis = [];
   (state.current.bands || []).forEach((f, i) => {
     const x0 = Math.max(xOf(parseDate(f.from)), 0);
     const x1 = Math.min(xOf(parseDate(f.to)) + ppd, totalW);
@@ -1614,18 +1615,14 @@ function renderChart() {
       class: "cal-band", x: x0, y: 0, width: x1 - x0, height: totalH,
       fill: cor,
     }));
-    chart.appendChild(svg("line", {
-      class: "cal-edge", x1: x0, y1: 0, x2: x0, y2: totalH, stroke: cor,
-    }));
-    // nome deitado na borda esquerda: horizontal ele seria a primeira coisa
-    // que o zoom corta, e some justo quando a faixa fica estreita
-    const rot = svg("text", {
-      class: "cal-label", x: x0 + 13, y: 10,
-      transform: `rotate(90 ${x0 + 13} 10)`,
-    });
-    rot.textContent = f.name;
-    chart.appendChild(rot);
+    faixasVisiveis.push({ nome: f.name, x0, cor });
   });
+  /* A borda e o nome deitado da faixa saem daqui: os dois precisam saber
+     onde os rótulos das tarefas ficaram, e isso só se sabe depois de
+     desenhá-los. A camada entra agora, no lugar certo da pilha (fundo), e é
+     preenchida lá embaixo. */
+  const camadaFaixas = svg("g", { class: "band-layer" });
+  chart.appendChild(camadaFaixas);
 
   // Grade vertical: dias quando cabem, senão segundas-feiras
   if (ppd >= 20) {
@@ -1660,8 +1657,12 @@ function renderChart() {
   const camadaDeps = svg("g", { class: "dep-layer" });
   chart.appendChild(camadaDeps);
   // Retângulos que os nomes das barras ocupam — preenchido no laço das
-  // barras, consumido pelo das setas
+  // barras, consumido pelas setas e pelas linhas verticais
   const caixasRotulo = [];
+  // e os que o DESENHO ocupa (barra, marco, colchete, fantasma): as linhas
+  // podem cruzar isto — atravessar uma barra é o que uma linha de referência
+  // faz —, mas um nome deitado não pode pousar em cima
+  const caixasForma = [];
 
   // Barras e marcos
   rows.forEach((row, i) => {
@@ -1693,6 +1694,7 @@ function renderChart() {
       const bx = xOf(parseDate(t.baseline_start));
       const bw = Math.max(t.baseline_duration, 1) * ppd;
       const gy = i * ROW_H + ROW_H - 9;
+      caixasForma.push({ x0: bx, x1: bx + bw, y0: gy, y1: gy + 4 });
       chart.appendChild(svg("rect", {
         class: "baseline-ghost" + dim + (escolhida ? " sel" : ""),
         x: bx, y: gy, width: bw, height: 4, rx: 2,
@@ -1726,6 +1728,7 @@ function renderChart() {
       const w = Math.max(t.duration, 1) * ppd;
       const alt = 6;
       const sy = i * ROW_H + ROW_H / 2 - alt / 2 - 2;
+      caixasForma.push({ x0: x, x1: x + w, y0: sy - 4, y1: sy + alt + 4 });
       const g = svg("g", { class: "bar-summary" + dim, "data-id": t.id });
       g.appendChild(svg("rect", {
         class: "sum-track", x, y: sy, width: w, height: alt, rx: alt / 2,
@@ -1767,6 +1770,7 @@ function renderChart() {
     if (t.milestone) {
       const cy = i * ROW_H + ROW_H / 2;
       const r = h / 2 + 2;
+      caixasForma.push({ x0: x - r, x1: x + r, y0: cy - r, y1: cy + r });
       const dia = svg("polygon", {
         class: "milestone" + dim,
         points: `${x},${cy - r} ${x + r},${cy} ${x},${cy + r} ${x - r},${cy}`,
@@ -1790,6 +1794,7 @@ function renderChart() {
         // dias úteis: fim real vem do motor (pula fins de semana/feriados)
         w = (diffDays(parseDate(t.start), parseDate(info.early_finish)) + 1) * ppd;
       }
+      caixasForma.push({ x0: x, x1: x + w, y0: y, y1: y + h });
       const bar = svg("rect", {
         class: "bar" + dim, x, y, width: w, height: h,
         fill: color, opacity: 0.55, "data-id": t.id,
@@ -1932,59 +1937,50 @@ function renderChart() {
     }
   }
 
-  /* Dias marcados: a mesma linha da de hoje, porque são a mesma ideia — uma
-     data que vale para o gráfico inteiro, não para uma tarefa. Desenhadas
-     por último, junto com a de hoje: linha de referência que passa por trás
-     de uma barra deixa de ser referência. */
+  /* Anotações verticais — faixas, dias marcados e a linha de hoje.
+   *
+   * Em duas fases, e a ordem é o que faz funcionar: primeiro TODOS os nomes
+   * deitados acham onde caber (cada um enxergando os que já se acomodaram),
+   * depois TODAS as linhas são traçadas abrindo vão em todos eles. Fazer
+   * nome-linha, nome-linha por anotação — que foi a primeira tentativa —
+   * deixa a linha da primeira cortada só pelo que existia até ela, e o nome
+   * da segunda pousa em cima dela.
+   *
+   * As bordas de faixa entram na camada de fundo (por baixo das barras) e as
+   * linhas de dia marcado no topo: uma faixa é fundo, um dia marcado é
+   * referência, e referência que passa por trás de uma barra deixa de ser
+   * referência. */
+  for (const f of faixasVisiveis) {
+    nomeDeitado(camadaFaixas, "cal-label", f.nome, f.x0 + 13, null,
+                totalH, caixasRotulo, caixasForma);
+  }
+  const marcados = [];
   (state.current.markers || []).forEach((m, i) => {
     const mx = xOf(parseDate(m.date)) + ppd / 2;
     if (mx < 0 || mx > totalW) return;
     const cor = m.color || AUTO_COLORS[i % AUTO_COLORS.length];
-    // O nome desce deitado a partir de y=10, em cima da própria linha, e os
-    // pontinhos atravessavam as letras. Empurrar o texto para o lado o
-    // desprenderia da linha que ele nomeia; então a linha é que abre um vão
-    // do tamanho do nome — medido depois de inserido no documento, que é a
-    // única hora em que o navegador sabe quanto ele mede (com estimativa de
-    // reserva para quando o gráfico não está visível e a medida sai zero).
-    const rot = svg("text", {
-      class: "marker-label", x: mx - 5, y: 10, fill: cor,
-      transform: `rotate(90 ${mx - 5} 10)`,
-    });
-    rot.textContent = m.name;
-    chart.appendChild(rot);
-    let comprimento = 0;
-    try {
-      comprimento = rot.getComputedTextLength();
-    } catch {
-      comprimento = 0;
-    }
-    if (!comprimento) comprimento = m.name.length * 6.3;
-    // label_at (0–100%) desce o nome pelo gráfico: deitado sobre a linha ele
-    // cai em cima de alguma barra, e qual barra depende do plano — então quem
-    // decide é quem olha, pelo cursor do diálogo de dias marcados. Em
-    // porcentagem, não em pixels: o gráfico cresce com o plano, e "um terço
-    // abaixo" tem que continuar sendo um terço abaixo.
-    const desce = Math.max(0, totalH - comprimento - 20);
-    const y0 = 10 + desce * (Math.min(Math.max(m.label_at || 0, 0), 100) / 100);
-    if (y0 !== 10) {
-      rot.setAttribute("y", y0);
-      rot.setAttribute("transform", `rotate(90 ${mx - 5} ${y0})`);
-    }
-    const trecho = (y1, y2) => {
-      if (y2 - y1 < 2) return;
-      chart.appendChild(svg("line", {
-        class: "marker-line", x1: mx, y1, x2: mx, y2, stroke: cor,
-      }));
-    };
-    trecho(0, y0 - 4);                        // acima do nome
-    trecho(y0 + comprimento + 4, totalH);     // abaixo dele
+    /* `label_at` (0–100% da altura) é a escolha da pessoa, no cursor do
+       diálogo de dias marcados, e ganha do automático. Sem escolha, o nome
+       procura altura livre: deitado no topo, que era o padrão antigo, ele cai
+       justo nas primeiras linhas do plano — onde quase todo gráfico tem
+       barra. */
+    const pct = Math.min(Math.max(m.label_at || 0, 0), 100);
+    const yFixo = pct > 0 ? 10 + Math.max(0, totalH - 30) * (pct / 100) : null;
+    nomeDeitado(chart, "marker-label", m.name, mx - 5, cor, totalH,
+                caixasRotulo, caixasForma, yFixo);
+    marcados.push({ mx, cor });
   });
 
-  // Linha de hoje
-  const tx = xOf(todayUTC()) + ppd / 2;
-  chart.appendChild(svg("line", {
-    class: "today-line", x1: tx, y1: 0, x2: tx, y2: totalH,
-  }));
+  for (const f of faixasVisiveis) {
+    linhaVertical(camadaFaixas, "cal-edge", f.x0, totalH, caixasRotulo,
+                  { stroke: f.cor });
+  }
+  for (const m of marcados) {
+    linhaVertical(chart, "marker-line", m.mx, totalH, caixasRotulo, { stroke: m.cor });
+  }
+  // Linha de hoje: a referência mais usada do gráfico, e a que mais cruza
+  // rótulo — todo projeto vivo tem trabalho em volta de hoje
+  linhaVertical(chart, "today-line", xOf(todayUTC()) + ppd / 2, totalH, caixasRotulo);
 }
 
 /* Duplo clique na régua de dias marca aquele dia. É o gesto mais curto para
@@ -2044,18 +2040,124 @@ function rotuloDaBarra(chart, t, dim, x, y, caixas, extra = null) {
   return label;
 }
 
-// A caixa é medida depois de inserido (é a única hora em que o navegador sabe
-// o comprimento); a altura vem do tamanho da fonte, com a base na linha do
-// texto — não vale medir bbox aqui, que é bem mais caro por rótulo.
+/* A caixa é medida depois de inserido — é a única hora em que o navegador
+ * sabe onde o texto ficou. getBBox() e não uma estimativa a partir da linha
+ * de base: a primeira versão chutou "9px acima da base", o texto sobe 13, e
+ * os quatro pixels de diferença eram exatamente o tanto que a linha vertical
+ * ainda comia do topo das letras. Também é o que faz o `+4d` da derrapagem
+ * (um tspan dentro do rótulo) entrar na conta de graça. */
 function anotaCaixa(node, x, y, caixas) {
-  let largura = 0;
   try {
-    largura = node.getComputedTextLength();
+    const b = node.getBBox();
+    if (b.width > 0) {
+      caixas.push({ x0: b.x, x1: b.x + b.width, y0: b.y, y1: b.y + b.height });
+      return;
+    }
   } catch {
-    largura = 0;
+    /* fora do documento ou sem layout: cai na estimativa abaixo */
   }
-  if (!largura) largura = (node.textContent || "").length * 6.3;
-  caixas.push({ x0: x, x1: x + largura, y0: y - 9, y1: y + 3 });
+  const largura = (node.textContent || "").length * 6.3;
+  caixas.push({ x0: x, x1: x + largura, y0: y - 13, y1: y + 4 });
+}
+
+/* ------------------------------------------------------------------ */
+/* Anotações verticais: linhas e nomes deitados que atravessam o plano   */
+/* ------------------------------------------------------------------ */
+
+/* Linha de hoje, linha de dia marcado e borda de faixa sobem do topo ao pé
+ * do gráfico, e no caminho passam por cima do nome das tarefas. É o mesmo
+ * problema das setas, resolvido do mesmo jeito: o traço abre um vão onde
+ * cruza um rótulo. Trecho de menos de 2px não é desenhado — um pixel de
+ * traço entre dois vãos é sujeira, não referência.
+ *
+ * `caixas` são as caixas dos rótulos já desenhados (ver caixasRotulo); por
+ * isso tudo o que usa esta função é desenhado DEPOIS das barras. */
+function trechosVerticais(x, y0, y1, caixas, folga = 3) {
+  let pedacos = [[y0, y1]];
+  for (const c of caixas) {
+    if (x < c.x0 - folga || x > c.x1 + folga) continue;
+    const [a0, a1] = [c.y0 - folga, c.y1 + folga];
+    const proximos = [];
+    for (const [p0, p1] of pedacos) {
+      if (a1 <= p0 || a0 >= p1) { proximos.push([p0, p1]); continue; }
+      if (a0 > p0) proximos.push([p0, a0]);
+      if (a1 < p1) proximos.push([a1, p1]);
+    }
+    pedacos = proximos;
+  }
+  return pedacos.filter(([p0, p1]) => p1 - p0 >= 2);
+}
+
+function linhaVertical(chart, classe, x, totalH, caixas, extra = {}) {
+  for (const [y1, y2] of trechosVerticais(x, 0, totalH, caixas)) {
+    chart.appendChild(svg("line", { class: classe, x1: x, y1, x2: x, y2, ...extra }));
+  }
+}
+
+/* Onde pôr um nome deitado (faixa, dia marcado) para ele não cair em cima
+ * de nada. Letra sobre letra não tem vão que resolva — o que resolve é o
+ * nome procurar altura livre.
+ *
+ * Desce em passos de meia linha e fica na primeira altura sem colisão;
+ * não havendo nenhuma, fica na de menor estrago. Empate resolve pelo topo,
+ * que é onde o nome sempre esteve — quem não tem conflito não vê mudança. */
+/* Caixa que um nome deitado ocupa. Girado 90°, o texto desce a partir da
+ * âncora e os glifos ficam à DIREITA dela — medido na tela, de `x-3` a
+ * `x+11`, e não simétrico em volta do x como a intuição sugere. Errar isso
+ * por seis pixels foi o que fez a linha do dia marcado deixar de abrir vão
+ * no próprio nome. */
+function caixaDeitada(x, y, comprimento) {
+  return { x0: x - 3, x1: x + 11, y0: y, y1: y + comprimento };
+}
+
+function alturaLivre(x, comprimento, totalH, caixas, inicio = 10) {
+  const limite = Math.max(inicio, totalH - comprimento - 10);
+  const passo = Math.max(8, Math.round(ROW_H / 2));
+  let melhorY = inicio, melhorN = Infinity;
+  for (let y = inicio; y <= limite; y += passo) {
+    const alvo = caixaDeitada(x, y, comprimento);
+    let n = 0;
+    for (const c of caixas) {
+      if (c.x1 < alvo.x0 || c.x0 > alvo.x1) continue;
+      if (c.y1 < alvo.y0 || c.y0 > alvo.y1) continue;
+      n++;
+    }
+    if (n === 0) return y;
+    if (n < melhorN) { melhorN = n; melhorY = y; }
+  }
+  return melhorY;
+}
+
+/* Nome deitado + a caixa que ele passa a ocupar (para os próximos desviarem
+ * dele também). `yFixo` vem de quem escolheu a dedo — o cursor do diálogo de
+ * dias marcados —, e escolha de gente ganha do automático. */
+function nomeDeitado(chart, classe, texto, x, cor, totalH, caixas,
+                     formas = [], yFixo = null) {
+  // sem cor o fill fica com o CSS (é o caso da faixa, que herda a cor da classe)
+  const attrs = { class: classe, x, y: 10, transform: `rotate(90 ${x} 10)` };
+  if (cor) attrs.fill = cor;
+  const t = svg("text", attrs);
+  t.textContent = texto;
+  chart.appendChild(t);
+  let comprimento = 0;
+  try {
+    comprimento = t.getComputedTextLength();
+  } catch {
+    comprimento = 0;
+  }
+  if (!comprimento) comprimento = (texto || "").length * 6.3;
+  // procura altura livre contra TUDO que ocupa lugar — texto e desenho. Só
+  // contra texto ele descia direto para cima de uma barra, que foi o que a
+  // primeira versão fez: trocou letra sobre letra por letra sobre barra.
+  const y = yFixo !== null ? yFixo
+                           : alturaLivre(x, comprimento, totalH, [...caixas, ...formas]);
+  if (y !== 10) {
+    t.setAttribute("y", y);
+    t.setAttribute("transform", `rotate(90 ${x} ${y})`);
+  }
+  const caixa = caixaDeitada(x, y, comprimento);
+  caixas.push(caixa);
+  return caixa;
 }
 
 /* O mesmo cotovelo de depPath, em vértices — para poder ser recortado. */
@@ -3612,7 +3714,9 @@ function shareViewRow(body, info) {
     : T("A second link that opens the projects and refuses to change them — for a client, a director, the whole site.");
   wrap.append(row, hint);
 
-  for (const u of info.view_urls) {
+  // payload sem o campo (servidor de uma versão anterior, ou um stub) não
+  // pode derrubar o diálogo inteiro: sem lista, não há link a mostrar
+  for (const u of info.view_urls || []) {
     const line = document.createElement("div");
     line.className = "share-url view";
     const code = document.createElement("code");
@@ -3627,7 +3731,7 @@ function shareViewRow(body, info) {
     line.append(code, btn);
     wrap.append(line);
   }
-  if (info.view_keyed && !info.view_urls.length) {
+  if (info.view_keyed && !(info.view_urls || []).length) {
     const off = document.createElement("div");
     off.className = "alias-hint";
     off.textContent = T("Start transmitting to get the read-only link.");

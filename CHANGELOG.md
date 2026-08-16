@@ -5,6 +5,47 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.8.9] - 2026-08-16
+
+### Added
+- **A test that measures what the screen is doing.** The three overlap fixes of
+  this release were all found by eye, one at a time. The audit that found the
+  rest now runs in CI: in a real browser (jsdom has no layout engine, and
+  without real text widths there is no collision to find) it seeds a project
+  built to collide and crosses the box of every text, shape and line against
+  every other, at four zooms, both densities, with lanes and with the critical
+  path on. The geometry underneath — cutting a line around a box, finding a
+  free height for a sideways name — is unit-tested without a browser, so the
+  logic stays covered even where Chrome is not installed.
+- The four languages are level again: **every string the interface can show is
+  translated in all of them**. The glossary shipped in 0.8.8 in Portuguese
+  only, which the i18n suite had been calling out — 54 keys × 3 languages.
+
+### Fixed
+- **Nothing on the chart is written on top of anything else any more.** An
+  audit that measures the box of every text, shape and line and crosses all of
+  them against each other found 11 to 17 collisions per view (worst at month
+  zoom, present in every density): the sideways names of calendar bands and
+  marked days written across task names, and the full-height lines — today,
+  marked day, band edge — drawn straight through them. Only the dependency
+  arrows knew how to get out of the way.
+- The machine the arrows use is now shared. **Lines open a gap** wherever they
+  cross a label, and **sideways names look for a free stretch** instead of
+  always starting at the top, which is where almost every plan has its first
+  bars. `label_at`, set by hand on the slider, still wins over the automatic
+  choice. Measured after: **zero collisions** at day, week, month and fit zoom,
+  in both densities, with lanes on and with the critical path on.
+- **The Share dialog no longer breaks on a payload without `view_urls`.** The
+  read-only link added the field in 0.8.8 and the dialog iterated it without a
+  guard, so a server from an earlier version — or any response that omits it —
+  threw and took the whole dialog down.
+- Two bugs found by measuring rather than by looking: the box of a sideways
+  name was six pixels off (the glyphs sit from `x-3` to `x+11`, not centred on
+  the anchor), which is why a marked day's line still clipped its own name; and
+  a label's box was estimated from its baseline rather than measured, missing
+  the four pixels the tallest letters reach — exactly the sliver a vertical line
+  was still eating.
+
 ## [0.8.8] - 2026-08-16
 
 ### Added

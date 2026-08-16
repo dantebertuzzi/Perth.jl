@@ -325,6 +325,103 @@ const SEMENTE = `
       check(r.depois !== r.antes && r.depois !== r.custo,
             "e o campo MUDA de aparência — travado sem parecer travado engole o clique");
     }
+    console.log("navegador · nada é escrito por cima de nada");
+    {
+      /* O varredor: mede a caixa de cada texto, forma e linha do gráfico e
+       * cruza todos contra todos. Só aqui isso é possível — jsdom não tem
+       * motor de layout, e sem largura de texto de verdade não há colisão
+       * para achar.
+       *
+       * O projeto abaixo é feito para colidir: nomes longos que passam por
+       * cima das colunas seguintes, resumo, marco, fantasma de baseline,
+       * duas faixas e dois dias marcados de nome comprido. Antes do conserto
+       * dava de 11 a 17 colisões por tela, e as três correções que existem
+       * hoje (setas, linhas verticais, nomes deitados) foram descobertas na
+       * mão, olhando. Este bloco é para que a quarta não precise ser. */
+      await pg.avaliar(`
+        const mk2 = (id, name, start, duration, extra) => Object.assign({
+          id, name, start, duration, assignee: "", progress: 0, dependencies: [],
+          color: "", notes: "", milestone: false, parent: "", cost: 0,
+          baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+          optimistic: 0, most_likely: 0, pessimistic: 0 }, extra || {});
+        state.current = { id: "p2", name: "Sobreposição", people: [],
+          bands: [{ name: "Estação de chuvas", from: "2026-03-15", to: "2026-04-10", color: "#6b9bd1" },
+                  { name: "Sprint 4", from: "2026-03-21", to: "2026-03-25", color: "" }],
+          markers: [{ name: "Sete de Setembro · Feriado", date: "2026-03-07", color: "", label_at: 0 },
+                    { name: "Vistoria da concessionária", date: "2026-04-05", color: "", label_at: 0 }],
+          tasks: [
+            mk2("f1", "1. Estudos preliminares e levantamento de campo", "2026-03-01", 1),
+            mk2("a", "Levantamento planialtimétrico do terreno", "2026-03-01", 4, { parent: "f1" }),
+            mk2("b", "Sondagem", "2026-03-03", 2, { parent: "f1" }),
+            mk2("c", "Estudo de viabilidade", "2026-03-06", 3, { parent: "f1", dependencies: ["a"] }),
+            mk2("d", "Compatibilização de projetos e aprovação na prefeitura", "2026-03-24", 8,
+                { baseline_start: "2026-03-18", baseline_duration: 8 }),
+            mk2("m", "Projeto aprovado pela prefeitura", "2026-03-29", 1, { milestone: true }),
+            mk2("e", "Fundação", "2026-04-02", 9, { dependencies: ["d"] }),
+            mk2("g", "Curto", "2026-04-07", 1) ] };
+        state.cpm = { cycle: false, finish: "2026-04-10", calendar: "", pert: null, byId: new Map() };
+        state.selected = null;
+        renderAll();
+        window.__colisoes = function () {
+          const cx = (sel, tipo, infla) => [...document.querySelectorAll(sel)].map((n) => {
+            const r = n.getBoundingClientRect();
+            const i = infla || 0;
+            return { tipo, txt: (n.textContent || "").slice(0, 26),
+                     x0: r.left - i, x1: r.right + i, y0: r.top - i, y1: r.bottom + i };
+          });
+          const textos = [...cx("#chart .bar-label", "rótulo"),
+                          ...cx("#chart .marker-label", "dia marcado"),
+                          ...cx("#chart .cal-label", "faixa")];
+          const formas = [...cx("#chart .bar", "barra"), ...cx("#chart .milestone", "marco"),
+                          ...cx("#chart .bar-summary", "resumo"),
+                          ...cx("#chart .link-dot", "ponto de ligar"),
+                          ...cx("#chart .note-dot", "ponto de nota"),
+                          ...cx("#chart .baseline-ghost", "fantasma")];
+          // só traço fino: a caixa de um cotovelo cobriria o L inteiro
+          const linhas = [...cx("#chart .today-line", "linha de hoje", 1.5),
+                          ...cx("#chart .marker-line", "linha de dia marcado", 1.5),
+                          ...cx("#chart .cal-edge", "borda de faixa", 1.5)]
+                         .filter((l) => (l.x1 - l.x0) <= 6 || (l.y1 - l.y0) <= 6);
+          const bate = (p, q) => {
+            const w = Math.min(p.x1, q.x1) - Math.max(p.x0, q.x0);
+            const h = Math.min(p.y1, q.y1) - Math.max(p.y0, q.y0);
+            return w > 0.5 && h > 0.5;
+          };
+          const achados = [];
+          for (let i = 0; i < textos.length; i++) {
+            for (let j = i + 1; j < textos.length; j++)
+              if (bate(textos[i], textos[j]))
+                achados.push(textos[i].tipo + ' "' + textos[i].txt + '" × ' +
+                             textos[j].tipo + ' "' + textos[j].txt + '"');
+            for (const f of formas)
+              if (bate(textos[i], f))
+                achados.push(textos[i].tipo + ' "' + textos[i].txt + '" × ' + f.tipo);
+            for (const l of linhas)
+              if (bate(textos[i], l))
+                achados.push(textos[i].tipo + ' "' + textos[i].txt + '" × ' + l.tipo);
+          }
+          return achados;
+        };
+        return 1;`);
+
+      const cenarios = [
+        ["zoom dia", `setZoom("day")`],
+        ["zoom semana", `setZoom("week")`],
+        ["zoom mês", `setZoom("month")`],
+        ["zoom caber", `setZoom("fit")`],
+        ["densidade compacta", `ui.density = "compact"; applyUI(); renderAll()`],
+        ["raias por responsável", `ui.density = "cozy"; applyUI(); state.groupBy = "assignee"; renderAll()`],
+        ["caminho crítico", `state.groupBy = ""; state.showCritical = true; renderAll()`],
+      ];
+      for (const [nome, prep] of cenarios) {
+        const achados = await pg.avaliar(`${prep}; return window.__colisoes();`);
+        check(achados.length === 0,
+              `${nome}: nenhuma sobreposição` +
+              (achados.length ? ` — ${achados.length}: ${achados.slice(0, 3).join("; ")}` : ""));
+      }
+      await pg.avaliar(`state.showCritical = false; setZoom("week"); renderAll(); return 1;`);
+    }
+
   } finally {
     pg.fechar();
     srv.close();
