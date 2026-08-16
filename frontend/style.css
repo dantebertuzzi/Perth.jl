@@ -399,7 +399,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 body.presenting .tt-resizer { display: none; }
 .tt-head, .tt-row {
   display: grid;
-  grid-template-columns: 1fr 96px 44px 40px;
+  grid-template-columns: 26px 1fr 96px 44px 40px;
   gap: 6px;
   align-items: center;
   padding: 0 12px;
@@ -420,6 +420,69 @@ body.presenting .tt-resizer { display: none; }
   cursor: pointer;
 }
 .tt-row:hover { background: var(--line-soft); }
+
+/* Glossário (Ajuda -> What the words mean): termo à esquerda, frase à
+   direita. Duas colunas, e não uma lista corrida, porque quem abre isto
+   está procurando UMA palavra — a coluna de termos é o índice. */
+.glossary { max-height: 62vh; overflow-y: auto; }
+.gl-section {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: lowercase;
+  letter-spacing: .12em;
+  color: var(--muted);
+  margin: 16px 0 6px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+.gl-section:first-child { margin-top: 0; }
+.gl-row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 10px;
+  padding: 5px 0;
+  align-items: baseline;
+}
+.gl-term { color: var(--purple); font-weight: 600; }
+.gl-desc { color: var(--ink); font-size: 12.5px; line-height: 1.45; }
+@media (max-width: 620px) {
+  .gl-row { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* Coluna da sequência: a ordem das linhas dita em número, para poder ser
+   lida (e conferida depois de arrastar) sem contar linhas com o dedo. Roxa
+   porque é do aplicativo, não do plano — nenhum dado do projeto é roxo. O
+   title carrega o id, que é o que se digita no REPL. */
+.c-seq {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--purple);
+  text-align: right;
+  cursor: grab;
+  user-select: none;
+}
+.tt-head .c-seq { color: var(--muted); cursor: default; }
+
+/* Arrastar uma linha para escolher a posição (ver attachRowDrag).
+   A linha em trânsito fica apagada, o destino é uma régua roxa no vão, e
+   soltar DENTRO de uma tarefa é dito com o contorno da linha inteira —
+   duas marcas diferentes porque são dois destinos diferentes. */
+.tt-row.row-dragging { opacity: .4; }
+body.row-dragging { cursor: grabbing; user-select: none; }
+.tt-body { position: relative; }
+.row-drop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--purple);
+  pointer-events: none;
+}
+.tt-row.drop-inside {
+  box-shadow: inset 0 0 0 2px var(--purple);
+  border-radius: 3px;
+}
 
 /* Raias: cabeçalho de grupo na tabela e faixa correspondente no gráfico.
    A faixa é o que faz as duas metades lerem como um desenho só. */
@@ -651,6 +714,16 @@ body.presenting .res-pane { display: none; }
 #status-save.saved { color: var(--green); }
 #status-save.saving { color: var(--amber); }
 #status-save.error { color: var(--red); }
+/* link somente-leitura: onde estaria "saved 14:03 ✓" fica o que esta aba é */
+#status-save.readonly { color: var(--muted); font-style: italic; }
+
+/* Somente-leitura: o cursor não pode prometer um arrasto que o servidor
+   recusa. As pontas de ligação nem chegam a ser desenhadas (drawLinkDots),
+   e o resto do gráfico continua igual — olhar é tudo o que este link faz. */
+body.readonly .bar,
+body.readonly .milestone { cursor: default; }
+body.readonly .bar-handle { cursor: default; }
+body.readonly .c-seq { cursor: default; }
 
 .progress-wrap {
   display: flex;
@@ -1008,7 +1081,7 @@ body.presenting .res-pane { display: none; }
 
 @media (max-width: 760px) {
   :root { --table-w: 220px; }
-  .tt-head, .tt-row { grid-template-columns: 1fr 44px; }
+  .tt-head, .tt-row { grid-template-columns: 26px 1fr 44px; }
   .c-date, .tt-head :nth-child(3), .tt-row :nth-child(3) { display: none; }
   .welcome { padding: 30px 24px 20px; }
 }
@@ -1265,6 +1338,15 @@ body.presenting .res-pane { display: none; }
 .cal-add input[type=text] { flex: 1 1 auto; min-width: 0; }
 .cal-add input[type=date] { flex: 0 0 auto; }
 .cal-row { gap: 8px; }
+/* Cursor da posição do nome do dia marcado: à direita da data, antes do ✕.
+   Estreito de propósito — é um ajuste fino, não o assunto da linha. */
+.cal-pos {
+  flex: 0 0 auto;
+  width: 84px;
+  margin-left: auto;
+  accent-color: var(--purple);
+  cursor: pointer;
+}
 /* input[type=color] tem moldura e recheio do sistema: some com os dois e
    sobra a cor, que é o que interessa. */
 .cal-dot, .cal-pick {

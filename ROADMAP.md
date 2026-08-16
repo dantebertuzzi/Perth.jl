@@ -11,21 +11,6 @@ piece of code it should lean on.
 
 ## Next up
 
-### Read-only share link
-
-Sharing is all-or-nothing today: whoever opens the link edits. That is what
-stops you from sending a plan to a client, a director, the whole site. A key
-that grants reading and refuses writing turns the link into something you can
-hand out.
-
-*Lean on:* `_gantt_gate(path, ip, qp; method)` in `src/server.jl` already sorts
-host, key and guest, and already has a `:host_only` verdict for the routes only
-the host may touch — a read-only verdict is the same shape. The kanban's
-permission matrix (`test/runtests.jl`, "kanban: matriz de permissões") is the
-vocabulary to copy, including the WebSocket dispatch: refusing a `PUT` while
-letting a socket write through the back door would be a hole, and the kanban
-tests already learned that lesson.
-
 ### Multi-select and bulk actions
 
 Everything is one task at a time. With collaborators and lanes in place,

@@ -20,32 +20,51 @@ const GANTT_HUB = PresenceHub()
 const GANTT_SHARED = Ref{Bool}(false)         # transmitindo agora (mutável em runtime)
 const GANTT_CAN_SHARE = Ref{Bool}(false)      # socket em 0.0.0.0: dá para alternar
 const GANTT_KEY = Ref{String}("")             # chave de acesso do share ("" = aberto)
+const GANTT_VIEW_KEY = Ref{String}("")        # chave de leitura ("" = sem link somente-leitura)
 const GANTT_TIMER = Ref{Union{Timer,Nothing}}(nothing)
 
-_gantt_key_suffix() = isempty(GANTT_KEY[]) ? "" :
-    "?key=" * HTTP.URIs.escapeuri(GANTT_KEY[])
+_key_suffix(key::AbstractString) = isempty(key) ? "" :
+    "?key=" * HTTP.URIs.escapeuri(key)
+_gantt_key_suffix() = _key_suffix(GANTT_KEY[])
 
 # Porteiro da transmissão: a máquina do servidor entra sempre; as demais,
 # só enquanto a transmissão estiver ligada
 _gantt_share_ok(ip::AbstractString) = GANTT_SHARED[] || _presence_is_host(ip)
 
-function _gantt_urls()
-    urls = ["http://localhost:$(PORT[])" * _gantt_key_suffix()]
+# Links da sessão para uma chave qualquer — a de edição por padrão, a de
+# leitura quando se quer o link que só mostra (ver _gantt_view_urls)
+function _gantt_urls(key::AbstractString = GANTT_KEY[])
+    sfx = _key_suffix(key)
+    urls = ["http://localhost:$(PORT[])" * sfx]
     GANTT_SHARED[] || return urls
     for a in _lan_ipv4()
-        push!(urls, "http://$(a):$(PORT[])" * _gantt_key_suffix())
+        push!(urls, "http://$(a):$(PORT[])" * sfx)
     end
     return urls
 end
 
+# Só os endereços de rede: na máquina do servidor o link somente-leitura
+# não vale (o host edita sempre, como é isento da chave de acesso), então
+# oferecer um "localhost?key=…" seria prometer o que ele não faz.
+_gantt_view_urls() = isempty(GANTT_VIEW_KEY[]) ? String[] :
+    _gantt_urls(GANTT_VIEW_KEY[])[2:end]
+
 # Payload de /api/share — o mesmo formato do kanban, para o frontend
-# compartilhar o desenho do diálogo
-function _gantt_share_payload(ip::AbstractString = "")
-    urls = _gantt_urls()
+# compartilhar o desenho do diálogo.
+#
+# Os links carregam a chave, então o payload é escrito para quem pergunta:
+# a chave de edição não pode aparecer para quem entrou pelo link de leitura
+# (seria entregar, na primeira tela, a permissão que o link nega), e a de
+# leitura só interessa a quem a distribui — o host.
+function _gantt_share_payload(ip::AbstractString = ""; viewing::Bool = false)
+    host = _presence_is_host(ip)
+    urls = _gantt_urls(viewing ? GANTT_VIEW_KEY[] : GANTT_KEY[])
     target = length(urls) > 1 ? urls[2] : urls[1]
     return (; urls, target, qr = _qr_rows(target),
             shared = GANTT_SHARED[], can_share = GANTT_CAN_SHARE[],
-            keyed = !isempty(GANTT_KEY[]), host = _presence_is_host(ip))
+            keyed = !isempty(GANTT_KEY[]), host,
+            viewing, view_keyed = !isempty(GANTT_VIEW_KEY[]),
+            view_urls = host ? _gantt_view_urls() : String[])
 end
 
 """
@@ -100,7 +119,8 @@ one on screen rather than left with a dead page. Dropping the key
 (`key!()`) disconnects nobody — nothing they hold became invalid.
 
 The same control is in the UI (File → Share / QR…), available only from
-the machine running the server.
+the machine running the server. For a link that opens the projects but
+refuses to change them, see [`Perth.view_key!`](@ref).
 
 ```julia
 Perth.key!("obra-2026")   # exige a chave de quem vem da rede
@@ -115,7 +135,9 @@ function key!(key::AbstractString = ""; actor::AbstractString = "repl")
     # a chave antiga virou inválida: quem está de fora precisa reentrar (o
     # porteiro sozinho só barra conexões novas). Tirar a chave não invalida
     # ninguém — derrubar seria pedir na tela uma chave que não existe mais.
-    isempty(new) || _hub_drop_remote!(GANTT_HUB; reason = "key")
+    # Quem entrou pelo link somente-leitura fica: a chave dele é outra, e
+    # continua certa.
+    isempty(new) || _hub_drop_remote!(GANTT_HUB; reason = "key", only = :editors)
     _with_state(st -> _log_activity!(st, actor, "key",
         isempty(new) ? "removed the access key" : "changed the access key"))
     _hub_broadcast(GANTT_HUB, JSON3.write((; type = "key", keyed = !isempty(new))))
@@ -125,9 +147,62 @@ function key!(key::AbstractString = ""; actor::AbstractString = "repl")
     return !isempty(new)
 end
 
-# POST /api/key {"key": "…"} — só do host, como o toggle da transmissão.
-# Devolve o payload de /api/share: os links (e o QR) mudam com a chave.
-function _gantt_key_set(req::HTTP.Request, ip::AbstractString)
+"""
+    Perth.view_key!(key = "") -> Bool
+
+Set (or drop, with `""`) the **read-only key** of the running gantt
+server, live — no restart, no [`Perth.stop`](@ref). Returns whether a
+read-only link exists from now on.
+
+Whoever opens a link carrying this key sees the projects — chart, table,
+analytics, exports — and cannot change them: every write is refused with
+403, including the ones that would go through the presence socket (chat).
+That is the link you hand to a client, a director, the whole site.
+
+It is a *second* key, independent of [`Perth.key!`](@ref): with an access
+key set, one link edits and the other only shows; with no access key, the
+plain link still edits and only the read-only link is restricted. The two
+keys cannot be the same string — one link cannot mean both things.
+
+Changing or dropping the read-only key disconnects the machines that came
+in through it, and only those: what the editors hold is still valid.
+
+The machine running the server always edits, even through the read-only
+link — it is the machine that hands the link out (same reason it never
+needs the access key). The read-only links therefore start at the network
+addresses, and the UI (File → Share / QR…) shows them there.
+
+```julia
+Perth.run(share = true, key = "obra-2026", view_key = "obra-2026-ver")
+Perth.view_key!("so-olhar")   # troca o link de leitura
+Perth.view_key!()             # acaba com o link de leitura
+```
+"""
+function view_key!(key::AbstractString = ""; actor::AbstractString = "repl")
+    SERVER[] === nothing && throw(ArgumentError("Perth is not running — Perth.run() first"))
+    new = _cap_text(strip(String(key)))
+    (!isempty(new) && new == GANTT_KEY[]) && throw(ArgumentError(
+        "the read-only key cannot be the same as the access key"))
+    GANTT_VIEW_KEY[] == new && return !isempty(new)
+    GANTT_VIEW_KEY[] = new
+    # ao contrário da chave de acesso, tirar a de leitura TAMBÉM invalida:
+    # sem ela o link vira um link comum, e quem estava só olhando passaria a
+    # editar sem ninguém ter decidido isso. Por isso derruba nos dois casos.
+    _hub_drop_remote!(GANTT_HUB; reason = "key", only = :readers)
+    _with_state(st -> _log_activity!(st, actor, "key",
+        isempty(new) ? "removed the read-only link" : "changed the read-only link"))
+    _hub_broadcast(GANTT_HUB, JSON3.write((; type = "view_key",
+                                           view_keyed = !isempty(new))))
+    @info(isempty(new) ?
+          "Perth: read-only link removed." :
+          "Perth: read-only link — " * join(_gantt_view_urls(), " "))
+    return !isempty(new)
+end
+
+# POST /api/key e /api/view_key {"key": "…"} — só do host, como o toggle da
+# transmissão. Devolvem o payload de /api/share: os links (e o QR) mudam
+# com a chave.
+function _gantt_key_set(req::HTTP.Request, ip::AbstractString; view::Bool = false)
     _presence_is_host(ip) ||
         return _error("only the machine running Perth can change this"; status = 403)
     key = try
@@ -136,7 +211,7 @@ function _gantt_key_set(req::HTTP.Request, ip::AbstractString)
         return _error("expected {\"key\": \"…\"}"; status = 400)
     end
     try
-        key!(key; actor = ip)
+        view ? view_key!(key; actor = ip) : key!(key; actor = ip)
     catch err
         err isa ArgumentError && return _error(err.msg; status = 409)
         rethrow()
@@ -163,7 +238,7 @@ end
 
 """
     Perth.run(; port = 8123, open_browser = true, data_dir = nothing,
-              share = false, host = nothing, key = "") -> String
+              share = false, host = nothing, key = "", view_key = "") -> String
 
 Start the Perth server and (optionally) open the app in your browser.
 Returns the URL. The server does not block the REPL; stop it with
@@ -173,7 +248,8 @@ By default only this machine can open the app. Pass `share = true` to let
 other machines on the local network open the same projects: every
 connected machine shows up as a labelled cursor with its name and IP
 address — exactly like `Perth.kanban(share = true)`. `key` requires an
-access key from those machines.
+access key from those machines; `view_key` adds a second link that opens
+the projects and refuses to change them — see [`Perth.view_key!`](@ref).
 
 Sharing is a live switch, not a startup-only decision: turn it on and off
 with the server running via [`Perth.share!`](@ref) or the UI (File →
@@ -196,6 +272,7 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
              share::Bool = false,
              host::Union{Nothing,AbstractString} = nothing,
              key::AbstractString = "",
+             view_key::AbstractString = "",
              watch::Bool = true,
              banner::Bool = true)
     if SERVER[] !== nothing
@@ -206,6 +283,10 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
     banner && splash(; version = string(pkgversion(@__MODULE__)))
 
     GANTT_KEY[] = String(key)
+    # um mesmo texto não pode significar as duas permissões
+    (!isempty(view_key) && String(view_key) == String(key)) && throw(ArgumentError(
+        "view_key cannot be the same as key — one link cannot both edit and not edit"))
+    GANTT_VIEW_KEY[] = String(view_key)
     # bind sempre em 0.0.0.0 (ver comentário do topo): o filtro de quem
     # entra é o porteiro, não o socket — é o que permite ligar/desligar a
     # transmissão sem derrubar o servidor
@@ -274,6 +355,9 @@ function run(; port::Integer = 8123, open_browser::Bool = true,
                 qr = io -> (println(io); _print_qr(io, m))
             end
         end
+        for u in _gantt_view_urls()
+            push!(notes, "Read-only link: $u")
+        end
         push!(notes, isempty(GANTT_KEY[]) ?
             "Anyone on the network can edit the projects — pass key = \"…\" to require an access key." :
             "Access requires the key (already embedded in the links above).")
@@ -315,11 +399,37 @@ function _gantt_host_only(path::AbstractString, method::AbstractString)
            endswith(path, "/path")                         # espelho em disco
 end
 
+# Papel de quem faz a requisição, pelo IP e pela chave que ele apresenta:
+# :host (a máquina do servidor, isenta de tudo), :viewer (veio pelo link
+# somente-leitura), :guest (pode editar) ou :nokey.
+#
+# A chave de leitura é conferida ANTES da de edição de propósito: sem chave
+# de acesso configurada — que é o caso comum — _keyok aceita qualquer um, e
+# testar na outra ordem faria o link somente-leitura nunca valer nada.
+function _gantt_role(ip::AbstractString, qp)
+    _presence_is_host(ip) && return :host
+    view = GANTT_VIEW_KEY[]
+    (!isempty(view) && get(qp, "key", "") == view) && return :viewer
+    _keyok(ip, qp, GANTT_KEY[]) && return :guest
+    return :nokey
+end
+
+# Escrita é o método, não a rota: toda mutação de projeto passa por
+# POST/PUT/DELETE (inclusive /schedule e /pert, que aplicam o motor no
+# projeto guardado), e todo o resto — inclusive os exports e o PNG — é GET.
+# Fecha por padrão: um método novo entra como escrita até que se diga o
+# contrário.
+_gantt_writes(method::AbstractString) = !(method in ("GET", "HEAD", "OPTIONS"))
+
 function _gantt_gate(path::AbstractString, ip::AbstractString, qp;
                      method::AbstractString = "GET")
     _gantt_share_ok(ip) || return :not_shared
-    (_key_protected(path) && !_keyok(ip, qp, GANTT_KEY[])) && return :need_key
-    (_gantt_host_only(path, method) && !_presence_is_host(ip)) && return :host_only
+    role = _gantt_role(ip, qp)
+    (role === :nokey && _key_protected(path)) && return :need_key
+    # antes do :host_only porque explica melhor: quem entrou para olhar não
+    # está sendo barrado por ser outra máquina, e sim pelo link que abriu
+    (role === :viewer && _gantt_writes(method)) && return :read_only
+    (_gantt_host_only(path, method) && role !== :host) && return :host_only
     return :ok
 end
 
@@ -340,8 +450,9 @@ function _gantt_handler(router)
             # porta existe (para o botão poder religá-la) mas só atende o host
             _gantt_share_ok(ip) || return HTTP.WebSockets.upgrade(
                 ws -> _presence_deny(ws, "share_off"), http)
-            keyok = _keyok(ip, qp, GANTT_KEY[])
-            HTTP.WebSockets.upgrade(ws -> _presence_ws(GANTT_HUB, ws, ip, keyok;
+            role = _gantt_role(ip, qp)
+            HTTP.WebSockets.upgrade(ws -> _presence_ws(GANTT_HUB, ws, ip, role !== :nokey;
+                                                       readonly = role === :viewer,
                                                        extra_init = (; rev = _state().rev)),
                                     http)
         else
@@ -354,6 +465,10 @@ function _gantt_handler(router)
                                                status = 403))(http)
             elseif verdict === :need_key
                 HTTP.streamhandler(_ -> _error("access key required"; status = 403))(http)
+            elseif verdict === :read_only
+                HTTP.streamhandler(_ -> _error(
+                    "this is a read-only link — ask for an editing link to change anything";
+                    status = 403))(http)
             elseif verdict === :host_only
                 HTTP.streamhandler(_ -> _error(
                     "only the machine running Perth can do this"; status = 403))(http)
@@ -362,9 +477,12 @@ function _gantt_handler(router)
                 # aqui o IP real da conexão é conhecido (header é do cliente)
                 HTTP.streamhandler(http.message.method == "POST" ?
                     req -> _gantt_share_toggle(req, ip) :
-                    _ -> _json(_gantt_share_payload(ip)))(http)
+                    _ -> _json(_gantt_share_payload(ip;
+                                                    viewing = _gantt_role(ip, qp) === :viewer)))(http)
             elseif path == "/api/key" && http.message.method == "POST"
                 HTTP.streamhandler(req -> _gantt_key_set(req, ip))(http)   # idem: host-only
+            elseif path == "/api/view_key" && http.message.method == "POST"
+                HTTP.streamhandler(req -> _gantt_key_set(req, ip; view = true))(http)
             else
                 HTTP.streamhandler(router)(http)
             end
@@ -417,6 +535,7 @@ function stop()
     _ON_REV[] = nothing
     _watch_stop_all!()
     GANTT_KEY[] = ""
+    GANTT_VIEW_KEY[] = ""
     GANTT_SHARED[] = false
     GANTT_CAN_SHARE[] = false
     close(SERVER[])

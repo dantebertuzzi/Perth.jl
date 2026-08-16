@@ -61,6 +61,7 @@ const state = {
   undoStack: [],       // snapshots para Ctrl+Z
   redoStack: [],       // snapshots para Ctrl+Y / Ctrl+Shift+Z
   presenting: false,   // modo apresentação: menubar/toolbar/tabela escondidos + fullscreen
+  readOnly: false,     // entrou pelo link somente-leitura (ver applyReadOnly)
 };
 
 function _snapshot() {
@@ -539,7 +540,7 @@ async function fetchAnalytics() {
 let saveTimer = null;
 
 function markDirty() {
-  if (!state.current) return;
+  if (!state.current || state.readOnly) return;
   _closeUndoEntry();     // fecha o par before/after da edição que acabou de rodar
   state.dirty = true;
   setSaveStatus("saving", "saving…");
@@ -595,6 +596,64 @@ async function saveNow() {
 function setSaveStatus(cls, text) {
   el.statusSave.className = cls;
   el.statusSave.textContent = text;
+}
+
+/* ------------------------------------------------------------------ */
+/* Somente-leitura                                                      */
+/* ------------------------------------------------------------------ */
+
+/* Link somente-leitura (Perth.view_key!): quem entra por ele lê tudo —
+ * gráfico, tabela, análises, exports — e o servidor recusa qualquer
+ * escrita com 403, inclusive a que tentasse passar pelo WebSocket. Nada
+ * aqui é a autoridade: esta parte só evita oferecer o que vai falhar,
+ * porque um botão que só dá erro é pior do que um botão ausente.
+ *
+ * A lista de ações é isso dito para o menu; canEdit() é isso dito para o
+ * teclado; state.readOnly em markDirty() é a última rede — se algum gesto
+ * escapar dos dois, a mudança morre no navegador em vez de virar um 403 e
+ * uma tela mentindo sobre o que está gravado. */
+const WRITE_ACTIONS = new Set([
+  "new-project", "rename-project", "delete-project", "import",
+  "people", "bands", "markers",
+  "new-task", "delete-task", "duplicate-task",
+  "set-baseline", "clear-baseline", "undo", "redo",
+  "auto-schedule", "apply-pert",
+]);
+
+// Tentativa de edição de quem só pode olhar: recusa dizendo por quê — o
+// silêncio pareceria a página travada
+function canEdit() {
+  if (!state.readOnly) return true;
+  PerthToast.info(T("Read-only link — ask for an editing link to change anything."));
+  return false;
+}
+
+function applyReadOnly(on) {
+  state.readOnly = !!on;
+  document.body.classList.toggle("readonly", state.readOnly);
+  for (const b of $$("[data-action]")) {
+    if (WRITE_ACTIONS.has(b.dataset.action)) b.hidden = state.readOnly;
+  }
+  $("#btn-new-task").hidden = state.readOnly;
+  // o modal continua abrindo (os detalhes da tarefa são leitura, e são o que
+  // não cabe na barra) — mas trancado, então o item do menu não pode seguir
+  // dizendo "editar"
+  const abrir = $('[data-action="edit-task"]');
+  if (abrir) {
+    abrir.firstChild.textContent =
+      T(state.readOnly ? "View selected task" : "Edit selected task") + " ";
+  }
+  // o chat também é escrita (persiste e chega a todo mundo): o histórico
+  // continua legível, o campo de escrever é que sai
+  $("#chat-form").hidden = state.readOnly;
+  // menu que ficou sem nenhum item visível não pode seguir clicável: o
+  // Edit inteiro é edição, e abriria uma caixa vazia
+  for (const m of $$(".menu[data-menu]")) {
+    const drop = m.querySelector(".menu-drop");
+    if (drop) m.hidden = state.readOnly && !drop.querySelector("button:not([hidden])");
+  }
+  // não há o que salvar: o lugar do "saved 14:03 ✓" diz o que esta aba é
+  if (state.readOnly) setSaveStatus("readonly", T("read-only"));
 }
 
 /* ------------------------------------------------------------------ */
@@ -964,6 +1023,35 @@ function renderHighlightSelect() {
  * irmãos por (start, nome). Obs.: o preview aqui usa dias corridos;
  * com calendário de dias úteis, o rollup autoritativo é o do servidor
  * a cada save. */
+/* Irmãos na ordem em que aparecem: primeiro os que alguém posicionou à mão
+ * (order 1, 2, 3, …), depois o resto pela data e pelo nome. É a MESMA regra
+ * do servidor (ordered_tasks, em wbs.jl); as duas discordarem seria a lista
+ * mudar de ordem sozinha no primeiro F5. order 0/ausente = sem posição, e
+ * "sem posição" vai para o fim — na frente, toda tarefa nova entraria
+ * furando a fila de um grupo já arrumado. */
+function cmpIrmaos(a, b) {
+  const oa = a.order || Infinity;
+  const ob = b.order || Infinity;
+  if (oa !== ob) return oa - ob;
+  if (a.start !== b.start) return a.start < b.start ? -1 : 1;
+  return a.name.localeCompare(b.name);
+}
+
+/* Renumera o grupo de irmãos de `t` (1, 2, 3, …) com `t` na posição pedida
+ * (null = por último). Espelha _reorder_siblings! do servidor: numeração
+ * fechada, sem buracos, e nunca meio grupo à mão e meio pela data. */
+function reorderSiblings(t, position) {
+  const pai = t.parent || "";
+  const irmaos = state.current.tasks
+    .filter((o) => (o.parent || "") === pai)
+    .sort(cmpIrmaos)
+    .filter((o) => o.id !== t.id);
+  const pos = position == null ? irmaos.length + 1
+                               : Math.min(Math.max(position, 1), irmaos.length + 1);
+  irmaos.splice(pos - 1, 0, t);
+  irmaos.forEach((o, k) => { o.order = k + 1; });
+}
+
 function sortTasks() {
   const tasks = state.current.tasks;
   const byId = new Map(tasks.map((t) => [t.id, t]));
@@ -1018,8 +1106,7 @@ function sortTasks() {
   const depth = new Map();
   const out = [];
   const walk = (ts, d) => {
-    ts.sort((a, b) =>
-      a.start === b.start ? a.name.localeCompare(b.name) : (a.start < b.start ? -1 : 1));
+    ts.sort(cmpIrmaos);
     for (const t of ts) {
       out.push(t);
       depth.set(t.id, d);
@@ -1228,8 +1315,10 @@ function toggleLane(key) {
 
 function renderTable() {
   el.taskRows.innerHTML = "";
+  let n = 0;
   for (const row of displayRows()) {
-    el.taskRows.appendChild(row.kind === "lane" ? laneRow(row) : taskRow(row.task));
+    el.taskRows.appendChild(row.kind === "lane" ? laneRow(row)
+                                                : taskRow(row.task, ++n));
   }
 }
 
@@ -1250,7 +1339,7 @@ function laneRow(row) {
   return div;
 }
 
-function taskRow(t) {
+function taskRow(t, seq) {
   const row = document.createElement("div");
   const info = state.cpm?.byId.get(t.id);
   const crit = state.showCritical && info?.critical;
@@ -1266,12 +1355,14 @@ function taskRow(t) {
   if (state.showCritical && info) row.title = `slack: ${info.slack_days}d`;
   row.dataset.id = t.id;
   row.innerHTML = `
+    <span class="c-seq" title="id: ${escapeHTML(t.id)}">${seq}</span>
     <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? `<button type="button" class="sum-mark" title="${T(fechado ? "Expand" : "Collapse")}">${fechado ? "▸" : "▾"}</button>` : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
     <span class="c-date">${t.start}</span>
     <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
     <span class="c-num">${t.progress}</span>`;
   row.addEventListener("click", () => selectTask(t.id));
   row.addEventListener("dblclick", () => openModal(t.id));
+  attachRowDrag(row, t);
   // o ▾ recolhe a subárvore e NÃO seleciona: clique na seta é sobre a
   // árvore, clique na linha é sobre a tarefa
   row.querySelector(".sum-mark")?.addEventListener("click", (ev) => {
@@ -1279,6 +1370,187 @@ function taskRow(t) {
     toggleSummary(t.id);
   });
   return row;
+}
+
+/* ------------------------------------------------------------------ */
+/* Arrastar a linha: a ordem que a mão escolhe                          */
+/* ------------------------------------------------------------------ */
+
+/* A ordem das linhas sempre foi derivada — filhos sob o pai, irmãos pela
+ * data — e é uma boa ordem até o dia em que três tarefas começam no mesmo
+ * dia e a sequência da obra não é a ordem alfabética. `order` é o que a mão
+ * diz; quem nunca arrastou nada segue vendo o plano pela data (ver
+ * cmpIrmaos e ordered_tasks, no servidor).
+ *
+ * Um gesto, dois destinos, decididos por ONDE se solta:
+ *   - no vão entre duas linhas  -> nova posição, no nível da linha de cima
+ *   - em cima de uma linha      -> vira subtarefa dela (WBS)
+ * É a convenção de qualquer árvore de arquivos, e poupa um segundo gesto
+ * para o que, na cabeça de quem arrasta, já é um só: "põe isto ali".
+ *
+ * O arrasto começa depois de alguns pixels: sem essa folga, todo clique de
+ * seleção seria um arrasto de zero pixel e a lista tremeria a cada toque. */
+const ROW_DRAG_MIN = 4;
+
+function attachRowDrag(row, t) {
+  row.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0 || state.readOnly) return;
+    if (ev.target.closest(".sum-mark")) return;   // a seta é sobre a árvore
+    const y0 = ev.clientY;
+    let vivo = false;
+    let alvo = null;
+
+    const fim = () => {
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+      state.dragging = false;
+      row.classList.remove("row-dragging");
+      document.body.classList.remove("row-dragging");
+      limpaAlvo();
+    };
+
+    const mover = (mv) => {
+      if (!vivo) {
+        if (Math.abs(mv.clientY - y0) < ROW_DRAG_MIN) return;
+        // Em raias, o vão entre duas linhas não tem nível: a de cima pode
+        // ser de outro ramo da WBS, e "põe isto ali" passaria a significar
+        // um pai que ninguém apontou. Melhor recusar dizendo por quê.
+        if (state.groupBy) {
+          PerthToast.info(T("Turn lanes off to reorder tasks by hand."));
+          fim();
+          return;
+        }
+        vivo = true;
+        state.dragging = true;
+        row.classList.add("row-dragging");
+        document.body.classList.add("row-dragging");
+      }
+      alvo = alvoDoArrasto(t, mv.clientY);
+      pintaAlvo(alvo);
+      rolaNaBorda(mv.clientY);
+    };
+
+    const soltar = () => {
+      const destino = vivo ? alvo : null;
+      fim();
+      destino && aplicaArrasto(t, destino);
+    };
+
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+  });
+}
+
+// Tarefas visíveis, na ordem da tela — a mesma lista que virou linhas
+const linhasVisiveis = () =>
+  displayRows().filter((r) => r.kind === "task").map((r) => r.task);
+
+/* Onde o ponteiro está querendo soltar. Terço do meio de uma linha = dentro
+ * dela; o resto = o vão de cima ou o de baixo. Alvo proibido (a própria
+ * tarefa, um descendente dela, um marco) não vira destino: o gesto fica sem
+ * marca nenhuma, que é a forma de dizer "aqui não" antes de soltar. */
+function alvoDoArrasto(t, clientY) {
+  const nos = [...el.taskRows.querySelectorAll(".tt-row")];
+  if (!nos.length) return null;
+  let i = nos.findIndex((n) => clientY < n.getBoundingClientRect().bottom);
+  if (i === -1) i = nos.length - 1;
+  const no = nos[i];
+  const r = no.getBoundingClientRect();
+  const frac = (clientY - r.top) / r.height;
+  const id = no.dataset.id;
+  const proibidos = idsProibidos(t);
+
+  if (frac > 0.3 && frac < 0.7) {
+    const alvo = taskById(id);
+    if (alvo && !alvo.milestone && !proibidos.has(id)) {
+      return { modo: "dentro", parent: id, position: null, no };
+    }
+  }
+  const depois = frac >= 0.5;
+  const vao = vaoDoArrasto(t, i + (depois ? 1 : 0), proibidos);
+  return vao && { ...vao, no, depois };
+}
+
+// A própria tarefa e sua subárvore: nenhuma das duas pode receber o que
+// está sendo arrastado (seria a tarefa dentro de si mesma)
+function idsProibidos(t) {
+  return new Set([t.id, ...collectDescendants(t.id).map((o) => o.id)]);
+}
+
+/* Vão nº `indice` (antes da linha visível de mesmo índice) -> pai e posição.
+ * O nível é o da linha de CIMA: soltar logo abaixo de um resumo aberto põe
+ * a tarefa como primeira filha dele; abaixo de qualquer outra linha, como
+ * irmã dela. É o que o olho já lê na indentação. */
+function vaoDoArrasto(t, indice, proibidos) {
+  const vis = linhasVisiveis();
+  const acima = vis[indice - 1] || null;
+  let parent;
+  if (!acima) {
+    parent = vis.length ? (vis[0].parent || "") : "";
+  } else if (state.wbs?.summary.has(acima.id) && !state.wbsClosed.has(acima.id)) {
+    parent = acima.id;              // resumo aberto: o vão logo abaixo é dentro dele
+  } else {
+    parent = acima.parent || "";
+  }
+  if (proibidos.has(parent)) return null;
+  const paiT = parent ? taskById(parent) : null;
+  if (parent && (!paiT || paiT.milestone)) return null;
+
+  let position = 1;
+  for (let k = 0; k < indice; k++) {
+    const o = vis[k];
+    if (o.id === t.id) continue;
+    if ((o.parent || "") === parent) position++;
+  }
+  return { modo: "vao", parent, position };
+}
+
+function pintaAlvo(alvo) {
+  limpaAlvo();
+  if (!alvo) return;
+  if (alvo.modo === "dentro") {
+    alvo.no.classList.add("drop-inside");
+    return;
+  }
+  const marca = document.createElement("div");
+  marca.className = "row-drop";
+  marca.style.top = (alvo.no.offsetTop + (alvo.depois ? alvo.no.offsetHeight : 0)) + "px";
+  el.taskRows.appendChild(marca);
+}
+
+function limpaAlvo() {
+  el.taskRows.querySelector(".row-drop")?.remove();
+  el.taskRows.querySelector(".drop-inside")?.classList.remove("drop-inside");
+}
+
+// Arrastar até a beirada rola a lista: num plano de cem tarefas, subir uma
+// linha do fim para o começo não pode exigir soltar no meio do caminho.
+// O scroller de verdade é a timeline; a tabela segue por espelho.
+function rolaNaBorda(clientY) {
+  const r = el.taskRows.getBoundingClientRect();
+  const margem = 26;
+  if (clientY < r.top + margem) el.tlBody.scrollTop -= 12;
+  else if (clientY > r.bottom - margem) el.tlBody.scrollTop += 12;
+}
+
+function aplicaArrasto(t, destino) {
+  const paiAntes = t.parent || "";
+  const irmaosAntes = state.current.tasks
+    .filter((o) => (o.parent || "") === paiAntes).sort(cmpIrmaos);
+  const posAntes = irmaosAntes.findIndex((o) => o.id === t.id) + 1;
+  // soltar no mesmo lugar não é uma edição: sem isto, todo arrasto que
+  // desiste no meio do caminho gravaria o projeto e queimaria um desfazer
+  if (destino.parent === paiAntes &&
+      (destino.position === null ? posAntes === irmaosAntes.length
+                                 : destino.position === posAntes)) return;
+  pushUndo();
+  t.parent = destino.parent;
+  reorderSiblings(t, destino.position);
+  // selecionada depois de solta: a linha andou, e o olho precisa achá-la
+  // de novo (selectTask alterna, e aqui a intenção é sempre selecionar)
+  state.selected = t.id;
+  renderAll();
+  markDirty();
 }
 
 function toggleSummary(id) {
@@ -1380,43 +1652,16 @@ function renderChart() {
     }));
   }
 
-  // Setas de dependência (desenhadas antes das barras para ficarem por baixo).
-  // Só entre linhas visíveis: numa raia fechada a tarefa não tem linha, e uma
-  // seta apontando para o vazio é pior do que seta nenhuma.
-  const rowOf = new Map();
-  const byId = new Map();
-  rows.forEach((r, i) => {
-    if (r.kind !== "task") return;
-    rowOf.set(r.task.id, i);
-    byId.set(r.task.id, r.task);
-  });
-  for (const t of byId.values()) {
-    for (const depRef of t.dependencies || []) {
-      const dep = depId(depRef);
-      if (!rowOf.has(dep)) continue;
-      const pred = byId.get(dep);
-      const x1 = xOf(addDays(taskEnd(pred), 1));
-      const y1 = rowOf.get(dep) * ROW_H + ROW_H / 2;
-      const x2 = xOf(parseDate(t.start));
-      const y2 = rowOf.get(t.id) * ROW_H + ROW_H / 2;
-      const caminho = depPath(x1, y1, x2, y2);
-      chart.appendChild(svg("path", { class: "dep", d: caminho }));
-      chart.appendChild(svg("polygon", {
-        class: "dep-head",
-        points: `${x2},${y2} ${x2 - 7},${y2 - 4} ${x2 - 7},${y2 + 4}`,
-      }));
-      // Alvo de clique por cima da seta: 1px de traço não se acerta com o
-      // mouse. Criar ligação com a mão e ter que abrir o modal para desfazer
-      // seria dar a ida sem a volta.
-      const alvo = svg("path", { class: "dep-hit", d: caminho });
-      alvo.appendChild(svgTitle(`${pred.name} → ${t.name}\n${T("Double-click to remove")}`));
-      alvo.addEventListener("dblclick", (ev) => {
-        ev.stopPropagation();
-        unlinkTasks(t, depRef);
-      });
-      chart.appendChild(alvo);
-    }
-  }
+  /* Setas de dependência: a camada entra aqui, por baixo das barras, mas é
+     PREENCHIDA depois delas (ver mais abaixo). A ordem no documento é o que
+     decide o que fica por cima no SVG; o conteúdo pode chegar quando quiser,
+     e o desenho da seta precisa saber onde os rótulos das barras ficaram
+     para desviar deles. */
+  const camadaDeps = svg("g", { class: "dep-layer" });
+  chart.appendChild(camadaDeps);
+  // Retângulos que os nomes das barras ocupam — preenchido no laço das
+  // barras, consumido pelo das setas
+  const caixasRotulo = [];
 
   // Barras e marcos
   rows.forEach((row, i) => {
@@ -1477,11 +1722,7 @@ function renderChart() {
           class: "note-dot" + dim, cx: x + w - 2, cy: sy - 1, r: 3.2,
         }));
       }
-      if (ui.labels) {
-        const label = svg("text", { class: "bar-label" + dim, x: x + w + 8, y: sy + alt + 4 });
-        label.textContent = t.name;
-        chart.appendChild(label);
-      }
+      if (ui.labels) rotuloDaBarra(chart, t, dim, x + w + 8, sy + alt + 4, caixasRotulo);
       if (t.id === state.selected) {
         chart.appendChild(svg("rect", {
           class: "bar-sel", x: x - 3, y: sy - 3, width: w + 6, height: alt + 11,
@@ -1510,11 +1751,7 @@ function renderChart() {
           class: "note-dot" + dim, cx: x + r, cy: cy - r, r: 3.2,
         }));
       }
-      if (ui.labels) {
-        const label = svg("text", { class: "bar-label" + dim, x: x + r + 6, y: cy + 4 });
-        label.textContent = t.name;
-        chart.appendChild(label);
-      }
+      if (ui.labels) rotuloDaBarra(chart, t, dim, x + r + 6, cy + 4, caixasRotulo);
     } else {
       const info = state.cpm?.byId.get(t.id);
       let w = Math.max(t.duration, 1) * ppd;
@@ -1552,18 +1789,17 @@ function renderChart() {
       chart.appendChild(handle);
 
       if (ui.labels) {
-        const label = svg("text", { class: "bar-label" + dim, x: x + w + 8, y: y + h - 5 });
-        label.textContent = t.name;
-        if (slip > 0) {
+        rotuloDaBarra(chart, t, dim, x + w + 8, y + h - 5, caixasRotulo, (label) => {
+          if (slip <= 0) return;
           const ts = svg("tspan", { class: "slip-label" });
           ts.textContent = `  +${slip}d`;
           label.appendChild(ts);
-        }
-        chart.appendChild(label);
+        });
       } else if (slip > 0) {
         const badge = svg("text", { class: "bar-label slip-label" + dim, x: x + w + 8, y: y + h - 5 });
         badge.textContent = `+${slip}d`;
         chart.appendChild(badge);
+        anotaCaixa(badge, x + w + 8, y + h - 5, caixasRotulo);
       }
 
       if (state.showCritical && info?.critical) {
@@ -1617,6 +1853,53 @@ function renderChart() {
     }
   });
 
+  /* Setas de dependência (na camada criada lá em cima, por baixo das barras).
+     Só entre linhas visíveis: numa raia fechada a tarefa não tem linha, e uma
+     seta apontando para o vazio é pior do que seta nenhuma.
+
+     O traço abre um vão onde cruza o nome de uma barra. A saída da seta é a
+     ponta da barra, que é exatamente onde o nome começa — então a linha
+     riscava a palavra ao meio em toda ligação para a direita. O alvo de
+     clique continua inteiro: quem some é o traço, não a área sensível. */
+  const rowOf = new Map();
+  const byId = new Map();
+  rows.forEach((r, i) => {
+    if (r.kind !== "task") return;
+    rowOf.set(r.task.id, i);
+    byId.set(r.task.id, r.task);
+  });
+  for (const t of byId.values()) {
+    for (const depRef of t.dependencies || []) {
+      const dep = depId(depRef);
+      if (!rowOf.has(dep)) continue;
+      const pred = byId.get(dep);
+      const x1 = xOf(addDays(taskEnd(pred), 1));
+      const y1 = rowOf.get(dep) * ROW_H + ROW_H / 2;
+      const x2 = xOf(parseDate(t.start));
+      const y2 = rowOf.get(t.id) * ROW_H + ROW_H / 2;
+      const caminho = depPath(x1, y1, x2, y2);
+      camadaDeps.appendChild(svg("path", {
+        class: "dep", d: depPathDesviando(x1, y1, x2, y2, caixasRotulo),
+      }));
+      camadaDeps.appendChild(svg("polygon", {
+        class: "dep-head",
+        points: `${x2},${y2} ${x2 - 7},${y2 - 4} ${x2 - 7},${y2 + 4}`,
+      }));
+      // Alvo de clique por cima da seta: 1px de traço não se acerta com o
+      // mouse. Criar ligação com a mão e ter que abrir o modal para desfazer
+      // seria dar a ida sem a volta. Aqui o caminho é o inteiro, sem os vãos:
+      // o buraco é para o olho, e um buraco no alvo seria um trecho de seta
+      // que não responde ao clique.
+      const alvo = svg("path", { class: "dep-hit", d: caminho });
+      alvo.appendChild(svgTitle(`${pred.name} → ${t.name}\n${T("Double-click to remove")}`));
+      alvo.addEventListener("dblclick", (ev) => {
+        ev.stopPropagation();
+        canEdit() && unlinkTasks(t, depRef);
+      });
+      camadaDeps.appendChild(alvo);
+    }
+  }
+
   /* Dias marcados: a mesma linha da de hoje, porque são a mesma ideia — uma
      data que vale para o gráfico inteiro, não para uma tarefa. Desenhadas
      por último, junto com a de hoje: linha de referência que passa por trás
@@ -1625,15 +1908,44 @@ function renderChart() {
     const mx = xOf(parseDate(m.date)) + ppd / 2;
     if (mx < 0 || mx > totalW) return;
     const cor = m.color || AUTO_COLORS[i % AUTO_COLORS.length];
-    chart.appendChild(svg("line", {
-      class: "marker-line", x1: mx, y1: 0, x2: mx, y2: totalH, stroke: cor,
-    }));
+    // O nome desce deitado a partir de y=10, em cima da própria linha, e os
+    // pontinhos atravessavam as letras. Empurrar o texto para o lado o
+    // desprenderia da linha que ele nomeia; então a linha é que abre um vão
+    // do tamanho do nome — medido depois de inserido no documento, que é a
+    // única hora em que o navegador sabe quanto ele mede (com estimativa de
+    // reserva para quando o gráfico não está visível e a medida sai zero).
     const rot = svg("text", {
       class: "marker-label", x: mx - 5, y: 10, fill: cor,
       transform: `rotate(90 ${mx - 5} 10)`,
     });
     rot.textContent = m.name;
     chart.appendChild(rot);
+    let comprimento = 0;
+    try {
+      comprimento = rot.getComputedTextLength();
+    } catch {
+      comprimento = 0;
+    }
+    if (!comprimento) comprimento = m.name.length * 6.3;
+    // label_at (0–100%) desce o nome pelo gráfico: deitado sobre a linha ele
+    // cai em cima de alguma barra, e qual barra depende do plano — então quem
+    // decide é quem olha, pelo cursor do diálogo de dias marcados. Em
+    // porcentagem, não em pixels: o gráfico cresce com o plano, e "um terço
+    // abaixo" tem que continuar sendo um terço abaixo.
+    const desce = Math.max(0, totalH - comprimento - 20);
+    const y0 = 10 + desce * (Math.min(Math.max(m.label_at || 0, 0), 100) / 100);
+    if (y0 !== 10) {
+      rot.setAttribute("y", y0);
+      rot.setAttribute("transform", `rotate(90 ${mx - 5} ${y0})`);
+    }
+    const trecho = (y1, y2) => {
+      if (y2 - y1 < 2) return;
+      chart.appendChild(svg("line", {
+        class: "marker-line", x1: mx, y1, x2: mx, y2, stroke: cor,
+      }));
+    };
+    trecho(0, y0 - 4);                        // acima do nome
+    trecho(y0 + comprimento + 4, totalH);     // abaixo dele
   });
 
   // Linha de hoje
@@ -1648,7 +1960,7 @@ function renderChart() {
    e digitar a data num formulário seria repetir para o computador uma coisa
    que ele acabou de ver. */
 el.tlDays.addEventListener("dblclick", (ev) => {
-  if (!state.current) return;
+  if (!state.current || !canEdit()) return;
   const r = el.tlDays.getBoundingClientRect();
   const x = ev.clientX - r.left;
   // floor, não round: o dia é o que está SOB o cursor, não o mais próximo
@@ -1686,6 +1998,98 @@ function depPath(x1, y1, x2, y2) {
   return `M ${x1} ${y1} H ${x1 + 9} V ${ym} H ${x2 - 9} V ${y2} H ${x2}`;
 }
 
+/* Nome da barra, e a caixa que ele ocupa — as setas desviam dela (ver
+ * depPathDesviando). Um só lugar desenhando os três casos (barra, marco e
+ * resumo) é o que garante que os três sejam desviados: um rótulo desenhado
+ * por fora daqui simplesmente não seria contornado, e o defeito só apareceria
+ * no dia em que alguém ligasse justo aquela tarefa. */
+function rotuloDaBarra(chart, t, dim, x, y, caixas, extra = null) {
+  const label = svg("text", { class: "bar-label" + dim, x, y });
+  label.textContent = t.name;
+  extra && extra(label);
+  chart.appendChild(label);
+  anotaCaixa(label, x, y, caixas);
+  return label;
+}
+
+// A caixa é medida depois de inserido (é a única hora em que o navegador sabe
+// o comprimento); a altura vem do tamanho da fonte, com a base na linha do
+// texto — não vale medir bbox aqui, que é bem mais caro por rótulo.
+function anotaCaixa(node, x, y, caixas) {
+  let largura = 0;
+  try {
+    largura = node.getComputedTextLength();
+  } catch {
+    largura = 0;
+  }
+  if (!largura) largura = (node.textContent || "").length * 6.3;
+  caixas.push({ x0: x, x1: x + largura, y0: y - 9, y1: y + 3 });
+}
+
+/* O mesmo cotovelo de depPath, em vértices — para poder ser recortado. */
+function depVertices(x1, y1, x2, y2) {
+  if (x2 >= x1 + 18) {
+    const xm = x2 - 9;
+    return [[x1, y1], [xm, y1], [xm, y2], [x2, y2]];
+  }
+  const ym = y1 + (y2 > y1 ? ROW_H / 2 : -ROW_H / 2);
+  return [[x1, y1], [x1 + 9, y1], [x1 + 9, ym], [x2 - 9, ym], [x2 - 9, y2], [x2, y2]];
+}
+
+/* Caminho da seta com um vão onde ela cruza o nome de uma barra.
+ *
+ * A seta sai da ponta da barra, que é exatamente onde o nome começa: toda
+ * ligação para a direita riscava a palavra ao meio. Empurrar o nome o soltaria
+ * da barra que ele nomeia (o mesmo motivo do dia marcado), então quem abre o
+ * vão é a linha.
+ *
+ * Todo trecho é horizontal ou vertical, então recortar é subtrair intervalos
+ * numa reta: para cada trecho, tiram-se as faixas das caixas que ele
+ * atravessa. Um trecho que sobra menor que 2px não é desenhado — traço de um
+ * pixel entre dois vãos é sujeira, não informação.
+ */
+const _DEP_FOLGA = 4;   // respiro entre o fim do traço e a letra
+
+function depPathDesviando(x1, y1, x2, y2, caixas) {
+  const partes = [];
+  const pontos = depVertices(x1, y1, x2, y2);
+  for (let i = 0; i + 1 < pontos.length; i++) {
+    const [ax, ay] = pontos[i];
+    const [bx, by] = pontos[i + 1];
+    const horizontal = ay === by;
+    // faixas a remover, em coordenada do próprio trecho
+    const cortes = [];
+    for (const c of caixas) {
+      if (horizontal) {
+        if (ay < c.y0 - _DEP_FOLGA || ay > c.y1 + _DEP_FOLGA) continue;
+        cortes.push([c.x0 - _DEP_FOLGA, c.x1 + _DEP_FOLGA]);
+      } else {
+        if (ax < c.x0 - _DEP_FOLGA || ax > c.x1 + _DEP_FOLGA) continue;
+        cortes.push([c.y0 - _DEP_FOLGA, c.y1 + _DEP_FOLGA]);
+      }
+    }
+    const de = horizontal ? Math.min(ax, bx) : Math.min(ay, by);
+    const ate = horizontal ? Math.max(ax, bx) : Math.max(ay, by);
+    let pedacos = [[de, ate]];
+    for (const [c0, c1] of cortes) {
+      const proximos = [];
+      for (const [p0, p1] of pedacos) {
+        if (c1 <= p0 || c0 >= p1) { proximos.push([p0, p1]); continue; }
+        if (c0 > p0) proximos.push([p0, c0]);
+        if (c1 < p1) proximos.push([c1, p1]);
+      }
+      pedacos = proximos;
+    }
+    for (const [p0, p1] of pedacos) {
+      if (p1 - p0 < 2) continue;
+      partes.push(horizontal
+        ? `M ${p0} ${ay} H ${p1}`
+        : `M ${ax} ${p0} V ${p1}`);
+    }
+  }
+  return partes.join(" ");
+}
+
 function escapeHTML(s) {
   return s.replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -1718,6 +2122,7 @@ function selectTask(id) {
    é de que lado da cadeia você está montando. SS/FF e folga continuam no
    modal: são a exceção, e exceção não precisa de gesto. */
 function drawLinkDots(chart, t, i, xEsq, xDir) {
+  if (state.readOnly) return;   // ponta de arrasto que não arrasta é convite falso
   const cy = i * ROW_H + ROW_H / 2;
   for (const [lado, cx] of [["left", xEsq - 9], ["right", xDir + 9]]) {
     const dot = svg("circle", { class: "link-dot", cx, cy, r: 4.5,
@@ -1749,7 +2154,7 @@ function formaSobOPonteiro(x, y) {
 
 function attachLink(node, task, lado) {
   node.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || state.readOnly) return;
     ev.stopPropagation();          // não é arrastar a barra
     const caixa = el.chart.getBoundingClientRect();
     const x0 = Number(node.getAttribute("cx"));
@@ -1860,7 +2265,7 @@ function unlinkTasks(depois, depRef) {
 
 function attachDrag(node, task, mode) {
   node.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || state.readOnly) return;   // selecionar e abrir seguem valendo
     // Sem preventDefault aqui: cancelar o pointerdown suprime os eventos de
     // mouse de compatibilidade, e sem mousedown o Chrome nunca produz click
     // — logo, nunca produz dblclick. O listener de dblclick lá embaixo era
@@ -1982,7 +2387,8 @@ function openModal(id) {
   // T(): o título é reescrito a cada abertura, depois de PerthI18n já ter
   // varrido o DOM — sem traduzir aqui, o cabeçalho ficava em inglês no meio
   // de um modal inteiro traduzido
-  $("#modal-title").textContent = T(state.editingNew ? "New task" : "Edit task");
+  $("#modal-title").textContent =
+    T(state.readOnly ? "Task" : state.editingNew ? "New task" : "Edit task");
   $("#f-name").value = t.name;
   $("#f-assignee").value = t.assignee || "";
   fillPeopleList();
@@ -2081,6 +2487,17 @@ function openModal(id) {
  * ainda é lido no submit), então desmarcar devolve a duração de antes.
  */
 function syncModalLocks() {
+  // Somente-leitura abre o modal do mesmo jeito — os detalhes da tarefa são
+  // leitura, e são justamente o que não cabe na barra — mas trancado: campo
+  // editável cujo salvamento o servidor vai recusar promete o que não tem.
+  if (state.readOnly) {
+    for (const f of el.modal.querySelectorAll("input, select, textarea"))
+      f.disabled = true;
+    $("#modal-save").hidden = true;
+    $("#modal-delete").hidden = true;
+    $("#f-summary-hint").hidden = true;
+    return;
+  }
   const isSum = state.wbs?.summary.has(state.selected) ?? false;
   for (const fid of ["f-start", "f-duration", "f-progress", "f-milestone",
                      "f-deadline", "f-pinned",
@@ -2750,13 +3167,30 @@ function showMarkers(preencher = "") {
       const dia = document.createElement("span");
       dia.className = "people-count";
       dia.textContent = m.date;
+      // Onde o nome fica na vertical. Arrastar redesenha na hora e não
+      // grava; gravar só ao soltar — um PUT por pixel de cursor seria uma
+      // enxurrada de salvamentos, e o que importa é onde ele parou.
+      const pos = document.createElement("input");
+      pos.type = "range";
+      pos.className = "cal-pos";
+      pos.min = "0";
+      pos.max = "100";
+      pos.step = "5";
+      pos.value = String(m.label_at || 0);
+      pos.title = T("Label position");
+      pos.setAttribute("aria-label", T("Label position"));
+      pos.addEventListener("input", () => {
+        m.label_at = Number(pos.value);
+        renderChart();
+      });
+      pos.addEventListener("change", () => gravar(marcos));
       const x = document.createElement("button");
       x.className = "icon-btn";
       x.type = "button";
       x.textContent = "✕";
       x.title = T("Remove");
       x.addEventListener("click", () => gravar(marcos.filter((o) => o !== m)));
-      linha.append(c, n, dia, x);
+      linha.append(c, n, dia, pos, x);
       lista.append(linha);
     });
   }
@@ -2834,6 +3268,7 @@ const _WARN_LABEL = {
   overdue: "overdue",
   overallocation: "overallocated",
   slippage: "behind the baseline",
+  too_early: "starts before its dependencies allow",
 };
 
 /* A frase é montada aqui, não no servidor: quem sabe o idioma de quem lê é
@@ -2854,6 +3289,11 @@ function warningText(w) {
       return `${w.who} · "${w.task}" × "${w.other}" · ${w.from} → ${w.to}`;
     case "slippage":
       return `${w.task} · ${d(w.days)}`;
+    case "too_early":
+      // data fixa é o caso em que o auto-schedule NÃO resolve: a tarefa está
+      // presa de propósito, e quem lê precisa saber que o conserto é outro
+      return `${w.task} · ${d(w.days)} · ${T("can start on")} ${w.at}` +
+             (w.pinned ? ` · ${T("pinned start")}` : "");
     default:
       return w.task || "";
   }
@@ -2965,6 +3405,9 @@ function showShare() {
 // direto, sem passar pelo diálogo. Escondido para quem não pode alternar —
 // máquina remota, ou servidor preso a um `host` fixo (can_share = false).
 function renderShareBtn(info) {
+  // /api/share é onde o servidor diz quem é quem: além do host, se esta
+  // aba entrou pelo link somente-leitura (ver _gantt_share_payload)
+  applyReadOnly(!!(info && info.viewing));
   // Espelho em disco e navegador de pastas são só do host — o servidor recusa
   // com 403 (ver _gantt_host_only). Num convidado a caixa inteira some, em vez
   // de ficar ali para falhar: ela também mostraria um caminho da máquina
@@ -2985,7 +3428,7 @@ function renderShareBtn(info) {
 }
 
 function refreshShareBtn() {
-  api("/api/share").then(renderShareBtn).catch(() => {});
+  return api("/api/share").then(renderShareBtn).catch(() => {});
 }
 
 async function toggleShare() {
@@ -3069,6 +3512,87 @@ function shareKeyRow(body, info) {
   return wrap;
 }
 
+/* Link somente-leitura no diálogo de Share (só o host o vê e o troca).
+ * Irmã de shareKeyRow: mesma caixa, mesma aplicação, outro significado —
+ * esta chave abre os projetos e recusa mudá-los. Trocar ou tirar derruba
+ * quem estava olhando por ela, e só essas máquinas: o link que elas têm
+ * na mão deixou de existir. */
+function shareViewRow(body, info) {
+  const wrap = document.createElement("div");
+  const row = document.createElement("div");
+  row.className = "share-key";
+  const label = document.createElement("span");
+  label.textContent = T(info.view_keyed ? "Read-only link on" : "No read-only link");
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "share-key-input";
+  input.placeholder = T(info.view_keyed ? "new read-only key" : "read-only key");
+
+  const apply = async (key, btn) => {
+    btn.disabled = true;
+    try {
+      const next = await api("/api/view_key", {
+        method: "POST", body: JSON.stringify({ key }),
+      });
+      renderShare(body, next);
+    } catch (err) {
+      btn.disabled = false;
+      PerthToast.error(err.message);
+    }
+  };
+
+  const set = document.createElement("button");
+  set.className = "primary";
+  set.textContent = T("apply");
+  set.addEventListener("click", () => {
+    const v = input.value.trim();
+    v && apply(v, set);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") set.click();
+    e.stopPropagation();
+  });
+  row.append(label, input, set);
+
+  if (info.view_keyed) {
+    const drop = document.createElement("button");
+    drop.className = "danger";
+    drop.textContent = T("remove");
+    drop.addEventListener("click", () => apply("", drop));
+    row.append(drop);
+  }
+
+  const hint = document.createElement("div");
+  hint.className = "alias-hint";
+  hint.textContent = info.view_keyed
+    ? T("Whoever opens the link below sees the projects and cannot change them — not even through the chat. This machine always edits, so the link starts at your network address.")
+    : T("A second link that opens the projects and refuses to change them — for a client, a director, the whole site.");
+  wrap.append(row, hint);
+
+  for (const u of info.view_urls) {
+    const line = document.createElement("div");
+    line.className = "share-url view";
+    const code = document.createElement("code");
+    code.textContent = u;
+    const btn = document.createElement("button");
+    btn.textContent = T("copy");
+    btn.addEventListener("click", () => {
+      navigator.clipboard?.writeText(u);
+      btn.textContent = T("copied!");
+      setTimeout(() => (btn.textContent = T("copy")), 1400);
+    });
+    line.append(code, btn);
+    wrap.append(line);
+  }
+  if (info.view_keyed && !info.view_urls.length) {
+    const off = document.createElement("div");
+    off.className = "alias-hint";
+    off.textContent = T("Start transmitting to get the read-only link.");
+    wrap.append(off);
+  }
+  return wrap;
+}
+
 function renderShare(body, info) {
   body.textContent = "";
 
@@ -3103,6 +3627,7 @@ function renderShare(body, info) {
   // Chave de acesso: só o host troca. Fora do `can_share` de propósito —
   // com o alcance preso no socket (host fixo) a chave continua valendo.
   if (info.host) body.append(shareKeyRow(body, info));
+  if (info.host) body.append(shareViewRow(body, info));
 
   for (const u of info.urls) {
     const row = document.createElement("div");
@@ -3471,6 +3996,9 @@ function duplicateTask(id = state.selected) {
   }));
   const idx = state.current.tasks.findIndex((o) => o.id === t.id);
   state.current.tasks.splice(idx + 1, 0, ...clones);
+  // grupo com ordem manual: a cópia fica ao lado do original, não no fim
+  // (mesma regra do duplicate_task! do servidor)
+  if (t.order) reorderSiblings(clones[0], t.order + 1);
   state.selected = clones[0].id;
   renderAll();
   markDirty();
@@ -3737,6 +4265,7 @@ const ACTIONS = {
   "toggle-theme": toggleTheme,
   "presentation": togglePresentation,
   "shortcuts": showShortcuts,
+  "glossary": showGlossary,
   "about": showAbout,
 };
 
@@ -3760,6 +4289,87 @@ function showShortcuts() {
     ["T", "go to today"],
     ["Esc", "close / deselect / exit presentation"],
   ]));
+}
+
+/* ------------------------------------------------------------------ */
+/* Glossário                                                            */
+/* ------------------------------------------------------------------ */
+
+/* "⚠ 4 overallocations · ⚠ 1 past deadline" só é um aviso para quem já sabe
+ * o que as palavras querem dizer. O vocabulário de um gantt — folga,
+ * caminho crítico, baseline, PERT — é preciso e é aprendido; a barra de
+ * status, a coluna de avisos e o modal usam todos ele, e até aqui o único
+ * lugar onde estava explicado era a documentação do pacote, que quem abre o
+ * navegador não lê.
+ *
+ * A ordem é a de quem está aprendendo, não a alfabética: primeiro as peças
+ * do plano, depois o tempo, depois o que o motor calcula, e por fim os
+ * avisos — que são justamente as palavras que aparecem quando algo dá
+ * errado, ou seja, quando menos se quer abrir um manual. */
+const GLOSSARY = [
+  ["The plan", [
+    ["Task", "A piece of work with a start and a duration — a bar on the chart."],
+    ["Milestone", "A date with nothing lasting: a delivery, an approval, a signature. Drawn as a diamond and never has a duration."],
+    ["Summary", "A task with subtasks. Its dates and its progress are not typed in — they are rolled up from its children."],
+    ["WBS", "The breakdown of the plan into blocks and sub-blocks: which task is inside which. The indentation in the table is the WBS."],
+    ["Sequence (#)", "The position of the row. Drag a row up or down to choose it; where nobody chose, rows come by start date."],
+    ["Progress", "How much of the task is done, in percent. A summary averages its children, weighted by duration."],
+  ]],
+  ["Time", [
+    ["Duration", "Length of the task in days. With a business-day calendar set, weekends and holidays do not count."],
+    ["Dependency", "\"This only starts after that.\" Finish-to-start is the default; start-to-start and finish-to-finish tie the two starts or the two finishes; lag adds or removes days."],
+    ["Auto-schedule", "Moves every task to the earliest date its dependencies allow. It never invents work — it only closes the gaps the plan does not need."],
+    ["Pinned start", "A date fixed by hand — a contract, a delivery window. Auto-schedule leaves it alone, and says so when the plan no longer fits it."],
+    ["Deadline", "A date the task must not finish after. It never moves anything: it turns the slack of this task, and of everything feeding it, negative."],
+    ["Finish", "The end of the project as the engine computes it, from the dependencies and the durations."],
+  ]],
+  ["What the engine computes", [
+    ["Critical path", "The chain of tasks with no slack. A day lost in any of them is a day lost by the whole project — which is why it is worth looking at first."],
+    ["Slack", "How many days a task can slip before it starts pushing the finish. Zero slack is the critical path; negative slack is a promise already broken."],
+    ["Baseline", "A frozen copy of the plan — what was promised. The ghost bars are the baseline; the difference between them and the bars is the slippage."],
+    ["S-curve", "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days."],
+    ["Workload", "How much each person has on each day. It is what turns a plan into a question about people."],
+    ["PERT", "Three estimates instead of one — optimistic, most likely, pessimistic — worth (o + 4m + p) / 6 as the expected duration. It says how uncertain a task is, not only how long it is."],
+    ["P80", "The finish date with an 80% chance of being met, from the PERT estimates. The date to promise when the plan has uncertainty in it."],
+  ]],
+  ["Warnings", [
+    ["dependency cycle", "A waits for B and B waits for A. Nothing can be scheduled until the loop is cut — this is the one warning that stops the engine."],
+    ["past deadline", "The task finishes after the date it had promised."],
+    ["overdue", "The day has passed and the task is not at 100%."],
+    ["overallocation", "The same person on two tasks on the same day."],
+    ["behind the baseline", "The task is later than it was in the frozen plan."],
+    ["starts before its dependencies allow", "The dates say one thing and the arrows say another: the task begins earlier than its predecessors let it. A dependency never moves anything on its own — auto-schedule (S) is what puts it where it can go, unless the start is pinned."],
+  ]],
+  ["On the chart", [
+    ["Lanes", "Group the rows by person or by team, instead of by the WBS."],
+    ["Calendar band", "A named stretch of calendar shaded behind the chart: a sprint, a shutdown, the rainy season. Annotation — it never moves a task."],
+    ["Marked day", "A named vertical line across the chart, like the today line: an inspection, a hand-over, a holiday."],
+    ["Cost", "The planned weight of the task, in whatever unit you use. Left at zero, the duration in person-days is the weight in the S-curve."],
+  ]],
+];
+
+function showGlossary() {
+  const body = document.createElement("div");
+  body.className = "glossary";
+  for (const [secao, itens] of GLOSSARY) {
+    const h = document.createElement("h3");
+    h.className = "gl-section";
+    h.textContent = T(secao);
+    body.append(h);
+    for (const [termo, texto] of itens) {
+      const row = document.createElement("div");
+      row.className = "gl-row";
+      const dt = document.createElement("span");
+      dt.className = "gl-term";
+      dt.textContent = T(termo);
+      const dd = document.createElement("span");
+      dd.className = "gl-desc";
+      dd.textContent = T(texto);
+      row.append(dt, dd);
+      body.append(row);
+    }
+  }
+  showOverlay("What the words mean", body);
 }
 
 function showAbout() {
@@ -3795,6 +4405,7 @@ document.addEventListener("click", (ev) => {
   const btn = ev.target.closest("[data-action]");
   if (!btn) return;
   $$(".menu").forEach((m) => m.classList.remove("open"));
+  if (WRITE_ACTIONS.has(btn.dataset.action) && !canEdit()) return;
   ACTIONS[btn.dataset.action]?.();
 });
 
@@ -3975,27 +4586,27 @@ document.addEventListener("keydown", (ev) => {
   // Undo / Redo globais
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !ev.shiftKey) {
     ev.preventDefault();
-    undo();
+    canEdit() && undo();
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && (ev.key.toLowerCase() === "y" || (ev.key.toLowerCase() === "z" && ev.shiftKey))) {
     ev.preventDefault();
-    redo();
+    canEdit() && redo();
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "d") {
     ev.preventDefault();
-    duplicateTask();
+    canEdit() && duplicateTask();
     return;
   }
   switch (ev.key) {
     // mesma tecla do kanban: quem alterna entre os dois não reaprende
     case "/": ev.preventDefault(); el.taskSearch.focus(); el.taskSearch.select(); break;
-    case "n": case "N": newTask(); break;
-    case "Delete": case "Backspace": deleteSelectedTask(); break;
+    case "n": case "N": canEdit() && newTask(); break;
+    case "Delete": case "Backspace": canEdit() && deleteSelectedTask(); break;
     case "Enter": if (state.selected) openModal(state.selected); break;
     case "t": case "T": scrollToToday(); break;
-    case "s": case "S": autoSchedule(); break;
+    case "s": case "S": canEdit() && autoSchedule(); break;
     case "c": case "C": toggleCritical(); break;
     case "r": case "R": toggleResources(); break;
     case "d": case "D": toggleTheme(); break;
@@ -4314,6 +4925,9 @@ el.chatInput?.addEventListener("keydown", (e) => {
 // refaz depois que o usuário digita a chave certa (ver showKeyGate)
 async function bootData() {
   state.knownRev = await fetchRev();
+  // o papel antes dos dados: a primeira tela já sai sem os botões que
+  // este link não pode usar, em vez de perdê-los um instante depois
+  await refreshShareBtn();
   await loadProjects();
   scrollToToday();
   // Homescreen só na primeira visita (ou sem projetos): com o botão de

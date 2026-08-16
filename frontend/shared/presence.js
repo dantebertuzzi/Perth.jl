@@ -151,6 +151,9 @@ window.PerthPresence = (function () {
       case "key":      // chave de acesso trocada (REPL ou outra aba do host)
         st.opts.onKey && st.opts.onKey(!!msg.keyed);
         break;
+      case "view_key": // link somente-leitura criado/trocado/removido
+        st.opts.onKey && st.opts.onKey(!!msg.view_keyed);
+        break;
       case "background":   // Perth.background! trocou a imagem de fundo
         st.opts.onBackground && st.opts.onBackground(msg);
         break;
@@ -226,11 +229,19 @@ window.PerthPresence = (function () {
 
   function peerChipEl(p) {
     const chip = document.createElement("span");
-    chip.className = "peer-chip" + (p.__me ? " me" : "");
+    // readonly: entrou pelo link somente-leitura (gantt). Saber quem está
+    // só olhando é metade do valor de saber quem está conectado — e o
+    // kanban, que não tem esse link, simplesmente nunca manda o campo.
+    chip.className = "peer-chip" + (p.__me ? " me" : "") +
+                     (p.readonly ? " watching" : "");
     chip.style.background = peerColor(p);
+    // o anel vazado de .watching é desenhado com currentColor: a cor da
+    // máquina sai do fundo e vai para o traço, sem repetir o valor no CSS
+    if (p.readonly) chip.style.color = peerColor(p);
     chip.textContent = peerLabel(p).replace(/^\D*/, "").charAt(0) ||
                        peerLabel(p).charAt(0).toUpperCase();
-    chip.title = (p.__me ? "you — " : "") + peerLabel(p) + " · " + p.ip;
+    chip.title = (p.__me ? "you — " : "") + peerLabel(p) + " · " + p.ip +
+                 (p.readonly ? " · read-only" : "");
     return chip;
   }
 

@@ -23,6 +23,15 @@ function _handled(f)
             return f(req)
         catch err
             err isa KeyError && return _error("not found"; status = 404)
+            # Erro que o próprio Perth levantou para ser lido por gente. O
+            # caso vivo é o calendário de dias úteis sem `using BusinessDays`:
+            # a exceção diz exatamente o que fazer, e a tela mostrava
+            # "internal error" — escondendo a única frase que resolvia. Só as
+            # nossas (prefixo "Perth: ") atravessam; o resto continua 500 sem
+            # detalhe, porque aí é bug nosso e não assunto do navegador.
+            if err isa ErrorException && startswith(err.msg, "Perth: ")
+                return _error(err.msg; status = 409)
+            end
             @error "Perth: unhandled API error" error = (err, catch_backtrace())
             return _error("internal error"; status = 500)
         end
@@ -488,7 +497,8 @@ function _get_warnings(req::HTTP.Request)
             push!(avisos, merge(Dict{String,Any}("kind" => kind, "severity" => sev),
                                 Dict{String,Any}(String(k) => v for (k, v) in campos)))
 
-        has_cycle(p) && add!("cycle", "error"; task_id = "")
+        ciclo = has_cycle(p)
+        ciclo && add!("cycle", "error"; task_id = "")
 
         for r in deadline_slip(p)
             add!("deadline", "error"; task_id = r.id, task = r.name,
@@ -515,6 +525,27 @@ function _get_warnings(req::HTTP.Request)
         for r in slippage(p)
             r.slip_days > 0 || continue
             add!("slippage", "warning"; task_id = r.id, task = r.name, days = r.slip_days)
+        end
+
+        # Dependência que as DATAS não cumprem: a tarefa começa antes do que
+        # os predecessores permitem. Não é erro de modelagem — no Perth uma
+        # dependência nunca move ninguém, quem move é schedule! —, mas era o
+        # único problema do plano cuja pista era só uma seta desenhada para
+        # trás no gráfico. Auto-schedule resolve; numa tarefa de data fixa
+        # não resolve, e aí o aviso vale ainda mais.
+        #
+        # Com ciclo o CPM não tem ordem topológica para percorrer: o aviso do
+        # ciclo já está na lista, e é o que precisa ser resolvido primeiro.
+        if !ciclo
+            byid = Dict(t.id => t for t in p.tasks)
+            for r in slack(p)
+                t = get(byid, r.id, nothing)
+                t === nothing && continue
+                r.early_start > t.start || continue
+                add!("too_early", "warning"; task_id = t.id, task = t.name,
+                     days = Dates.value(r.early_start - t.start),
+                     at = string(r.early_start), pinned = t.pinned)
+            end
         end
 
         _json((; warnings = avisos))

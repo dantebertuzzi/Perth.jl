@@ -24,6 +24,10 @@ A single task (or milestone) on the Gantt chart.
 - `parent::String`: id of the parent task (WBS). A task with children is a
   *summary*: its `start`, `duration` and `progress` are derived from its
   descendants on every save (see [`set_parent!`](@ref)).
+- `order::Int`: position among its siblings, `1`-based. `0` (the default)
+  means *no manual position*: the task falls back to the date ordering,
+  after the ones that were placed by hand. Set by dragging a row in the
+  UI or by [`move_task!`](@ref) — see [`ordered_tasks`](@ref).
 - `baseline_start::Union{Nothing,Date}` / `baseline_duration::Int`:
   snapshot taken by [`set_baseline!`](@ref); `nothing`/`0` = no baseline.
 - `deadline::Union{Nothing,Date}`: a date the task must not finish after.
@@ -55,6 +59,7 @@ Base.@kwdef mutable struct GanttTask
     milestone::Bool = false
     cost::Float64 = 0.0
     parent::String = ""
+    order::Int = 0                # posição manual entre irmãos; 0 = pela data
     baseline_start::Union{Nothing,Date} = nothing
     baseline_duration::Int = 0
     deadline::Union{Nothing,Date} = nothing
@@ -129,11 +134,18 @@ enters the CPM engine. When a date must actually *bind* a task, that is a
 - `name::String`: written along the line.
 - `date::Date`: the day the line falls on.
 - `color::String`: hex tint; empty picks one automatically.
+- `label_at::Int`: how far down the chart the name is written, `0`–`100`
+  percent of the chart height (`0`, the default, is the top). The name lies
+  along the line, so wherever it sits it may land on top of a bar — this is
+  what moves it out of the way. A percentage rather than pixels: the chart
+  grows with the plan, and "a third of the way down" should stay a third of
+  the way down.
 """
 Base.@kwdef mutable struct Marker
     name::String = ""
     date::Date = Dates.today()
     color::String = ""
+    label_at::Int = 0
 end
 
 """
@@ -339,6 +351,7 @@ function _clean_markers(marcos)
         m = x isa Marker ? x : Marker(; (Symbol(k) => v for (k, v) in pairs(x))...)
         m.name = _cap_text(replace(strip(m.name), r"\s+" => " "))
         m.color = strip(m.color)
+        m.label_at = clamp(m.label_at, 0, 100)   # é porcentagem, não pixel
         isempty(m.name) && continue
         push!(out, m)
     end
