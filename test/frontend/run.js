@@ -70,6 +70,7 @@ function loadKanbanApp() {
   inject(read("frontend/shared/i18n.js"));
   inject(read("frontend/shared/background.js"));
   inject(read("frontend/shared/shortcuts.js"));
+  inject(read("frontend/shared/inline.js"));
   inject(read("frontend/shared/toast.js"));
   inject(read("frontend/kanban/app.js"));
 
@@ -137,6 +138,7 @@ function loadGanttApp(opts = {}) {
   inject(read("frontend/shared/presence.js"));
   inject(read("frontend/shared/background.js"));
   inject(read("frontend/shared/shortcuts.js"));
+  inject(read("frontend/shared/inline.js"));
   inject(read("frontend/shared/toast.js"));
   inject(read("frontend/app.js"));
 
@@ -2886,6 +2888,61 @@ console.log("gantt · arrastar a divisa da tabela");
   check(r === 380, "gantt: a largura escolhida é lembrada no navegador");
 
   await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
+console.log("gantt · a nota da tarefa, com markdown");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+  const seed = `
+    state.current = { id: "pn", name: "P", people: [], bands: [], markers: [], tasks: [
+      { id: "t1", name: "Fundação", start: "2026-03-02", duration: 5, assignee: "",
+        progress: 0, dependencies: [], color: "", milestone: false, parent: "", cost: 0,
+        baseline_start: null, baseline_duration: 0, deadline: null, pinned: false,
+        notes: "Ver a **NBR 6118** e usar \\u0060fck = 30\\u0060 — projeto *estrutural*." } ] };
+    state.cpm = { cycle: false, finish: "2026-03-06", calendar: "", pert: null, byId: new Map() };
+    renderAll();`;
+
+  // o pontinho é o gatilho: sem nota, ele não existe
+  let r = runIn(`${seed} return document.querySelectorAll("#chart .note-dot").length;`);
+  check(r === 1, "gantt: tarefa com nota ganha o ponto no gráfico");
+
+  r = runIn(`${seed}
+    const p = document.querySelector("#chart .note-dot");
+    p.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    const pop = document.getElementById("note-pop");
+    const texto = pop.querySelector(".note-pop-text");
+    return { tarefa: pop.querySelector(".note-pop-task").textContent,
+             negrito: [...texto.querySelectorAll("strong")].map(n => n.textContent),
+             codigo: [...texto.querySelectorAll("code")].map(n => n.textContent),
+             italico: [...texto.querySelectorAll("em")].map(n => n.textContent),
+             cru: texto.textContent };`);
+  check(r.tarefa === "Fundação", "gantt: o balão diz de qual tarefa é a nota");
+  check(r.negrito[0] === "NBR 6118" && r.codigo[0] === "fck = 30" && r.italico[0] === "estrutural",
+        "gantt: **negrito**, `código` e *itálico* viram marcação de verdade");
+  check(!r.cru.includes("**") && !r.cru.includes("\`"),
+        "gantt: e a sintaxe some do texto lido");
+
+  // sair do ponto fecha; Esc fecha o que foi preso com clique
+  r = runIn(`${seed}
+    const p = document.querySelector("#chart .note-dot");
+    p.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    p.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const antes = !!document.getElementById("note-pop");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    return { antes, depois: !!document.getElementById("note-pop") };`);
+  check(r.antes === true && r.depois === false,
+        "gantt: clique prende o balão e Esc o fecha");
+
+  // markdown NÃO entra no nome: ele ordena, é buscado e vai para CSV/ICS
+  r = runIn(`${seed}
+    state.current.tasks[0].name = "**Fundação**";
+    renderAll();
+    const nome = document.querySelector(".tt-row .c-name").textContent;
+    return { nome, temStrong: !!document.querySelector(".tt-row .c-name strong") };`);
+  check(r.nome.includes("**") && r.temStrong === false,
+        "gantt: no NOME a marcação fica como texto — ele é chave, não prosa");
   close();
 }
 
