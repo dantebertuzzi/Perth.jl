@@ -5,6 +5,38 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **Link two tasks by dragging.** A dependency was the only relation *drawn*
+  on the chart that could still only be declared in a form. Select a bar and
+  it grows a dot at each end: drag from the right one to the task that
+  follows, or from the left one to the task that comes before — both create
+  the same finish-to-start link, what changes is which end of the chain you
+  are building from. Lag, start-to-start and finish-to-finish stay in the
+  modal: they are the exception, and an exception does not need a gesture.
+- The dots appear **only on the selected bar**. A dot that appears on hover
+  would fight the bar drag and the resize grip, which live in the same pixels;
+  selecting is already the gesture that says *this one*.
+- Four refusals, each saying why on screen instead of quietly doing nothing:
+  the pair is already linked; the drop would close a **loop** (refused before
+  saving — the engine reports a cycle only after the plan is stored, and then
+  it stops scheduling); the target is a **summary** (its subtasks are what get
+  scheduled, so the link would promise what it cannot keep); or the two are in
+  the same block, where a summary already waits for its children by
+  definition. A summary may still be the *predecessor*: its finish is the
+  finish of the block.
+- **Double-click an arrow to remove it**, with a fat invisible hit area over
+  the 1px stroke. Creating a link with the mouse and having to open a modal to
+  undo it would be giving the outward trip without the return.
+- **Zoom: fit** (`4`, or the Fit button): the step is computed so the whole
+  project lands on screen, instead of being one of three sizes chosen by hand
+  — none of which suits a two-year plan. It is clamped at both ends (never
+  larger than day zoom, never so small the chart becomes a smear), the ruler
+  switches between days and weeks by the **space available** rather than by
+  the name of the zoom, and fitting does not scroll to today: that would undo
+  what the button just did. The chosen zoom is remembered per browser.
+
 ## [0.8.6] - 2026-08-15
 
 ### Added

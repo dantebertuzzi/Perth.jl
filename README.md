@@ -91,6 +91,13 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 - Double-click a bar (or table row) to edit; **duplicate** a task from
   the Edit menu or `Ctrl+D` (also `duplicate_task!(p, id)` in the REPL)
 - Tasks with notes show a **red dot** on the bar — hover to read them
+- **Link tasks by dragging**: select a bar and drag from the dot at either end
+  to another bar. The right dot links to what follows, the left to what comes
+  before; a drop that would close a loop, or that lands on a summary, is
+  refused with the reason on screen. Double-click an arrow to remove it.
+- **Zoom: fit** (`4`) computes the step so the whole project lands on screen —
+  day/week/month are three sizes chosen by hand, and none of them suits a
+  two-year plan.
 - **Marked days**: double-click a column in the day ruler and name it — the
   day gets a vertical line across the whole chart, like the *today* line and
   for the same reason: some dates matter to every task at once. A delivery, an

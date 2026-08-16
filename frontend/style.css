@@ -501,6 +501,32 @@ body.presenting .tt-resizer { display: none; }
 .grid-line { stroke: var(--line); stroke-width: 1; opacity: .55; }
 .row-line { stroke: var(--line-soft); stroke-width: 1; }
 .weekend { fill: var(--weekend); }
+/* Ligar tarefas com a mão: pontos nas pontas da barra SELECIONADA, elástico
+   durante o arrasto, e realce do alvo antes de soltar. */
+.link-dot {
+  fill: var(--panel);
+  stroke: var(--purple);
+  stroke-width: 2;
+  cursor: crosshair;
+}
+.link-dot:hover { fill: var(--purple); }
+.link-rubber {
+  stroke: var(--purple);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;   /* não pode roubar o elementFromPoint do alvo */
+}
+.link-target { outline: none; stroke: var(--purple); stroke-width: 2; }
+/* Alvo de clique da seta: traço grosso e invisível, que aparece de leve
+   quando o mouse encosta — senão o duplo clique é uma caçada de 1px. */
+.dep-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 11;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+.dep-hit:hover { stroke: var(--red); opacity: .22; }
 .today-line { stroke: var(--red); stroke-width: 1.5; stroke-dasharray: 2 3; }
 /* Dia marcado: mesma linha da de hoje, porque é a mesma ideia — uma data que
    vale para o gráfico inteiro. A cor vem do próprio marco, no atributo. */
