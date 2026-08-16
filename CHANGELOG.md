@@ -55,15 +55,6 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   warnings list says it out loud, with the earliest date the task could start
   and how many days early it is; when the start is **pinned** the row says so,
   because that is precisely the case auto-schedule will not fix.
-- **The link dot no longer eats the first letter of the task's name.** The dot
-  you drag a dependency from is born at the end of the bar, which is exactly
-  where the label starts. The label now cedes it room — and only while the dot
-  is there, since only the selected bar has one: moving every label away from
-  every bar, because of a dot that exists on one row, would be paying for it
-  across the whole chart. (Raising the dot was the other way out, and it works
-  in cozy; in compact the row is shorter, the name sits higher, and the dot
-  would touch it again — besides, a dot level with the middle of the bar is
-  what says "drag from its *finish*".)
 - **Telling whose baseline a ghost bar is.** The ghost lives on its task's own
   row, but a task that moved a long way leaves it far from its bar, and "same
   row" becomes guesswork on a busy chart. Hovering it now names the task and
@@ -85,6 +76,15 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   whoever opens the browser does not read.
 
 ### Fixed
+- **The link dot no longer eats the first letter of the task's name.** The dot
+  you drag a dependency from is born at the end of the bar, which is exactly
+  where the label starts. The label now cedes it room — and only while the dot
+  is there, since only the selected bar has one: moving every label away from
+  every bar, because of a dot that exists on one row, would be paying for it
+  across the whole chart. (Raising the dot was the other way out, and it works
+  in cozy; in compact the row is shorter, the name sits higher, and the dot
+  would touch it again — besides, a dot level with the middle of the bar is
+  what says "drag from its *finish*".)
 - **An error Perth raised for a human to read no longer arrives as "internal
   error."** A project on a business-day calendar opened without
   `using BusinessDays` failed every calendar-aware route with a generic 500,
