@@ -315,7 +315,13 @@ body.presenting .task-table { display: none; }
 /* WBS: resumos e indentação */
 .tt-row.summary .c-name { font-weight: 650; }
 .sum-mark { color: var(--muted); margin-right: 5px; font-size: 10px; }
-.bar-summary { fill: var(--ink); cursor: pointer; }
+/* Resumo de WBS: recipiente, não trabalho — traço neutro e fino, com o
+   progresso que sobe dos filhos preenchendo o trilho. Chapado na cor do
+   texto ele competia com as barras pastel e vencia. */
+.bar-summary { cursor: pointer; }
+.sum-track { fill: var(--ink); opacity: .18; }
+.sum-fill  { fill: var(--ink); opacity: .5; }
+.sum-cap   { fill: var(--ink); opacity: .55; }
 .summary-hint {
   margin: 0;
   font-size: 11.5px;
@@ -1111,3 +1117,61 @@ body.presenting .res-pane { display: none; }
   color: var(--muted);
   font-size: 11.5px;
 }
+
+/* Estatísticas por pessoa e por setor */
+/* Sete colunas não cabem na largura de um modal de formulário: a última
+   ficava cortada na borda, que é o pior lugar para esconder "atrasadas". */
+.modal:has(.stats-box) { width: min(780px, 94vw); }
+.stats-box { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stats-tabs { align-self: flex-start; }
+.stats-table { display: flex; flex-direction: column; max-height: 52vh; overflow-y: auto; }
+.stats-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.8fr) repeat(6, minmax(0, .75fr));
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.stats-row:last-child { border-bottom: 0; }
+.stats-row:not(.head):hover { background: var(--sel); }
+.stats-row.head {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  text-transform: lowercase;
+  letter-spacing: .12em;
+  border-bottom: 1px solid var(--line);
+}
+.stats-cell.num {
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.stats-cell.num.bad { color: #e5484d; font-weight: 650; }
+.stats-cell.who { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.stats-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+/* progresso: barra e número na mesma célula — a barra compara, o número diz */
+.stats-row .stats-cell.num:has(.stats-bar) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.stats-bar {
+  flex: 1 1 auto;
+  min-width: 24px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.stats-bar > span { display: block; height: 100%; background: var(--purple); }

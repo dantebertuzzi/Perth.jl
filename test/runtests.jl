@@ -1131,6 +1131,64 @@ end
         delete_project(p.id); delete_project(r.id)
     end
 
+    @testset "estatísticas por pessoa e por setor" begin
+        p = create_project("Obra")
+        pai = add_task!(p, "Estrutura"; start = Date(2026, 3, 2), duration = 1)
+        a = add_task!(p, "Projeto"; start = Date(2026, 3, 2), duration = 5,
+                      assignee = "Ana", progress = 100)
+        b = add_task!(p, "Fundação"; start = Date(2026, 3, 4), duration = 5,
+                      assignee = "Ana")
+        set_parent!(p, b.id, pai.id)
+        c = add_task!(p, "Alvenaria"; start = Date(2026, 3, 9), duration = 4,
+                      assignee = "Chen", cost = 40.0, progress = 50)
+        m = add_task!(p, "Entrega"; start = Date(2026, 3, 20), duration = 1,
+                      assignee = "Chen", milestone = true, deadline = Date(2026, 3, 10))
+        add_task!(p, "Telhado"; start = Date(2026, 4, 1), duration = 3)
+        people!(p, [(name = "Ana", role = "Arquiteta", team = "Projetos"),
+                    (name = "Chen", role = "Pedreiro", team = "Obra")])
+
+        linhas = people_stats(p)
+        @test [r.assignee for r in linhas] == ["Ana", "Chen", ""]   # sem dono por último
+        ana = linhas[1]
+        @test (ana.role, ana.team) == ("Arquiteta", "Projetos")
+        @test ana.tasks == 2 && ana.milestones == 0
+        @test ana.effort == 10.0                    # 5 + 5 pessoa-dias
+        @test ana.done == 5.0 && ana.progress == 50
+        @test (ana.first, ana.last) == (Date(2026, 3, 2), Date(2026, 3, 8))
+        @test ana.busy_days == 7                    # 2..6 e 4..8, sobrepostos
+        @test ana.over_days == 3                    # 4, 5 e 6
+        @test ana.late == 0
+
+        chen = linhas[2]
+        @test chen.milestones == 1
+        @test chen.effort == 41.0                   # custo quando informado + marco
+        @test chen.late == 1                        # a entrega passou do prazo
+
+        # o resumo de WBS não conta: somá-lo contaria o trabalho dos filhos
+        # duas vezes
+        @test sum(r.tasks for r in linhas) == 5
+        @test all(r -> r.assignee != "Estrutura", linhas)
+        # tarefa sem dono não some: trabalho sem responsável é fato do plano
+        @test linhas[3].tasks == 1 && linhas[3].role == ""
+
+        setores = team_stats(p)
+        @test [r.team for r in setores] == ["Obra", "Projetos", ""]
+        @test setores[1].members == 1 && setores[1].people == ["Chen"]
+        @test setores[2].effort == ana.effort
+        # dias de sobrecarga são por pessoa e o setor SOMA os das suas: duas
+        # pessoas do mesmo setor no mesmo dia é o normal
+        @test setores[2].over_days == ana.over_days
+        # quem não tem setor (nem cadastro) cai na faixa vazia, junto com o
+        # trabalho sem dono
+        @test setores[3].tasks == 1 && setores[3].members == 0
+
+        # projeto sem tarefa nenhuma não quebra as duas tabelas
+        vazio = create_project("Vazio")
+        @test isempty(people_stats(vazio)) && isempty(team_stats(vazio))
+
+        delete_project(p.id); delete_project(vazio.id)
+    end
+
     @testset "superalocação de responsáveis" begin
         p = create_project("Aloc")
         pai = add_task!(p, "Grupo"; start = Date(2026, 11, 2), duration = 1)

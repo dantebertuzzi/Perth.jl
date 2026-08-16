@@ -150,6 +150,52 @@ function loadGanttApp(opts = {}) {
   return { w, runIn, simulate, close: () => w.close() };
 }
 
+console.log("i18n · o dicionário não pode ter chave repetida");
+{
+  // Num objeto literal de JS a chave repetida não é erro: a última vence, em
+  // silêncio. O sintoma é a tradução MUDAR por causa de uma linha adicionada
+  // 200 linhas abaixo — foi assim que quatro chaves acabaram com duas
+  // traduções diferentes cada. O dicionário é grande e cresce por blocos;
+  // achar isso com o olho não é plano.
+  //
+  // A varredura é sobre o TEXTO do bloco, não linha a linha: muito par está
+  // quebrado em duas linhas (chave numa, tradução na outra), e uma varredura
+  // por linha simplesmente não os vê.
+  const fonte = read("frontend/shared/i18n.js");
+  const linhaDe = (pos) => fonte.slice(0, pos).split(/\r?\n/).length;
+  const blocos = [...fonte.matchAll(/^\s*(pt|es|fr|zh)\s*:\s*\{/gm)];
+  const par = /"((?:[^"\\]|\\.)*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+
+  const chaves = {};
+  const repetidas = [];
+  for (const [i, b] of blocos.entries()) {
+    const lang = b[1];
+    const texto = fonte.slice(b.index, i + 1 < blocos.length ? blocos[i + 1].index : fonte.length);
+    const vistos = new Map();
+    for (const p of texto.matchAll(par)) {
+      if (vistos.has(p[1])) repetidas.push(`${lang}:${linhaDe(b.index + p.index)} "${p[1]}"`);
+      else vistos.set(p[1], p[2]);
+    }
+    chaves[lang] = new Set(vistos.keys());
+  }
+  check(blocos.length === 4, "os quatro blocos de idioma foram encontrados");
+  check(repetidas.length === 0,
+        `nenhuma chave repetida${repetidas.length ? " — " + repetidas.join(", ") : ""}`);
+
+  // e todo idioma tem que traduzir as MESMAS chaves: uma chave só no pt
+  // aparece em inglês no meio de uma tela em francês
+  const faltando = [];
+  for (const a of Object.keys(chaves)) {
+    for (const b of Object.keys(chaves)) {
+      if (a === b) continue;
+      for (const k of chaves[a]) if (!chaves[b].has(k)) faltando.push(`${b}: "${k}"`);
+    }
+  }
+  check(faltando.length === 0,
+        `os quatro idiomas cobrem as mesmas chaves${faltando.length
+          ? " — falta " + faltando.slice(0, 5).join("; ") + ` (${faltando.length})` : ""}`);
+}
+
 console.log("i18n · gantt");
 {
   const w = loadPage("frontend/index.html");
@@ -2720,6 +2766,84 @@ console.log("gantt · raias por responsável");
         "task:Pintura|lane:(no team):1|task:Telhado",
         "gantt: raias por setor vêm do cadastro de colaboradores");
 
+  // O init() do app é assíncrono e continua pendente enquanto o bloco roda
+  // só com runIn síncrono. Fechar a janela com ele pendente não dá erro
+  // AQUI: ele acorda no primeiro await do bloco SEGUINTE, já sem document, e
+  // derruba a suíte num lugar que não tem nada a ver. Ceder o loop antes de
+  // fechar deixa o init terminar enquanto a janela ainda existe.
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
+console.log("gantt · painel de estatísticas");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // a conta é do servidor (mesmo motor da curva-S); aqui o teste dá a
+  // resposta pronta e olha o que a tela faz com ela
+  const seed = `
+    state.current = { id: "p1", name: "P", people: [], tasks: [] };
+    // só a rota de estatísticas: deixar o stub responder a TUDO faria o
+    // init do app seguir adiante e mexer no DOM depois do teste fechar a
+    // janela — a rede aqui tem que continuar falhando como nos outros blocos
+    window.api = async (url) => {
+      if (!String(url).includes("/stats")) throw new Error("sem rede no teste");
+      return {
+      people: [
+        { assignee: "Ana", role: "Arquiteta", team: "Projetos", tasks: 2,
+          milestones: 0, effort: 10.0, done: 8.25, progress: 83,
+          first: "2026-03-02", last: "2026-03-08", busy_days: 7,
+          over_days: 3, late: 1 },
+        { assignee: "", role: "", team: "", tasks: 1, milestones: 0,
+          effort: 3.5, done: 0, progress: 0, first: "2026-04-01",
+          last: "2026-04-03", busy_days: 3, over_days: 0, late: 0 }],
+      teams: [
+        { team: "Projetos", members: 2, people: ["Ana", "Bruno"], tasks: 2,
+          milestones: 0, effort: 10.0, done: 8.25, progress: 83,
+          first: "2026-03-02", last: "2026-03-08", busy_days: 7,
+          over_days: 3, late: 1 }] };
+    };`;
+
+  runIn(`${seed} showStats(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+
+  let r = runIn(`return {
+    cab: [...document.querySelectorAll(".stats-row.head .stats-cell")].map((c) => c.textContent),
+    nomes: [...document.querySelectorAll(".stats-name")].map((x) => x.textContent),
+    sub: [...document.querySelectorAll(".stats-sub")].map((x) => x.textContent),
+    nums: [...document.querySelectorAll(".stats-row:not(.head)")]
+      .map((l) => [...l.querySelectorAll(".stats-cell.num")].map((c) => c.textContent).join("|")),
+    ruins: [...document.querySelectorAll(".stats-cell.num.bad")].map((c) => c.textContent) };`);
+  check(r.cab.join("|") === "Person|tasks|effort|done|days|over|late",
+        "gantt: cabeçalho com as sete colunas");
+  check(r.nomes.join("|") === "Ana|(unassigned)",
+        "gantt: trabalho sem dono aparece nomeado, não sumido");
+  check(r.sub[0] === "Arquiteta · Projetos", "gantt: cargo e setor embaixo do nome");
+  check(r.nums[0] === "2|10|83%|7|3|1",
+        "gantt: 10.0 pessoa-dias vira \"10\" — casa decimal que o plano não tem");
+  check(r.nums[1].startsWith("1|3.5|"), "gantt: e 3.5 continua 3.5");
+  // zero é o normal em excesso e atraso: colorir tudo seria a tabela gritando
+  check(r.ruins.join("|") === "3|1",
+        "gantt: só sobrecarga e atraso diferentes de zero ganham cor");
+
+  r = runIn(`const barra = document.querySelector(".stats-bar > span");
+    return barra.style.width;`);
+  check(r === "83%", "gantt: a barra de progresso acompanha o número");
+
+  // a aba de setores usa a MESMA resposta: trocar de aba não vai à rede de
+  // novo, e as duas leituras não podem ser de épocas diferentes
+  r = runIn(`window.api = async () => { throw new Error("não devia buscar de novo"); };
+    [...document.querySelectorAll(".stats-tabs button")][1].click();
+    return { cab: document.querySelector(".stats-row.head .stats-cell").textContent,
+             nome: document.querySelector(".stats-name").textContent,
+             sub: document.querySelector(".stats-sub").textContent,
+             ativa: document.querySelector(".stats-tabs .active").textContent };`);
+  check(r.cab === "Team" && r.nome === "Projetos",
+        "gantt: a aba de setores mostra os setores, sem nova ida à rede");
+  check(r.sub === "Ana, Bruno", "gantt: e diz quem está no setor");
+  check(r.ativa === "Teams", "gantt: a aba escolhida fica marcada");
+
+  await new Promise((ok) => setTimeout(ok, 30));
   close();
 }
 

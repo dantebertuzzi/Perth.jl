@@ -91,6 +91,10 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 - Double-click a bar (or table row) to edit; **duplicate** a task from
   the Edit menu or `Ctrl+D` (also `duplicate_task!(p, id)` in the REPL)
 - Tasks with notes show a **red dot** on the bar — hover to read them
+- **Statistics by person and by team** (View → Statistics…, or `people_stats`
+  / `team_stats`): tasks, effort, how much is done, days busy, days
+  double-booked and tasks past their deadline — the same weight the S-curve
+  uses. Work with no assignee gets its own row rather than being dropped.
 - **Swimlanes**: group the chart by assignee or by team (`Lanes:` in the
   toolbar). Collapse a lane and its tasks fold into one bar spanning that
   person's work — less detail, not less information. WBS summaries stay out of

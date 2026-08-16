@@ -8,6 +8,22 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Statistics by person and by team** (`people_stats`, `team_stats`, and
+  View → Statistics…). The engine already knew all of it and never added it
+  up: how much each person carries, how much of that is done, how many days
+  they are double-booked, how many of their tasks are past their deadline.
+  The weight is the same one the S-curve uses (`cost` when set, otherwise
+  person-days) — two screens telling different stories about the same work
+  would be worse than one screen fewer.
+- Overloaded days are a *person* fact: two people from the same team working
+  the same day is normal, and only an individual can be double-booked, so a
+  team row sums its members' overloaded days rather than recomputing them.
+  Team `busy_days`, in contrast, counts days on which anything in the team was
+  running.
+- WBS summaries are never counted — adding them would count their children's
+  work twice — and work with no assignee gets its own row instead of being
+  dropped: unowned work is a fact about the plan, not a gap to hide.
+
 - **Swimlanes** (`Lanes:` in the toolbar): group the chart by assignee or by
   team. The lane header is a row like any other — same height, same grid — so
   the table and the timeline stay one drawing; a header one pixel taller would
@@ -83,6 +99,19 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   built-in WebSocket. With no browser on the machine the file declares itself
   skipped and exits 0 — a test that says it did not run, rather than one that
   pretends to be green.
+
+### Changed
+- The WBS summary bracket is no longer a solid block in the text colour: a
+  black bar among pastel ones pulled the eye to the container instead of the
+  work. It is now a thin neutral rail whose filled part is the progress that
+  already rolls up from the children — a number the summary had and showed
+  nowhere on the chart.
+
+### Fixed
+- Four translation keys were defined twice with **different** wording in the
+  same dictionary, where the last one silently wins; 27 duplicate definitions
+  in total were removed. The suite now fails on any repeated key, and on any
+  key that is missing from one of the four languages.
 
 ## [0.8.4] - 2026-08-15
 

@@ -1353,14 +1353,32 @@ function renderChart() {
     }
 
     if (isSum) {
-      // Colchete de resumo (estilo MS Project): barra fina + presilhas
+      /* Colchete de resumo: trilho arredondado + presilhas nas pontas.
+         Antes era um polígono chapado na cor do texto, e um bloco preto no
+         meio de barras pastel puxava o olho para o recipiente em vez do
+         trabalho. Agora o traço é neutro e fino — e o pedaço cheio é o
+         progresso que já sobe dos filhos, que estava sendo jogado fora: o
+         resumo tem esse número e não o mostrava em lugar nenhum do gráfico. */
       const w = Math.max(t.duration, 1) * ppd;
-      const sy = i * ROW_H + 7;
-      const g = svg("path", {
-        class: "bar-summary" + dim,
-        d: `M ${x} ${sy} H ${x + w} V ${sy + 10} L ${x + w - 7} ${sy + 4} H ${x + 7} L ${x} ${sy + 10} Z`,
-        "data-id": t.id,
+      const alt = 6;
+      const sy = i * ROW_H + ROW_H / 2 - alt / 2 - 2;
+      const g = svg("g", { class: "bar-summary" + dim, "data-id": t.id });
+      g.appendChild(svg("rect", {
+        class: "sum-track", x, y: sy, width: w, height: alt, rx: alt / 2,
+      }));
+      if (t.progress > 0) {
+        g.appendChild(svg("rect", {
+          class: "sum-fill", x, y: sy, width: (w * t.progress) / 100,
+          height: alt, rx: alt / 2,
+        }));
+      }
+      // presilhas: é o que faz o traço ler como colchete, e não como barra
+      const capa = (bx, dir) => svg("path", {
+        class: "sum-cap",
+        d: `M ${bx} ${sy} L ${bx + dir * 7} ${sy} L ${bx} ${sy + alt + 5} Z`,
       });
+      g.appendChild(capa(x, 1));
+      g.appendChild(capa(x + w, -1));
       if (hasNotes) g.appendChild(svgTitle(t.notes));
       g.addEventListener("click", () => selectTask(t.id));
       g.addEventListener("dblclick", () => openModal(t.id));
@@ -1371,16 +1389,16 @@ function renderChart() {
         }));
       }
       if (ui.labels) {
-        const label = svg("text", { class: "bar-label" + dim, x: x + w + 8, y: sy + 9 });
+        const label = svg("text", { class: "bar-label" + dim, x: x + w + 8, y: sy + alt + 4 });
         label.textContent = t.name;
         chart.appendChild(label);
       }
       if (t.id === state.selected) {
         chart.appendChild(svg("rect", {
-          class: "bar-sel", x: x - 3, y: sy - 4, width: w + 6, height: 18,
+          class: "bar-sel", x: x - 3, y: sy - 3, width: w + 6, height: alt + 11,
         }));
       }
-      return;   // resumo não tem barra normal, progresso nem drag
+      return;   // resumo não tem barra normal nem drag
     }
 
     if (t.milestone) {
@@ -2153,6 +2171,125 @@ function showPeople() {
   showOverlay("Collaborators", body);
   input.focus();
 }
+
+/* Estatísticas por pessoa e por setor. O gantt já sabia tudo isto e não
+   somava em lugar nenhum: quanto cada um carrega, quanto disso está feito,
+   quantos dias de sobrecarga, quantas tarefas passaram do prazo. A conta sai
+   do servidor, do mesmo motor que desenha a curva-S — duas telas contando
+   histórias diferentes sobre o mesmo trabalho seria pior do que nenhuma. */
+const STATS_COLS = [
+  ["tasks", "tasks"], ["effort", "effort"], ["progress", "done"],
+  ["busy_days", "days"], ["over_days", "over"], ["late", "late"],
+];
+
+async function showStats() {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "stats-box";
+  const abas = document.createElement("div");
+  abas.className = "seg stats-tabs";
+  const tabela = document.createElement("div");
+  tabela.className = "stats-table";
+  body.append(abas, tabela);
+  showOverlay("Statistics", body);
+
+  let dados;
+  try {
+    dados = await api(`/api/projects/${state.current.id}/stats`);
+  } catch (err) {
+    tabela.textContent = `${T("Could not load statistics")}: ${err.message}`;
+    return;
+  }
+
+  let aba = "people";
+  for (const [chave, rotulo] of [["people", "People"], ["teams", "Teams"]]) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = T(rotulo);
+    b.dataset.tab = chave;
+    b.addEventListener("click", () => { aba = chave; desenhar(); });
+    abas.append(b);
+  }
+
+  function desenhar() {
+    for (const b of abas.children) b.classList.toggle("active", b.dataset.tab === aba);
+    const linhas = dados[aba] || [];
+    tabela.textContent = "";
+    if (!linhas.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("Nothing assigned yet.");
+      tabela.append(vazio);
+      return;
+    }
+
+    const head = document.createElement("div");
+    head.className = "stats-row head";
+    head.append(celula(T(aba === "people" ? "Person" : "Team"), "who"));
+    for (const [, rotulo] of STATS_COLS) head.append(celula(T(rotulo), "num"));
+    tabela.append(head);
+
+    for (const r of linhas) {
+      const linha = document.createElement("div");
+      linha.className = "stats-row";
+      const nome = aba === "people"
+        ? (r.assignee || T("(unassigned)"))
+        : (r.team || T("(no team)"));
+      const detalhe = aba === "people"
+        ? [r.role, r.team].filter(Boolean).join(" · ")
+        : r.people.join(", ");
+      const quem = celula("", "who");
+      const n = document.createElement("span");
+      n.className = "stats-name";
+      n.textContent = nome;
+      const d = document.createElement("span");
+      d.className = "stats-sub";
+      d.textContent = detalhe;
+      d.title = `${r.first} → ${r.last}`;
+      quem.append(n, d);
+      linha.append(quem);
+
+      for (const [campo] of STATS_COLS) {
+        const c = celula("", "num");
+        if (campo === "progress") {
+          // barra e número juntos: 83% sem barra some no meio de outros
+          // números, e barra sem número não dá para comparar duas pessoas
+          const barra = document.createElement("span");
+          barra.className = "stats-bar";
+          const dentro = document.createElement("span");
+          dentro.style.width = `${Math.max(0, Math.min(100, r.progress))}%`;
+          barra.append(dentro);
+          const txt = document.createElement("span");
+          txt.textContent = `${r.progress}%`;
+          c.append(barra, txt);
+        } else {
+          const v = r[campo];
+          c.textContent = campo === "effort" ? numeroCurto(v) : String(v);
+          // zero é o normal em "over" e "late": só o diferente de zero
+          // merece cor, senão a tabela inteira fica gritando
+          if ((campo === "over_days" || campo === "late") && v > 0) {
+            c.classList.add("bad");
+          }
+        }
+        linha.append(c);
+      }
+      tabela.append(linha);
+    }
+  }
+
+  desenhar();
+}
+
+function celula(texto, cls) {
+  const c = document.createElement("span");
+  c.className = `stats-cell ${cls}`;
+  if (texto) c.textContent = texto;
+  return c;
+}
+
+/* 12.0 vira "12"; 12.53 vira "12.5". Pessoa-dias com três casas decimais é
+   precisão que o plano não tem. */
+const numeroCurto = (v) => (Math.round(v * 10) / 10).toString();
 
 function showOverlay(title, bodyEl) {
   document.getElementById("perth-overlay")?.remove();
@@ -3093,6 +3230,7 @@ const ACTIONS = {
   "share-toggle": toggleShare,
   "scurve": showSCurve,
   "resources": toggleResources,
+  "stats": showStats,
   "export-csv": () => state.current &&
     window.open(withKey(`/api/projects/${state.current.id}/export.csv`)),
   "export-ics": () => state.current &&

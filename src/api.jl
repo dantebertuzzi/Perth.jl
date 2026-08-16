@@ -532,6 +532,18 @@ end
 # que o gantt desenha), pro painel indexar por deslocamento. O 409 é o
 # mesmo caso do CPM: projeto com calendário de dias úteis e BusinessDays
 # não carregado no servidor.
+# Estatísticas por pessoa e por setor. As duas tabelas vão juntas na mesma
+# resposta: o painel troca de aba sem ir à rede de novo, e as duas leituras
+# do mesmo plano nunca ficam de épocas diferentes.
+function _get_stats(req::HTTP.Request)
+    id = HTTP.getparams(req)["id"]
+    _with_state(st -> begin
+        haskey(st.projects, id) || return _error("not found"; status = 404)
+        p = st.projects[id]
+        _json((; people = people_stats(p), teams = team_stats(p)))
+    end)
+end
+
 function _get_workload(req::HTTP.Request)
     id = HTTP.getparams(req)["id"]
     p = _with_state(st -> get(st.projects, id, nothing))
@@ -602,6 +614,7 @@ function _build_router()
     HTTP.register!(router, "GET",    "/api/projects/{id}/scurve", _handled(_get_scurve))
     HTTP.register!(router, "GET",    "/api/projects/{id}/warnings", _handled(_get_warnings))
     HTTP.register!(router, "GET",    "/api/projects/{id}/workload", _handled(_get_workload))
+    HTTP.register!(router, "GET",    "/api/projects/{id}/stats",   _handled(_get_stats))
     HTTP.register!(router, "GET",    "/api/fs/complete",          _handled(_fs_complete))
     HTTP.register!(router, "GET",    "/api/fs/list",              _handled(_fs_list))
     HTTP.register!(router, "PUT",    "/api/projects/{id}/path",   _handled(_put_path))

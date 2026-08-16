@@ -405,3 +405,137 @@ function _scurve(p::Project)
             today = string(today), total = planned[end],
             planned_today = planned[ti], earned_today = actual[ti])
 end
+
+# ---------------------------------------------------------------------------
+# Estatísticas por pessoa e por setor
+# ---------------------------------------------------------------------------
+
+# Setor de quem assina a tarefa, tirado do cadastro. Quem não está cadastrado
+# não tem setor — e cai numa faixa própria em vez de sumir da conta.
+function _team_of(p::Project, nome::AbstractString)
+    pe = person(p, nome)
+    return pe === nothing ? "" : pe.team
+end
+
+# Núcleo das duas tabelas: agrupa as tarefas-FOLHA por uma chave e resume.
+# Resumos de WBS ficam de fora pelo mesmo motivo de sempre — são recipientes,
+# e contá-los somaria o trabalho dos filhos duas vezes.
+function _stats_group(p::Project, chave)
+    cal = _cal(p)
+    atrasadas = Set(r.id for r in deadline_slip(p))
+    peso(t) = t.cost > 0 ? t.cost : Float64(_effdur(t))
+
+    grupos = Dict{String,Vector{GanttTask}}()
+    dias = Dict{String,Set{Date}}()
+    for t in p.tasks
+        _has_children(p, t.id) && continue
+        k = chave(t)
+        push!(get!(grupos, k, GanttTask[]), t)
+        union!(get!(dias, k, Set{Date}()), _task_days(cal, t))
+    end
+
+    # Dias de sobrecarga são por PESSOA: duas pessoas do mesmo setor no mesmo
+    # dia é o normal, não um conflito. Por isso a conta vem da carga diária
+    # de cada uma, e a linha do setor só soma as das suas.
+    sobrecarga = Dict{String,Int}()
+    for r in _workload_rows(p; unassigned = true)
+        r.tasks >= 2 && (sobrecarga[r.assignee] = get(sobrecarga, r.assignee, 0) + 1)
+    end
+
+    return (grupos = grupos, dias = dias, atrasadas = atrasadas,
+            peso = peso, sobrecarga = sobrecarga)
+end
+
+"""
+    people_stats(p::Project) -> Vector{NamedTuple}
+
+One Tables.jl-compatible row per person with work in the project: how much
+they carry, how far along it is, and where it hurts.
+
+# Columns
+- `assignee`, `role`, `team`: the name as the tasks spell it, plus the
+  registry's answer for who they are (empty when not registered — see
+  [`add_person!`](@ref)).
+- `tasks`, `milestones`: leaf tasks assigned to them. Summaries are
+  containers, not work, so they are never counted.
+- `effort`, `done`, `progress`: total weight (`cost` when set, otherwise
+  person-days — the same weight the S-curve uses), how much of it is
+  reported complete, and the percentage.
+- `first`, `last`: first and last working day they are occupied.
+- `busy_days`: distinct days with work. Under a business-day calendar
+  (`set_calendar!`) holidays carry none.
+- `over_days`: days with two or more of *their own* tasks running — the same
+  overlap [`overallocations`](@ref) reports pair by pair.
+- `late`: their tasks finishing after their deadline (see
+  [`deadline_slip`](@ref)).
+
+People with no assigned task do not appear, registered or not: this is a
+table about work, not a staff list. Tasks with no assignee are grouped under
+the empty name, because unowned work is a fact about the plan, not a gap to
+hide.
+"""
+function people_stats(p::Project)
+    g = _stats_group(p, t -> String(strip(t.assignee)))
+    out = NamedTuple[]
+    for who in sort!(collect(keys(g.grupos)); by = w -> (isempty(w), lowercase(w)))
+        ts = g.grupos[who]
+        pe = person(p, who)
+        esforco = sum(g.peso, ts)
+        feito = sum(t -> g.peso(t) * clamp(t.progress, 0, 100) / 100, ts)
+        ds = sort!(collect(g.dias[who]))
+        push!(out, (assignee = who,
+                    role = pe === nothing ? "" : pe.role,
+                    team = pe === nothing ? "" : pe.team,
+                    tasks = length(ts),
+                    milestones = count(t -> t.milestone, ts),
+                    effort = esforco,
+                    done = feito,
+                    progress = esforco > 0 ? round(Int, 100 * feito / esforco) : 0,
+                    first = first(ds), last = last(ds),
+                    busy_days = length(ds),
+                    over_days = get(g.sobrecarga, who, 0),
+                    late = count(t -> t.id in g.atrasadas, ts)))
+    end
+    return out
+end
+
+"""
+    team_stats(p::Project) -> Vector{NamedTuple}
+
+The same accounting as [`people_stats`](@ref), rolled up by the `team` field
+of the collaborator registry: one row per team, plus `members` (how many
+distinct people) and `people` (their names).
+
+A team only exists because somebody was registered into it
+([`add_person!`](@ref)); tasks whose assignee has no team — or no
+registration at all — land in the row with the empty team name.
+
+`busy_days` counts days on which *anything* in the team was running, so it is
+occupancy of the calendar, not the sum of the members' days. `over_days` is
+the sum of the members' overloaded days: two people from the same team
+working the same day is normal, and only an individual can be double-booked.
+"""
+function team_stats(p::Project)
+    g = _stats_group(p, t -> _team_of(p, t.assignee))
+    out = NamedTuple[]
+    for time in sort!(collect(keys(g.grupos)); by = w -> (isempty(w), lowercase(w)))
+        ts = g.grupos[time]
+        esforco = sum(g.peso, ts)
+        feito = sum(t -> g.peso(t) * clamp(t.progress, 0, 100) / 100, ts)
+        ds = sort!(collect(g.dias[time]))
+        nomes = sort!(unique!([String(strip(t.assignee)) for t in ts if !isempty(strip(t.assignee))]);
+                      by = lowercase)
+        push!(out, (team = time,
+                    members = length(nomes), people = nomes,
+                    tasks = length(ts),
+                    milestones = count(t -> t.milestone, ts),
+                    effort = esforco,
+                    done = feito,
+                    progress = esforco > 0 ? round(Int, 100 * feito / esforco) : 0,
+                    first = first(ds), last = last(ds),
+                    busy_days = length(ds),
+                    over_days = sum(n -> get(g.sobrecarga, n, 0), nomes; init = 0),
+                    late = count(t -> t.id in g.atrasadas, ts)))
+    end
+    return out
+end

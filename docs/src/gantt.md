@@ -44,6 +44,8 @@ tasktable
 icalendar
 overallocations
 workload
+people_stats
+team_stats
 ganttplot
 save_chart
 ```
