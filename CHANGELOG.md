@@ -5,6 +5,17 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.1] - 2026-08-16
+
+### Fixed
+- **The read-only menus no longer end in a gap.** Opening a plan through a
+  read-only link hides every item that writes, but the separators between them
+  stayed: the Edit menu came down to a single "View selected task" with three
+  orphan rules stacked underneath it, and File left one dangling where "Delete
+  project…" used to be. A rule only earns its place *between* two visible
+  items, so the menus recompute which ones survive whenever the mode changes —
+  and get them all back the moment editing is allowed again.
+
 ## [0.9.0] - 2026-08-16
 
 ### Added
