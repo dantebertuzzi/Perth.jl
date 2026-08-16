@@ -320,6 +320,10 @@ window.PerthI18n = (function () {
       "collapse / expand a summary": "recolher / abrir um resumo",
       "first / last task": "primeira / última tarefa",
       "zoom keeping the date under the pointer": "zoom mantendo a data sob o ponteiro",
+      "Marked months": "Meses marcados",
+      "Marked months…": "Meses marcados…",
+      "No marked months yet.": "Nenhum mês marcado ainda.",
+      "Name (optional)": "Nome (opcional)",
       "read-only": "somente leitura",
       "Read-only link — ask for an editing link to change anything.":
         "Link somente leitura — peça um link de edição para mudar qualquer coisa.",
@@ -940,6 +944,10 @@ window.PerthI18n = (function () {
       "collapse / expand a summary": "plegar / abrir un resumen",
       "first / last task": "primera / última tarea",
       "zoom keeping the date under the pointer": "zoom manteniendo la fecha bajo el puntero",
+      "Marked months": "Meses marcados",
+      "Marked months…": "Meses marcados…",
+      "No marked months yet.": "Ningún mes marcado todavía.",
+      "Name (optional)": "Nombre (opcional)",
       "read-only": "solo lectura",
       "Read-only link — ask for an editing link to change anything.":
         "Enlace de solo lectura — pide un enlace de edición para cambiar algo.",
@@ -1448,6 +1456,10 @@ window.PerthI18n = (function () {
       "collapse / expand a summary": "replier / ouvrir un récapitulatif",
       "first / last task": "première / dernière tâche",
       "zoom keeping the date under the pointer": "zoom en gardant la date sous le pointeur",
+      "Marked months": "Mois marqués",
+      "Marked months…": "Mois marqués…",
+      "No marked months yet.": "Aucun mois marqué pour l'instant.",
+      "Name (optional)": "Nom (facultatif)",
       "read-only": "lecture seule",
       "Read-only link — ask for an editing link to change anything.":
         "Lien en lecture seule — demandez un lien d'édition pour changer quoi que ce soit.",
@@ -1955,6 +1967,10 @@ window.PerthI18n = (function () {
       "collapse / expand a summary": "折叠 / 展开摘要任务",
       "first / last task": "第一个 / 最后一个任务",
       "zoom keeping the date under the pointer": "缩放时保持指针下的日期不动",
+      "Marked months": "标记的月份",
+      "Marked months…": "标记的月份…",
+      "No marked months yet.": "还没有标记的月份。",
+      "Name (optional)": "名称（可选）",
       "read-only": "只读",
       "Read-only link — ask for an editing link to change anything.":
         "只读链接 — 需要改动请索取可编辑链接。",

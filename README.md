@@ -117,6 +117,12 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   Date(2026, 4, 30))`. The name lies along the line, so it always lands on
   something — the slider in *File → Marked days…* (`label_at`, 0–100% of the
   chart height) slides it down to open sky.
+- **Marked months** (File → Marked months…, or `add_month_mark!(p, Date(2026, 12);
+  name = "recesso")`): a whole month painted in the ruler at the top. Where a
+  marked *day* draws a line across the plan, a marked *month* colours the strip
+  that names it — "this is the month of the shutdown", said once, at the top,
+  instead of repeated on every task inside it. It never touches the body of the
+  chart: shading the work behind it is what a band is for.
 - **Calendar bands** (File → Calendar bands…, or `add_band!`): shade a named
   stretch of calendar behind the chart — a sprint, a shutdown, the rainy
   season, the two weeks the crane is on site. Pick its colour, overlap them

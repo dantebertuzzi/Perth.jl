@@ -50,6 +50,11 @@ markers
 markers!
 add_marker!
 remove_marker!
+MonthMark
+month_marks
+month_marks!
+add_month_mark!
+remove_month_mark!
 tasktable
 icalendar
 overallocations

@@ -8,6 +8,16 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Marked months.** A whole month painted in the ruler at the top of the
+  chart (File → Marked months…, or `add_month_mark!`). Where a marked *day*
+  draws a line across the plan, a marked *month* colours the strip that already
+  writes its name — said once, at the top, instead of repeated on every task
+  inside it. The name joins the month in the cell when it fits and in the
+  tooltip either way, and it is optional: the cell already says which month it
+  is, so the colour alone is allowed to be the whole message. It never touches
+  the body of the chart — shading the work behind a stretch is what a `Band` is
+  for, and painting both would say the same thing twice with two different
+  meanings.
 - **Markdown in a task's notes, and a note you can actually read.** The red dot
   said "this task has a note" and the text arrived in a native browser tooltip:
   no formatting, no decent line breaks, gone if the pointer wavers. The dot now

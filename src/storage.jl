@@ -183,6 +183,7 @@ function _save!(st::AppState, p::Project)
     _unify_assignees!(p)
     p.bands = _clean_bands(p.bands)
     p.markers = _clean_markers(p.markers)
+    p.month_marks = _clean_month_marks(p.month_marks)
     write(_project_file(st, p), JSON3.write(p))
     # Espelhamento estilo Pluto: se o usuário escolheu um arquivo na UI
     # (caixa de caminho na menubar) ou via set_file_path!, cada salvamento
@@ -441,6 +442,57 @@ function add_marker!(p::Project, name::AbstractString, date::Date;
     return markers!(p, [resto; Marker(; name = String(name), date,
                                       color = String(color),
                                       label_at = Int(label_at))])
+end
+
+"""
+    month_marks(p::Project) -> Vector{MonthMark}
+
+The months painted in the ruler at the top of the chart (see
+[`MonthMark`](@ref)), in date order.
+"""
+month_marks(p::Project) = copy(p.month_marks)
+
+"""
+    month_marks!(p::Project, entries) -> Vector{MonthMark}
+
+Replace the marked months. Accepts [`MonthMark`](@ref)s or named tuples;
+each `month` is normalised to the first day of its month, and a month
+listed twice keeps the last one.
+"""
+function month_marks!(p::Project, entries)
+    p.month_marks = _clean_month_marks(entries)
+    _with_state(st -> _save!(st, p))
+    return copy(p.month_marks)
+end
+
+"""
+    add_month_mark!(p::Project, month; name = "", color = "") -> Vector{MonthMark}
+
+Paint a month in the ruler. `month` is any day of it.
+
+```julia
+add_month_mark!(p, Date(2026, 12); name = "recesso", color = "#cb3c33")
+```
+
+Marking a month that is already marked *replaces* it — a month has one
+colour, and a second entry for the same month would be a correction, not
+a second month.
+"""
+function add_month_mark!(p::Project, month::Date;
+                         name::AbstractString = "", color::AbstractString = "")
+    return month_marks!(p, [p.month_marks;
+                            MonthMark(; month, name = String(name),
+                                      color = String(color))])
+end
+
+"""
+    remove_month_mark!(p::Project, month) -> Vector{MonthMark}
+
+Unpaint the month containing `month`.
+"""
+function remove_month_mark!(p::Project, month::Date)
+    alvo = Dates.firstdayofmonth(month)
+    return month_marks!(p, filter(m -> m.month != alvo, p.month_marks))
 end
 
 """

@@ -666,6 +666,16 @@ body.row-dragging { cursor: grabbing; user-select: none; }
   opacity: .9;
   pointer-events: none;
 }
+/* Mês marcado: a célula que já escreve o nome do mês ganha a cor, com o traço
+   embaixo para ela se distinguir da célula vizinha mesmo quando o tom é claro.
+   Só na régua — o fundo do gráfico é das faixas. */
+.tl-cell.marked-month {
+  background: color-mix(in srgb, var(--mescor) 22%, transparent);
+  box-shadow: inset 0 -2px 0 var(--mescor);
+  color: var(--ink);
+  border-radius: 3px 3px 0 0;
+}
+
 /* a régua de dias vira alvo de duplo clique: o cursor precisa dizer isso */
 #tl-days .tl-cell { cursor: cell; }
 .bar { rx: 4; cursor: grab; }

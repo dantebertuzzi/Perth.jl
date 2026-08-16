@@ -1197,6 +1197,26 @@ function renderHeader() {
     cell.style.left = x0 + "px";
     cell.style.width = (x1 - x0) + "px";
     cell.textContent = `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    cell.dataset.month = fmtISO(monthStart);
+    /* Mês marcado: a célula que já escreve o nome do mês ganha a cor. Só ela
+       — o fundo do gráfico é assunto das faixas, e pintar os dois seria dizer
+       a mesma coisa duas vezes com significados diferentes. O nome entra
+       depois do mês quando cabe; no tooltip, sempre. */
+    const marcado = mesMarcado(monthStart);
+    if (marcado) {
+      const cor = marcado.color || AUTO_COLORS[monthStart.getUTCMonth() % AUTO_COLORS.length];
+      cell.classList.add("marked-month");
+      cell.style.setProperty("--mescor", cor);
+      const nome = (marcado.name || "").trim();
+      if (nome) {
+        cell.title = `${cell.textContent} · ${nome}`;
+        // 7px por caractere é o passo da monoespaçada nesta altura; sem a
+        // conta, o nome entra e é cortado no meio da palavra
+        if ((x1 - x0) > (cell.textContent.length + nome.length + 3) * 7) {
+          cell.textContent += ` · ${nome}`;
+        }
+      }
+    }
     el.tlMonths.appendChild(cell);
     d = next;
   }
@@ -1234,6 +1254,13 @@ function renderHeader() {
       el.tlDays.appendChild(cell);
     }
   }
+}
+
+// O mês marcado desta coluna, se houver. `month` no dado é sempre o primeiro
+// dia do mês (o servidor normaliza), então a comparação é de string.
+function mesMarcado(primeiroDia) {
+  const chave = fmtISO(primeiroDia);
+  return (state.current?.month_marks || []).find((m) => m.month === chave) || null;
 }
 
 /* A ficha cadastrada de um nome de responsável (ou null). */
@@ -3474,6 +3501,104 @@ function showBands() {
 /* Editor de dias marcados. `preencher` chega do duplo clique na régua: o
    painel abre com a data já posta e o cursor no nome, que é o único campo
    que o computador não tem como adivinhar. */
+/* Meses marcados: irmão de showMarkers, para a régua. O campo é <input
+ * type="month"> — o navegador já sabe pedir um mês, e é o dado exato que o
+ * modelo guarda; um campo de data pediria um dia que seria jogado fora. */
+function showMonthMarks(preencher = "") {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "people-box cal-box";
+
+  const form = document.createElement("form");
+  form.className = "cal-add";
+  const quando = document.createElement("input");
+  quando.type = "month";
+  quando.value = preencher || fmtISO(todayUTC()).slice(0, 7);
+  const nome = document.createElement("input");
+  nome.type = "text";
+  nome.autocomplete = "off";
+  nome.placeholder = T("Name (optional)");
+  const cor = document.createElement("input");
+  cor.type = "color";
+  cor.className = "cal-pick";
+  cor.title = T("Colour");
+  cor.value = corAutomatica((state.current.month_marks || []).length);
+  const add = document.createElement("button");
+  add.type = "submit";
+  add.className = "primary";
+  add.textContent = T("Add");
+  form.append(quando, nome, cor, add);
+
+  const lista = document.createElement("div");
+  lista.className = "people-list";
+
+  async function gravar(meses) {
+    state.current.month_marks = meses;
+    const salvo = await saveNowAfterDirty();
+    if (salvo) state.current.month_marks = salvo.month_marks;
+    renderAll();
+    desenhar();
+  }
+
+  function desenhar() {
+    const meses = state.current.month_marks || [];
+    lista.textContent = "";
+    if (!meses.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("No marked months yet.");
+      lista.append(vazio);
+    }
+    meses.forEach((m, i) => {
+      const linha = document.createElement("div");
+      linha.className = "people-row cal-row";
+      const c = document.createElement("input");
+      c.type = "color";
+      c.className = "cal-dot";
+      c.title = T("Colour");
+      c.value = m.color || corAutomatica(i);
+      c.addEventListener("change", () => { m.color = c.value; gravar(meses); });
+      const quando2 = document.createElement("span");
+      quando2.className = "people-name";
+      quando2.textContent = mesPorExtenso(m.month);
+      const n = document.createElement("span");
+      n.className = "people-count";
+      n.textContent = m.name || "";
+      const x = document.createElement("button");
+      x.className = "icon-btn";
+      x.type = "button";
+      x.textContent = "✕";
+      x.title = T("Remove");
+      x.addEventListener("click", () => gravar(meses.filter((o) => o !== m)));
+      linha.append(c, quando2, n, x);
+      lista.append(linha);
+    });
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!quando.value) return;
+    const primeiro = quando.value + "-01";
+    // mesmo mês duas vezes é correção, não um segundo mês: substitui
+    const resto = (state.current.month_marks || []).filter((m) => m.month !== primeiro);
+    gravar([...resto, { month: primeiro, name: nome.value.trim(), color: cor.value }]);
+    nome.value = "";
+    cor.value = corAutomatica(resto.length + 1);
+    nome.focus();
+  });
+
+  desenhar();
+  body.append(form, lista);
+  showOverlay("Marked months", body);
+  nome.focus();
+}
+
+// "2026-09-01" -> "set 2026", com o mesmo vocabulário da régua
+function mesPorExtenso(iso) {
+  const d = parseDate(iso);
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 function showMarkers(preencher = "") {
   if (!state.current) return;
   const body = document.createElement("div");
@@ -4624,6 +4749,7 @@ const ACTIONS = {
   "people": showPeople,
   "bands": showBands,
   "markers": () => showMarkers(),
+  "month-marks": () => showMonthMarks(),
   "delete-project": deleteProject,
   "import": importProject,
   "export": exportProject,
