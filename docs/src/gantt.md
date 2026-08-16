@@ -8,6 +8,7 @@ Perth.run
 Perth.stop
 Perth.share!
 Perth.key!
+Perth.view_key!
 Perth.background!
 Perth.background
 Perth.backgrounds
@@ -35,6 +36,7 @@ pert_date
 pert_simulate
 set_calendar!
 set_parent!
+move_task!
 people
 person
 people!

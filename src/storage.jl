@@ -421,22 +421,26 @@ function markers!(p::Project, entries)
 end
 
 """
-    add_marker!(p::Project, name, date; color = "") -> Vector{Marker}
+    add_marker!(p::Project, name, date; color = "", label_at = 0) -> Vector{Marker}
 
-Draw a vertical line on `date`, labelled `name`.
+Draw a vertical line on `date`, labelled `name`. `label_at` is how far
+down the chart the name is written, 0–100 percent (see [`Marker`](@ref));
+the slider in *File → Marked days…* is the same setting.
 
 ```julia
 add_marker!(p, "Entrega", Date(2026, 4, 30))
+add_marker!(p, "Vistoria", Date(2026, 5, 8); label_at = 60)  # nome mais abaixo
 ```
 
 A name that already exists is *moved* to the new date rather than duplicated.
 """
 function add_marker!(p::Project, name::AbstractString, date::Date;
-                     color::AbstractString = "")
+                     color::AbstractString = "", label_at::Integer = 0)
     alvo = lowercase(strip(name))
     resto = filter(m -> lowercase(m.name) != alvo, p.markers)
     return markers!(p, [resto; Marker(; name = String(name), date,
-                                      color = String(color))])
+                                      color = String(color),
+                                      label_at = Int(label_at))])
 end
 
 """
@@ -538,6 +542,9 @@ function duplicate_task!(p::Project, id::AbstractString)
     for (k, c) in enumerate(clones)
         insert!(p.tasks, i + k, c)
     end
+    # num grupo com ordem manual, a cópia nasce ao lado do original: no fim
+    # de uma lista arrumada à mão ela pareceria outra coisa (ver move_task!)
+    t.order == 0 || _reorder_siblings!(p, clones[1], t.order + 1)
     _with_state(st -> _save!(st, p))
     return clones[1]
 end

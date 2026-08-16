@@ -36,10 +36,12 @@ end
 
 # Mesma técnica de _kanban_test_server, pro _presence_ws genérico (gantt).
 # `hub` isolado (não o GANTT_HUB global) pra não vazar estado entre testes.
-function _presence_test_server(hub::Perth.PresenceHub, ipref::Ref{String}; keyok::Bool = true)
+function _presence_test_server(hub::Perth.PresenceHub, ipref::Ref{String};
+                               keyok::Bool = true, readonly::Bool = false)
     handler = function (http::HTTP.Stream)
         if HTTP.WebSockets.isupgrade(http.message)
-            HTTP.WebSockets.upgrade(ws -> Perth._presence_ws(hub, ws, ipref[], keyok), http)
+            HTTP.WebSockets.upgrade(
+                ws -> Perth._presence_ws(hub, ws, ipref[], keyok; readonly = readonly), http)
         else
             HTTP.setstatus(http, 404); HTTP.startwrite(http)
         end
@@ -685,6 +687,169 @@ end
         delete_project(p.id)
     end
 
+    @testset "aviso: começa antes do que a dependência permite" begin
+        # No Perth uma dependência não move ninguém (quem move é schedule!),
+        # então um plano pode ter a seta apontando para trás — e até aqui o
+        # único sinal disso era o desenho da seta.
+        p = create_project("Fora de ordem")
+        a = add_task!(p, "lilás"; start = Date(2026, 8, 16), duration = 5)
+        b = add_task!(p, "verde"; start = Date(2026, 8, 12), duration = 5,
+                      dependencies = [a.id])
+        router = Perth._build_router()
+        avisos() = JSON3.read(String(router(HTTP.Request(
+            "GET", "/api/projects/$(p.id)/warnings")).body))["warnings"]
+
+        w = only(filter(x -> x["kind"] == "too_early", avisos()))
+        @test w["task_id"] == b.id
+        @test w["at"] == "2026-08-21"          # depois do fim de lilás
+        @test w["days"] == 9                   # 12/8 -> 21/8
+        @test w["severity"] == "warning"
+        @test w["pinned"] == false
+
+        # a tarefa sem predecessor não é avisada: o começo dela é o começo dela
+        @test all(x -> x["task_id"] != a.id,
+                  filter(x -> x["kind"] == "too_early", avisos()))
+
+        # programar o plano resolve, e o aviso some
+        schedule!(p)
+        @test b.start == Date(2026, 8, 21)
+        @test isempty(filter(x -> x["kind"] == "too_early", avisos()))
+
+        # data fixa é o caso em que o auto-schedule NÃO resolve: o aviso
+        # continua, e diz que é isso
+        b.start = Date(2026, 8, 12)
+        b.pinned = true
+        Perth._with_state(st -> Perth._save!(st, p))
+        schedule!(p)
+        @test b.start == Date(2026, 8, 12)     # presa de propósito
+        w2 = only(filter(x -> x["kind"] == "too_early", avisos()))
+        @test w2["pinned"] == true
+
+        # com ciclo o CPM não tem por onde começar: sobra o aviso do ciclo,
+        # que é o que precisa ser resolvido primeiro
+        a.dependencies = [b.id]
+        Perth._with_state(st -> Perth._save!(st, p))
+        tipos = [x["kind"] for x in avisos()]
+        @test "cycle" in tipos
+        @test "too_early" ∉ tipos
+
+        delete_project(p.id)
+    end
+
+    @testset "erro do Perth chega à tela (não vira \"internal error\")" begin
+        # Calendário de dias úteis sem `using BusinessDays`: a exceção traz a
+        # frase que resolve ("Run `using BusinessDays`"), e a API a trocava por
+        # um "internal error" — escondendo justamente a instrução. Só as
+        # mensagens do Perth atravessam; o resto continua 500 sem detalhe.
+        p = create_project("Calendário ausente")
+        add_task!(p, "A"; start = Date(2026, 9, 1), duration = 3)
+        set_calendar!(p, "Brazil")
+        router = Perth._build_router()
+        resp = router(HTTP.Request("GET", "/api/projects/$(p.id)/stats"))
+        if isdefined(Perth, :_business_calendar) &&
+           hasmethod(Perth._business_calendar, Tuple{String})
+            @test resp.status == 200          # extensão carregada: nem há erro
+        else
+            @test resp.status == 409
+            msg = JSON3.read(String(resp.body))["error"]
+            @test occursin("BusinessDays", msg)
+        end
+
+        # o mecanismo em si, sem depender de qual extensão está carregada na
+        # sessão de teste (com BusinessDays carregado o erro nem acontece)
+        nossa = Perth._handled(_ -> error("Perth: faça `using BusinessDays`"))
+        r1 = nossa(HTTP.Request("GET", "/x"))
+        @test r1.status == 409
+        @test occursin("BusinessDays", JSON3.read(String(r1.body))["error"])
+
+        # erro que não é nosso segue sendo 500 sem detalhe
+        opaco = Perth._handled(_ -> error("segredo do servidor"))
+        r2 = opaco(HTTP.Request("GET", "/x"))
+        @test r2.status == 500
+        @test JSON3.read(String(r2.body))["error"] == "internal error"
+
+        delete_project(p.id)
+    end
+
+    @testset "ordem manual das tarefas (move_task!)" begin
+        # A ordem das linhas sempre foi derivada da data. `order` é o que a
+        # mão diz — e só vale onde a mão passou: um plano que ninguém
+        # arrastou continua saindo pela data, exatamente como antes.
+        p = create_project("Ordem")
+        a = add_task!(p, "A"; start = Date(2026, 9, 1), duration = 2)
+        b = add_task!(p, "B"; start = Date(2026, 9, 5), duration = 2)
+        c = add_task!(p, "C"; start = Date(2026, 9, 9), duration = 2)
+        nomes() = [t.name for (t, _) in ordered_tasks(p)]
+
+        @test all(t -> t.order == 0, p.tasks)
+        @test nomes() == ["A", "B", "C"]                # pela data, como sempre
+
+        # subir a última: o grupo inteiro é renumerado 1,2,3 — sem buracos e
+        # sem meia ordenação (metade à mão, metade pela data)
+        move_task!(p, c.id; position = 1)
+        @test nomes() == ["C", "A", "B"]
+        @test [t.order for t in (c, a, b)] == [1, 2, 3]
+
+        # e agora a data deixa de mandar: adiar C não a devolve para o fim
+        c.start = Date(2026, 12, 1)
+        @test nomes() == ["C", "A", "B"]
+
+        # posição fora da faixa é grudada na ponta, não é erro: quem arrasta
+        # para o fim da lista quer o fim da lista
+        move_task!(p, c.id; position = 99)
+        @test nomes() == ["A", "B", "C"]
+        move_task!(p, c.id; position = -3)
+        @test nomes() == ["C", "A", "B"]
+
+        # tarefa nova entra sem posição (order = 0) e vai para o FIM do grupo
+        # arrumado — na frente estaria dizendo uma posição que ninguém pediu
+        d = add_task!(p, "D"; start = Date(2026, 8, 1), duration = 1)
+        @test d.order == 0
+        @test nomes() == ["C", "A", "B", "D"]
+
+        # mover para dentro de um resumo: pai e posição no mesmo gesto
+        move_task!(p, d.id; parent = a.id, position = 1)
+        @test d.parent == a.id
+        @test nomes() == ["C", "A", "D", "B"]
+        # a ordem é uma frase sobre UM grupo: os irmãos de fora não mudaram
+        @test [t.order for t in (c, a, b)] == [1, 2, 3]
+
+        # as recusas são as de set_parent!
+        m = add_task!(p, "Marco"; start = Date(2026, 9, 20), milestone = true)
+        @test_throws ArgumentError move_task!(p, b.id; parent = m.id)
+        @test_throws ArgumentError move_task!(p, a.id; parent = d.id)   # descendente
+        @test_throws ArgumentError move_task!(p, a.id; parent = a.id)
+        @test_throws KeyError move_task!(p, "nao-existe"; position = 1)
+
+        # sair do resumo devolve a tarefa ao topo, na posição pedida
+        move_task!(p, d.id; parent = nothing, position = 2)
+        @test d.parent == ""
+        @test nomes()[1:2] == ["C", "D"]
+
+        # duplicar num grupo arrumado à mão põe a cópia ao lado do original,
+        # e não no fim: numa lista posta à mão, o fim pareceria outra coisa
+        copia = duplicate_task!(p, a.id)
+        @test copia.order == a.order + 1
+        @test nomes()[3:4] == ["A", "A (copy)"]
+        # apagá-la deixa um buraco na numeração, e o buraco não muda nada: a
+        # ordem é relativa, não um índice de linha
+        remove_task!(p, copia.id)
+        @test nomes()[3] == "A"
+
+        # sobrevive ao disco (JSON) e ao .perth.jl
+        Perth._with_state(st -> Perth._save!(st, p))
+        p2 = Perth._parse_project_source(Perth._to_julia_source(p))
+        @test [t.order for t in p2.tasks] == [t.order for t in p.tasks]
+        @test [t.name for (t, _) in ordered_tasks(p2)] == nomes()
+
+        # projeto antigo, gravado antes do campo existir: sem `order` no
+        # JSON, tudo volta como 0 — ou seja, ordenado pela data
+        velho = JSON3.read(replace(JSON3.write(p), "\"order\"" => "\"ordem_antiga\""), Project)
+        @test all(t -> t.order == 0, velho.tasks)
+
+        delete_project(p.id)
+    end
+
     @testset "baseline e derrapagem" begin
         p = create_project("Baseline")
         a = add_task!(p, "Tarefa"; start = Date(2026, 9, 1), duration = 5)
@@ -1221,6 +1386,25 @@ end
         @test volta.markers[1].date == Date(2026, 5, 10)
         sem = replace(JSON3.write(p), r"\"markers\":\[.*?\}\]," => "")
         @test JSON3.read(sem, Project).markers == Marker[]
+
+        # label_at: onde o nome fica na vertical (0–100% da altura do gráfico).
+        # Deitado sobre a linha, o nome cai em cima de alguma barra, e qual
+        # barra depende do plano — daí ser ajuste de quem olha.
+        @test markers(p)[1].label_at == 0                 # o padrão é o topo
+        add_marker!(p, "Vistoria", Date(2026, 6, 2); label_at = 60)
+        @test only(filter(m -> m.name == "Vistoria", markers(p))).label_at == 60
+        # porcentagem, não pixel: fora da faixa é grudado na ponta
+        markers!(p, [Marker(name = "Alta", date = Date(2026, 6, 3), label_at = 999),
+                     Marker(name = "Baixa", date = Date(2026, 6, 4), label_at = -5)])
+        @test [m.label_at for m in markers(p)] == [100, 0]
+        # vai e volta pelo .perth.jl e pelo JSON, e 0 não suja o arquivo
+        markers!(p, [Marker(name = "Vistoria", date = Date(2026, 6, 2), label_at = 60),
+                     Marker(name = "Topo", date = Date(2026, 6, 5))])
+        fonte = Perth._to_julia_source(p)
+        @test occursin("label_at = 60", fonte)
+        @test occursin("Marker(name = \"Topo\", date = Date(\"2026-06-05\"))", fonte)
+        @test [m.label_at for m in Perth._parse_project_source(fonte).markers] == [60, 0]
+        @test JSON3.read(JSON3.write(p), Project).markers[1].label_at == 60
 
         delete_project(p.id)
     end
@@ -1900,6 +2084,244 @@ end
         finally
             Perth._quiet(() -> close(server3))
             Perth.GANTT_KEY[], Perth.GANTT_SHARED[] = gantt_key2, gantt_was2
+            Perth.SERVER[] = nothing
+            Perth._quiet(() -> close(dummy2))
+            _await_clients(Perth.GANTT_HUB, 0)
+        end
+    end
+
+    @testset "link somente-leitura (view_key)" begin
+        # A chave de leitura é uma SEGUNDA chave: um link abre e edita, o
+        # outro abre e não edita. Como o loopback é isento de chave, o papel
+        # é testado com o IP por fora, como no testset da chave de acesso.
+        other = "192.168.0.70"
+        noqp = Dict{String,String}()
+        edita = Dict("key" => "s3cr3t")
+        olha = Dict("key" => "so-ver")
+
+        key0, view0, was0 = Perth.GANTT_KEY[], Perth.GANTT_VIEW_KEY[], Perth.GANTT_SHARED[]
+        porta0 = Perth.PORT[]
+        try
+            Perth.GANTT_SHARED[] = true
+            Perth.GANTT_KEY[] = "s3cr3t"
+            Perth.GANTT_VIEW_KEY[] = "so-ver"
+
+            # ── papéis ──
+            @test Perth._gantt_role("127.0.0.1", olha) === :host   # a máquina do servidor edita sempre
+            @test Perth._gantt_role(other, olha) === :viewer
+            @test Perth._gantt_role(other, edita) === :guest
+            @test Perth._gantt_role(other, noqp) === :nokey
+
+            # ── o que o espectador pode: ler tudo ──
+            for rota in ("/api/projects", "/api/projects/x1", "/api/rev",
+                         "/api/projects/x1/export", "/api/projects/x1/export.csv",
+                         "/api/projects/x1/chart", "/api/projects/x1/cpm",
+                         "/api/activity", "/background", "/", "/app.js")
+                @test Perth._gantt_gate(rota, other, olha) === :ok
+            end
+
+            # ── e o que não pode: qualquer escrita, pelo método ──
+            for (rota, metodo) in (("/api/projects/x1", "PUT"),
+                                   ("/api/projects/x1", "POST"),
+                                   ("/api/projects/x1", "DELETE"),
+                                   ("/api/projects", "POST"),
+                                   ("/api/import", "POST"),
+                                   ("/api/projects/x1/schedule", "POST"),
+                                   ("/api/projects/x1/pert", "POST"))
+                @test Perth._gantt_gate(rota, other, olha; method = metodo) === :read_only
+                # a mesma rota, pelo link de edição, continua passando: o que
+                # separa os dois é a chave apresentada, não a rota
+                @test Perth._gantt_gate(rota, other, edita; method = metodo) === :ok
+                @test Perth._gantt_gate(rota, "127.0.0.1", olha; method = metodo) === :ok
+            end
+
+            # sem chave de acesso configurada — o caso comum — o link somente
+            # -leitura tem que continuar valendo, e o link pelado segue editando
+            Perth.GANTT_KEY[] = ""
+            @test Perth._gantt_role(other, olha) === :viewer
+            @test Perth._gantt_gate("/api/projects/x1", other, olha; method = "PUT") === :read_only
+            @test Perth._gantt_gate("/api/projects/x1", other, noqp; method = "PUT") === :ok
+
+            # transmissão desligada vence tudo, como na chave de acesso
+            Perth.GANTT_SHARED[] = false
+            @test Perth._gantt_gate("/api/projects", other, olha) === :not_shared
+            Perth.GANTT_SHARED[] = true
+
+            # ── o payload de /api/share é escrito para quem pergunta ──
+            # (os links carregam a chave: entregar a de edição a quem entrou
+            # para olhar seria desfazer o link na primeira tela)
+            Perth.GANTT_KEY[] = "s3cr3t"
+            Perth.PORT[] = 8123
+            espectador = Perth._gantt_share_payload(other; viewing = true)
+            @test espectador.viewing
+            @test !espectador.host
+            @test isempty(espectador.view_urls)
+            @test !any(occursin("s3cr3t", u) for u in espectador.urls)
+            @test all(occursin("so-ver", u) for u in espectador.urls)
+
+            anfitriao = Perth._gantt_share_payload("127.0.0.1")
+            @test anfitriao.host
+            @test !anfitriao.viewing
+            @test anfitriao.view_keyed
+            @test all(occursin("so-ver", u) for u in anfitriao.view_urls)
+            # o link de leitura não começa em localhost: nesta máquina ele
+            # não vale (o host edita sempre), e prometê-lo seria mentir
+            @test !any(occursin("localhost", u) for u in anfitriao.view_urls)
+        finally
+            Perth.GANTT_KEY[], Perth.GANTT_VIEW_KEY[] = key0, view0
+            Perth.GANTT_SHARED[], Perth.PORT[] = was0, porta0
+        end
+
+        # ── view_key!: só com o servidor no ar, e nunca igual à de acesso ──
+        key1, view1, was1 = Perth.GANTT_KEY[], Perth.GANTT_VIEW_KEY[], Perth.GANTT_SHARED[]
+        @test Perth.SERVER[] === nothing
+        @test_throws ArgumentError Perth.view_key!("qualquer")
+        dummy = Perth._quiet() do
+            HTTP.listen!(http -> nothing, "127.0.0.1", 0; verbose = false)
+        end
+        try
+            Perth.SERVER[] = dummy
+            Perth.GANTT_KEY[] = "mesma"
+            # um texto não pode significar as duas permissões
+            @test_throws ArgumentError Perth.view_key!("mesma")
+            @test Perth.GANTT_VIEW_KEY[] == ""
+            @test Perth.view_key!("so-ver") == true
+            @test Perth.GANTT_VIEW_KEY[] == "so-ver"
+            @test Perth.view_key!() == false        # remove
+            @test Perth.GANTT_VIEW_KEY[] == ""
+
+            # a rota é a do host, como /api/key
+            post(k, ip) = Perth._gantt_key_set(
+                HTTP.Request("POST", "/api/view_key", ["Content-Type" => "application/json"],
+                             """{"key":"$k"}"""), ip; view = true)
+            @test post("de-fora", "192.168.0.71").status == 403
+            @test Perth.GANTT_VIEW_KEY[] == ""
+            ok = post("do-host", "127.0.0.1")
+            @test ok.status == 200
+            @test Perth.GANTT_VIEW_KEY[] == "do-host"
+            @test JSON3.read(ok.body)["view_keyed"] == true
+            # igual à de acesso: 409, e a chave de leitura não muda
+            @test post("mesma", "127.0.0.1").status == 409
+            @test Perth.GANTT_VIEW_KEY[] == "do-host"
+        finally
+            Perth.GANTT_KEY[], Perth.GANTT_VIEW_KEY[] = key1, view1
+            Perth.GANTT_SHARED[] = was1
+            Perth.SERVER[] = nothing
+            Perth._quiet(() -> close(dummy))
+        end
+
+        # ── a porta dos fundos: o WS ──
+        # Recusar o PUT e deixar o socket escrever seria trocar a fechadura
+        # e deixar a janela aberta. O chat persiste em disco e chega a todo
+        # mundo: é escrita, e o espectador não a faz.
+        #
+        # O cliente devolve o que recebeu por um Channel (take! espera o
+        # tempo que precisar) e só sai quando o teste solta — desconectar
+        # antes tiraria o cliente do hub no meio da verificação.
+        hub = Perth.PresenceHub()
+        ipref = Ref("192.168.0.72")
+        server, port = _presence_test_server(hub, ipref; readonly = true)
+        try
+            leitura = Ref{Any}(nothing)
+            recebidos = Channel{String}(4)
+            solta = Channel{Bool}(1)
+            t = @async HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                init = JSON3.read(HTTP.WebSockets.receive(ws))
+                # o init diz o papel: é assim que a UI sabe antes de tentar
+                leitura[] = init["readonly"]
+                HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                    "type" => "chat", "text" => "não deveria entrar")))
+                # o hello volta como "peer" e serve de marca-passo: se o chat
+                # tivesse passado, ele chegaria antes
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "hello", "name" => "TV")))
+                put!(recebidos, String(JSON3.read(HTTP.WebSockets.receive(ws))["type"]))
+                take!(solta)
+            end
+            @test _await_clients(hub, 1) == 1
+            @test take!(recebidos) == "peer"
+            @test leitura[] == true
+            @test isempty(hub.chat)
+            # e ele aparece na lista de máquinas marcado como espectador
+            @test all(c -> c.readonly, values(hub.clients))
+            put!(solta, true)
+            wait(t)
+        finally
+            Perth._quiet(() -> close(server))
+        end
+
+        # o mesmo caminho, um cliente comum: o chat passa (controle do teste)
+        hub2 = Perth.PresenceHub()
+        ipref2 = Ref("192.168.0.73")
+        server2, port2 = _presence_test_server(hub2, ipref2)
+        try
+            leitura2 = Ref{Any}(nothing)
+            recebidos2 = Channel{String}(4)
+            solta2 = Channel{Bool}(1)
+            t = @async HTTP.WebSockets.open("ws://127.0.0.1:$port2") do ws
+                init = JSON3.read(HTTP.WebSockets.receive(ws))
+                leitura2[] = init["readonly"]
+                HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                    "type" => "chat", "text" => "oi")))
+                put!(recebidos2, String(JSON3.read(HTTP.WebSockets.receive(ws))["type"]))
+                take!(solta2)
+            end
+            @test _await_clients(hub2, 1) == 1
+            @test take!(recebidos2) == "chat"
+            @test leitura2[] == false
+            @test length(hub2.chat) == 1
+            put!(solta2, true)
+            wait(t)
+        finally
+            Perth._quiet(() -> close(server2))
+        end
+
+        # ── trocar uma chave derruba só quem ela invalidou ──
+        key2, view2, was2 = Perth.GANTT_KEY[], Perth.GANTT_VIEW_KEY[], Perth.GANTT_SHARED[]
+        dummy2 = Perth._quiet() do
+            HTTP.listen!(http -> nothing, "127.0.0.1", 0; verbose = false)
+        end
+        ipref3 = Ref("192.168.0.74")
+        srv_ed, port_ed = _presence_test_server(Perth.GANTT_HUB, ipref3)
+        srv_ve, port_ve = _presence_test_server(Perth.GANTT_HUB, ipref3; readonly = true)
+        try
+            Perth.SERVER[] = dummy2
+            Perth.GANTT_SHARED[] = true
+            Perth.GANTT_KEY[] = "antiga"
+            Perth.GANTT_VIEW_KEY[] = "so-ver"
+
+            solta_ed = Channel{Bool}(1)
+            editor = @async HTTP.WebSockets.open("ws://127.0.0.1:$port_ed") do ws
+                HTTP.WebSockets.receive(ws)      # init
+                take!(solta_ed)
+            end
+            @test _await_clients(Perth.GANTT_HUB, 1) == 1
+            motivo = Ref{Any}(nothing)
+            # até o "denied": no caminho vem o "join" do editor, que é ruído
+            # para esta pergunta
+            espectador = @async HTTP.WebSockets.open("ws://127.0.0.1:$port_ve") do ws
+                for raw in ws
+                    msg = JSON3.read(raw)
+                    if msg["type"] == "denied"
+                        motivo[] = (String(msg["type"]), String(get(msg, "reason", "")))
+                        break
+                    end
+                end
+            end
+            @test _await_clients(Perth.GANTT_HUB, 2) == 2
+
+            # trocar o link de leitura derruba quem entrou por ele...
+            @test Perth.view_key!("outro") == true
+            wait(espectador)
+            @test motivo[] == ("denied", "key")
+            # ...e não o editor, cuja chave continua certa
+            @test length(Perth.GANTT_HUB.clients) == 1
+            put!(solta_ed, true)
+            wait(editor)
+        finally
+            Perth._quiet(() -> close(srv_ed))
+            Perth._quiet(() -> close(srv_ve))
+            Perth.GANTT_KEY[], Perth.GANTT_VIEW_KEY[] = key2, view2
+            Perth.GANTT_SHARED[] = was2
             Perth.SERVER[] = nothing
             Perth._quiet(() -> close(dummy2))
             _await_clients(Perth.GANTT_HUB, 0)

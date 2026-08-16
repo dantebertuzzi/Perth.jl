@@ -314,6 +314,128 @@ window.PerthI18n = (function () {
       "enter board": "entrar no quadro",
       "Access key required": "Chave de acesso exigida",
       "No access key": "Sem chave de acesso",
+      // link somente-leitura (view_key!)
+      "Label position": "Posição do nome",
+      "read-only": "somente leitura",
+      "Read-only link — ask for an editing link to change anything.":
+        "Link somente leitura — peça um link de edição para mudar qualquer coisa.",
+      "Read-only link on": "Link somente leitura ativo",
+      "No read-only link": "Sem link somente leitura",
+      "new read-only key": "nova chave de leitura",
+      "read-only key": "chave de leitura",
+      "Whoever opens the link below sees the projects and cannot change them — not even through the chat. This machine always edits, so the link starts at your network address.":
+        "Quem abrir o link abaixo vê os projetos e não consegue mudá-los — nem pelo chat. Esta máquina edita sempre, então o link começa no seu endereço de rede.",
+      "A second link that opens the projects and refuses to change them — for a client, a director, the whole site.":
+        "Um segundo link que abre os projetos e recusa mudá-los — para um cliente, uma diretoria, a obra inteira.",
+      "Start transmitting to get the read-only link.":
+        "Ligue a transmissão para ter o link somente leitura.",
+      "View selected task": "Ver tarefa selecionada",
+      "starts before its dependencies allow": "começa antes do que a dependência permite",
+      "can start on": "pode começar em",
+      "The dates say one thing and the arrows say another: the task begins earlier than its predecessors let it. A dependency never moves anything on its own — auto-schedule (S) is what puts it where it can go, unless the start is pinned.":
+        "As datas dizem uma coisa e as setas dizem outra: a tarefa começa antes do que os predecessores deixam. Uma dependência não move nada sozinha — quem põe a tarefa onde ela cabe é o programar automaticamente (S), a não ser que a data seja fixa.",
+      // glossário (Ajuda -> O que as palavras querem dizer)
+      "What overallocation, slack, baseline, PERT and the rest actually mean":
+        "O que sobrecarga, folga, baseline, PERT e o resto querem dizer de verdade",
+      "Summary": "Resumo",
+      "Progress": "Avanço",
+      "Duration": "Duração",
+      "Slack": "Folga",
+      "Baseline": "Baseline",
+      "What the words mean":
+        "O que as palavras querem dizer",
+      "Turn lanes off to reorder tasks by hand.":
+        "Desligue as raias para ordenar as tarefas com a mão.",
+      "Task order — drag a row to change it":
+        "Ordem das tarefas — arraste uma linha para mudar",
+      "The plan":
+        "O plano",
+      "A piece of work with a start and a duration — a bar on the chart.":
+        "Um trabalho com começo e duração — uma barra no gráfico.",
+      "A date with nothing lasting: a delivery, an approval, a signature. Drawn as a diamond and never has a duration.":
+        "Uma data sem nada durando: uma entrega, uma aprovação, uma assinatura. Desenhada como losango, nunca tem duração.",
+      "A task with subtasks. Its dates and its progress are not typed in — they are rolled up from its children.":
+        "Uma tarefa com subtarefas. As datas e o avanço dela não são digitados — sobem dos filhos.",
+      "WBS":
+        "EAP (WBS)",
+      "The breakdown of the plan into blocks and sub-blocks: which task is inside which. The indentation in the table is the WBS.":
+        "A quebra do plano em blocos e sub-blocos: qual tarefa está dentro de qual. O recuo na tabela é a EAP.",
+      "Sequence (#)":
+        "Sequência (#)",
+      "The position of the row. Drag a row up or down to choose it; where nobody chose, rows come by start date.":
+        "A posição da linha. Arraste para cima ou para baixo para escolher; onde ninguém escolheu, as linhas vêm pela data de início.",
+      "How much of the task is done, in percent. A summary averages its children, weighted by duration.":
+        "Quanto da tarefa está feito, em porcentagem. Um resumo faz a média dos filhos, ponderada pela duração.",
+      "Time":
+        "Tempo",
+      "Length of the task in days. With a business-day calendar set, weekends and holidays do not count.":
+        "O tamanho da tarefa em dias. Com um calendário de dias úteis, fins de semana e feriados não contam.",
+      "Dependency":
+        "Dependência",
+      "\"This only starts after that.\" Finish-to-start is the default; start-to-start and finish-to-finish tie the two starts or the two finishes; lag adds or removes days.":
+        "\"Isto só começa depois daquilo.\" Fim-início é o padrão; início-início e fim-fim amarram os dois começos ou os dois términos; a defasagem (lag) soma ou tira dias.",
+      "Auto-schedule":
+        "Programar automaticamente",
+      "Moves every task to the earliest date its dependencies allow. It never invents work — it only closes the gaps the plan does not need.":
+        "Leva cada tarefa para a data mais cedo que as dependências permitem. Não inventa trabalho — só fecha as folgas que o plano não precisa ter.",
+      "A date fixed by hand — a contract, a delivery window. Auto-schedule leaves it alone, and says so when the plan no longer fits it.":
+        "Uma data presa com a mão — um contrato, uma janela de entrega. A programação automática não a move, e avisa quando o plano deixou de caber nela.",
+      "A date the task must not finish after. It never moves anything: it turns the slack of this task, and of everything feeding it, negative.":
+        "Uma data depois da qual a tarefa não pode terminar. Não move nada: deixa negativa a folga desta tarefa e de tudo que alimenta ela.",
+      "Finish":
+        "Término",
+      "The end of the project as the engine computes it, from the dependencies and the durations.":
+        "O fim do projeto como o motor calcula, a partir das dependências e das durações.",
+      "What the engine computes":
+        "O que o motor calcula",
+      "The chain of tasks with no slack. A day lost in any of them is a day lost by the whole project — which is why it is worth looking at first.":
+        "A corrente de tarefas sem folga. Um dia perdido em qualquer uma delas é um dia perdido pelo projeto inteiro — por isso é o primeiro lugar para olhar.",
+      "How many days a task can slip before it starts pushing the finish. Zero slack is the critical path; negative slack is a promise already broken.":
+        "Quantos dias uma tarefa pode atrasar antes de empurrar o término. Folga zero é o caminho crítico; folga negativa é uma promessa já quebrada.",
+      "A frozen copy of the plan — what was promised. The ghost bars are the baseline; the difference between them and the bars is the slippage.":
+        "Uma cópia congelada do plano — o que foi prometido. As barras fantasma são o baseline; a diferença entre elas e as barras é a derrapagem.",
+      "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days.":
+        "Quanto do trabalho estava previsto para cada data, desenhado contra quanto está feito. A distância entre as duas curvas é o atraso medido em trabalho, não em dias.",
+      "Workload":
+        "Carga",
+      "How much each person has on each day. It is what turns a plan into a question about people.":
+        "Quanto cada pessoa tem em cada dia. É o que transforma um plano numa pergunta sobre gente.",
+      "Three estimates instead of one — optimistic, most likely, pessimistic — worth (o + 4m + p) / 6 as the expected duration. It says how uncertain a task is, not only how long it is.":
+        "Três estimativas em vez de uma — otimista, mais provável, pessimista — que valem (o + 4m + p) / 6 como duração esperada. Diz o quanto uma tarefa é incerta, não só o quanto ela dura.",
+      "P80":
+        "P80",
+      "The finish date with an 80% chance of being met, from the PERT estimates. The date to promise when the plan has uncertainty in it.":
+        "A data de término com 80% de chance de ser cumprida, a partir das estimativas PERT. É a data que se promete quando o plano tem incerteza dentro.",
+      "A waits for B and B waits for A. Nothing can be scheduled until the loop is cut — this is the one warning that stops the engine.":
+        "A espera B e B espera A. Nada pode ser programado enquanto o laço não for cortado — é o único aviso que trava o motor.",
+      "past deadline":
+        "prazo estourado",
+      "The task finishes after the date it had promised.":
+        "A tarefa termina depois da data que tinha prometido.",
+      "The day has passed and the task is not at 100%.":
+        "O dia passou e a tarefa não está em 100%.",
+      "overallocation":
+        "sobrecarga",
+      "The same person on two tasks on the same day.":
+        "A mesma pessoa em duas tarefas no mesmo dia.",
+      "The task is later than it was in the frozen plan.":
+        "A tarefa está mais tarde do que estava no plano congelado.",
+      "On the chart":
+        "No gráfico",
+      "Lanes":
+        "Raias",
+      "Group the rows by person or by team, instead of by the WBS.":
+        "Agrupam as linhas por pessoa ou por setor, em vez da EAP.",
+      "Calendar band":
+        "Faixa do calendário",
+      "A named stretch of calendar shaded behind the chart: a sprint, a shutdown, the rainy season. Annotation — it never moves a task.":
+        "Um trecho de calendário com nome, sombreado atrás do gráfico: um sprint, uma parada, a estação de chuva. É anotação — nunca move uma tarefa.",
+      "Marked day":
+        "Dia marcado",
+      "A named vertical line across the chart, like the today line: an inspection, a hand-over, a holiday.":
+        "Uma linha vertical com nome atravessando o gráfico, como a linha de hoje: uma vistoria, uma entrega, um feriado.",
+      "The planned weight of the task, in whatever unit you use. Left at zero, the duration in person-days is the weight in the S-curve.":
+        "O peso previsto da tarefa, na unidade que você usar. Deixado em zero, a duração em pessoa-dia é o peso na curva S.",
       "new access key": "nova chave",
       "apply": "aplicar",
       "remove": "remover",
@@ -697,6 +819,22 @@ window.PerthI18n = (function () {
       "enter board": "entrar al tablero",
       "Access key required": "Clave de acceso requerida",
       "No access key": "Sin clave de acceso",
+      "starts before its dependencies allow": "empieza antes de lo que permiten sus dependencias",
+      "can start on": "puede empezar el",
+      "Label position": "Posición del texto",
+      "read-only": "solo lectura",
+      "Read-only link — ask for an editing link to change anything.":
+        "Enlace de solo lectura — pide un enlace de edición para cambiar algo.",
+      "Read-only link on": "Enlace de solo lectura activo",
+      "No read-only link": "Sin enlace de solo lectura",
+      "new read-only key": "nueva clave de lectura",
+      "read-only key": "clave de lectura",
+      "Whoever opens the link below sees the projects and cannot change them — not even through the chat. This machine always edits, so the link starts at your network address.":
+        "Quien abra el enlace de abajo ve los proyectos y no puede cambiarlos — ni por el chat. Esta máquina siempre edita, así que el enlace empieza en tu dirección de red.",
+      "A second link that opens the projects and refuses to change them — for a client, a director, the whole site.":
+        "Un segundo enlace que abre los proyectos y se niega a cambiarlos — para un cliente, una dirección, toda la obra.",
+      "Start transmitting to get the read-only link.":
+        "Enciende la transmisión para tener el enlace de solo lectura.",
       "new access key": "nueva clave",
       "apply": "aplicar",
       "remove": "quitar",
@@ -1075,6 +1213,22 @@ window.PerthI18n = (function () {
       "enter board": "entrer dans le tableau",
       "Access key required": "Clé d'accès exigée",
       "No access key": "Sans clé d'accès",
+      "starts before its dependencies allow": "commence avant ce que ses dépendances permettent",
+      "can start on": "peut commencer le",
+      "Label position": "Position du nom",
+      "read-only": "lecture seule",
+      "Read-only link — ask for an editing link to change anything.":
+        "Lien en lecture seule — demandez un lien d'édition pour changer quoi que ce soit.",
+      "Read-only link on": "Lien en lecture seule actif",
+      "No read-only link": "Pas de lien en lecture seule",
+      "new read-only key": "nouvelle clé de lecture",
+      "read-only key": "clé de lecture",
+      "Whoever opens the link below sees the projects and cannot change them — not even through the chat. This machine always edits, so the link starts at your network address.":
+        "Qui ouvre le lien ci-dessous voit les projets et ne peut pas les modifier — pas même par le chat. Cette machine modifie toujours, donc le lien commence à votre adresse réseau.",
+      "A second link that opens the projects and refuses to change them — for a client, a director, the whole site.":
+        "Un deuxième lien qui ouvre les projets et refuse de les modifier — pour un client, une direction, tout le chantier.",
+      "Start transmitting to get the read-only link.":
+        "Activez la diffusion pour obtenir le lien en lecture seule.",
       "new access key": "nouvelle clé",
       "apply": "appliquer",
       "remove": "retirer",
@@ -1452,6 +1606,22 @@ window.PerthI18n = (function () {
       "enter board": "进入看板",
       "Access key required": "需要访问密钥",
       "No access key": "没有访问密钥",
+      "starts before its dependencies allow": "早于依赖允许的时间开始",
+      "can start on": "最早可开始于",
+      "Label position": "标签位置",
+      "read-only": "只读",
+      "Read-only link — ask for an editing link to change anything.":
+        "只读链接 — 需要改动请索取可编辑链接。",
+      "Read-only link on": "只读链接已开启",
+      "No read-only link": "没有只读链接",
+      "new read-only key": "新的只读密钥",
+      "read-only key": "只读密钥",
+      "Whoever opens the link below sees the projects and cannot change them — not even through the chat. This machine always edits, so the link starts at your network address.":
+        "打开下面链接的人只能查看项目，无法更改 — 聊天也不行。本机始终可编辑，因此链接从你的网络地址开始。",
+      "A second link that opens the projects and refuses to change them — for a client, a director, the whole site.":
+        "第二个链接：能打开项目、拒绝改动 — 给客户、给领导、给整个工地。",
+      "Start transmitting to get the read-only link.":
+        "开启传输后即可获得只读链接。",
       "new access key": "新密钥",
       "apply": "应用",
       "remove": "移除",

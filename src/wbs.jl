@@ -67,6 +67,71 @@ function set_parent!(p::Project, id::AbstractString,
     return t
 end
 
+"""
+    move_task!(p::Project, id; parent = missing, position = nothing) -> GanttTask
+
+Put the task `id` where you want it in the WBS: `parent` changes whose
+child it is (`nothing` or `""` promotes it to top level; `missing`, the
+default, leaves it where it is) and `position` is its 1-based place among
+its siblings (`nothing` keeps it last). This is what dragging a row up or
+down in the web UI does.
+
+Positioning renumbers the whole sibling group, so the result is always a
+clean `1, 2, 3, …`: no gaps to run out of, and the group can never end up
+half by hand and half by date. Siblings elsewhere are untouched — a
+manual order is a statement about one group, not about the plan.
+
+Throws the same `ArgumentError`s as [`set_parent!`](@ref) (a milestone
+cannot have subtasks; a task cannot move under its own descendant).
+
+```julia
+move_task!(p, "a3f"; position = 1)              # primeira do grupo
+move_task!(p, "a3f"; parent = "b12")            # vira subtarefa de b12
+move_task!(p, "a3f"; parent = "", position = 2) # sobe ao topo, em 2º
+```
+"""
+function move_task!(p::Project, id::AbstractString;
+                    parent = missing,
+                    position::Union{Nothing,Integer} = nothing)
+    i = findfirst(t -> t.id == id, p.tasks)
+    i === nothing && throw(KeyError(String(id)))
+    t = p.tasks[i]
+    if parent !== missing
+        pid = parent === nothing ? "" : String(strip(parent))
+        if !isempty(pid)
+            j = findfirst(o -> o.id == pid, p.tasks)
+            j === nothing && throw(KeyError(pid))
+            pid == t.id && throw(ArgumentError("a task cannot be its own parent"))
+            p.tasks[j].milestone &&
+                throw(ArgumentError("a milestone cannot have subtasks"))
+            pid in _descendants(p, t.id) &&
+                throw(ArgumentError("cannot move a task under its own descendant"))
+        end
+        t.parent = pid
+    end
+    _reorder_siblings!(p, t, position)
+    _with_state(st -> _save!(st, p))
+    return t
+end
+
+# Renumera o grupo de irmãos de `t` (1, 2, 3, …) com `t` na posição pedida.
+# A ordem de partida é a que se vê na tela — a mesma regra de
+# ordered_tasks —, então mover uma tarefa não embaralha as outras.
+function _reorder_siblings!(p::Project, t::GanttTask,
+                            position::Union{Nothing,Integer})
+    irmaos = [o for o in p.tasks if o.parent == t.parent]
+    sort!(irmaos; by = o -> (o.order == 0 ? typemax(Int) : o.order,
+                             o.start, o.name))
+    filter!(o -> o.id != t.id, irmaos)
+    pos = position === nothing ? length(irmaos) + 1 :
+          clamp(Int(position), 1, length(irmaos) + 1)
+    insert!(irmaos, pos, t)
+    for (k, o) in enumerate(irmaos)
+        o.order = k
+    end
+    return p
+end
+
 # Poda pais inválidos: id inexistente, auto-referência, pai marco, ou elo
 # que fecha ciclo na cadeia de pais. Cada membro de um ciclo tem a própria
 # caminhada de subida voltando a si mesmo, então pelo menos um elo de cada
@@ -141,9 +206,14 @@ end
 """
     ordered_tasks(p::Project) -> Vector{Tuple{GanttTask,Int}}
 
-Tasks in WBS display order — depth-first, children under their parent,
-siblings sorted by `(start, name)` — paired with their depth (0 = top
-level). This is the row order used by the web UI and the Makie figure.
+Tasks in WBS display order — depth-first, children under their parent
+— paired with their depth (0 = top level). This is the row order used by
+the web UI and the Makie figure.
+
+Siblings come out in the order someone put them in (`order`, see
+[`move_task!`](@ref)); the ones with no manual position come after, by
+`(start, name)`. A plan nobody reordered is therefore ordered by date,
+exactly as before the field existed.
 """
 function ordered_tasks(p::Project)
     ids = Set(t.id for t in p.tasks)
@@ -159,7 +229,10 @@ function ordered_tasks(p::Project)
     out = Tuple{GanttTask,Int}[]
     seen = Set{String}()
     function walk(ts::Vector{GanttTask}, d::Int)
-        for t in sort(ts; by = o -> (o.start, o.name))
+        # order == 0 é "sem posição", não "posição zero": vai para o fim,
+        # senão toda tarefa nova entraria na frente de um grupo arrumado
+        for t in sort(ts; by = o -> (o.order == 0 ? typemax(Int) : o.order,
+                                     o.start, o.name))
             t.id in seen && continue    # defesa contra ciclos ainda não podados
             push!(seen, t.id)
             push!(out, (t, d))

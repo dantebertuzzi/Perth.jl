@@ -95,6 +95,18 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   to another bar. The right dot links to what follows, the left to what comes
   before; a drop that would close a loop, or that lands on a summary, is
   refused with the reason on screen. Double-click an arrow to remove it.
+- **Drag a row up or down to order the plan by hand.** Row order was always
+  derived — children under their parent, siblings by date — and that is a good
+  order until three tasks start on the same day and the sequence on site is not
+  alphabetical. Drop a row *in the gap* between two rows for a new position, or
+  *on top of* a task to make it a subtask of it: one gesture, two destinations,
+  the way any file tree behaves. The **`#` column** on the left is that order
+  written down (hover it for the task id). In the REPL it is
+  `move_task!(p, id; parent, position)`; a plan nobody reordered still comes out
+  by date, exactly as before.
+- **What the words mean** (Help): a glossary of the vocabulary the UI uses —
+  slack, critical path, baseline, overallocation, P80, the lot. `⚠ 4
+  overallocations` is only a warning to someone who already knows the word.
 - **Zoom: fit** (`4`) computes the step so the whole project lands on screen —
   day/week/month are three sizes chosen by hand, and none of them suits a
   two-year plan.
@@ -102,7 +114,9 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
   day gets a vertical line across the whole chart, like the *today* line and
   for the same reason: some dates matter to every task at once. A delivery, an
   audit, the day the scaffolding comes down. Also `add_marker!(p, "Entrega",
-  Date(2026, 4, 30))`.
+  Date(2026, 4, 30))`. The name lies along the line, so it always lands on
+  something — the slider in *File → Marked days…* (`label_at`, 0–100% of the
+  chart height) slides it down to open sky.
 - **Calendar bands** (File → Calendar bands…, or `add_band!`): shade a named
   stretch of calendar behind the chart — a sprint, a shutdown, the rainy
   season, the two weeks the crane is on site. Pick its colour, overlap them
@@ -267,9 +281,30 @@ Changing the key disconnects whoever holds the old one — each is asked
 for the new key on screen, not left with a dead page — while dropping it
 disconnects nobody, since nothing they hold became invalid.
 
+**A link that only shows.** Sharing used to be all-or-nothing: whoever
+opened the link could edit. `view_key` is a *second* key that grants
+reading and refuses writing — the link you hand to a client, a director,
+the whole site:
+
+```julia
+Perth.run(share = true, key = "obra-2026", view_key = "obra-2026-ver")
+Perth.view_key!("so-olhar")   # change the read-only link, mid-session
+Perth.view_key!()             # end it
+```
+
+Whoever opens it sees everything — chart, table, analytics, exports —
+and every write is refused with 403, including the ones that would go
+through the presence socket (the chat). They show up in the connected
+machines as a hollow ring: present, not writing. The Share / QR dialog
+creates the link and shows it; the machine running the server always
+edits, so the read-only link starts at the network address. The two keys
+cannot be the same string — one link cannot mean both things — and
+changing either one disconnects only the machines it invalidated.
+
 **Security:** without `key`, anyone on the network who knows the port
 can open and edit every project — same caveat as the kanban. Never
-expose the port to the internet.
+expose the port to the internet. A read-only link is a limit on what a
+browser may do, not a login: it is as private as the network it is on.
 
 ### A background image (or a slideshow)
 

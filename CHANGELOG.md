@@ -5,6 +5,90 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.8.8] - 2026-08-16
+
+### Added
+- **A read-only share link.** Sharing was all-or-nothing: whoever opened the
+  link could edit, and that is what stopped a plan from being sent to a client,
+  a director, the whole site. `view_key` (`Perth.run(view_key = "…")`,
+  `Perth.view_key!`, or the Share / QR dialog) is a *second* key that grants
+  reading and refuses writing. It is independent of the access key: with one
+  set, one link edits and the other only shows; with none, the plain link still
+  edits and only the read-only link is restricted. The two cannot be the same
+  string — one link cannot mean both things.
+- The refusal is the **server's**, not the interface's: every write comes back
+  403, decided by the method rather than by a list of routes, so a route added
+  tomorrow is refused by default. That includes the door the interface does not
+  use — the **presence socket**: the chat persists to disk and reaches everyone,
+  so it is writing, and refusing the `PUT` while leaving the socket open would
+  be changing the lock and leaving the window open.
+- The UI stops offering what the link cannot do — the editing menus, the drag
+  gestures and the chat composer are gone rather than left there to fail — and
+  says what the tab is where the save status would be. Viewers appear in the
+  connected machines as a **hollow ring**: present, not writing.
+- Changing either key now disconnects **only the machines it invalidated**:
+  changing the access key leaves the read-only viewers alone, and changing the
+  read-only key leaves the editors alone. Dropping the read-only key does
+  disconnect its viewers — without it the link becomes an ordinary one, and
+  nobody decided that they should start editing.
+- **Order the plan by hand: drag a row up or down.** Row order was derived —
+  children under their parent, siblings by `(start, name)` — and stayed a good
+  order right up to the day three tasks start together and the sequence on site
+  is not alphabetical. Tasks now carry `order`, and dropping a row in the gap
+  between two rows gives it a position; dropping it *on top of* a task makes it
+  a subtask of that task. One gesture, two destinations, decided by where you
+  let go — the convention of every file tree, and one gesture fewer than making
+  the WBS a separate operation.
+- `order` is `0` until someone drags: **a plan nobody reordered still comes out
+  by date**, exactly as before. A drop renumbers the whole sibling group
+  `1, 2, 3, …`, so a group is never half by hand and half by date, and the
+  statement is about one group only — the siblings elsewhere do not move. In the
+  REPL: `move_task!(p, id; parent, position)`.
+- A **`#` column** at the left of the table, in Perth's purple: the row order
+  written down, so it can be read and checked after a drag instead of counted
+  with a finger. Its tooltip carries the task **id** — the thing you type in the
+  REPL, which until now had to be fished out of an export.
+- **A new warning: "starts before its dependencies allow."** A dependency
+  never moves anything on its own in Perth — that is `schedule!`'s job — so a
+  plan can hold a task that starts before its predecessors let it, and until
+  now the only sign of it was an arrow drawn backwards on the chart. The
+  warnings list says it out loud, with the earliest date the task could start
+  and how many days early it is; when the start is **pinned** the row says so,
+  because that is precisely the case auto-schedule will not fix.
+- **A slider for where a marked day's name sits.** The name lies along the
+  line it names, so it always lands on *something* — and which bar it lands on
+  depends on the plan. `label_at` (0–100 percent of the chart height, a slider
+  per row in *File → Marked days…*, or the keyword on `add_marker!`) slides it
+  down to open sky. A percentage rather than pixels: the chart grows with the
+  plan, and "a third of the way down" should stay a third of the way down.
+  Dragging redraws live and saves once, when you let go.
+- **Help → What the words mean**: a glossary of the vocabulary the interface
+  speaks — task, summary, WBS, dependency, slack, critical path, baseline,
+  S-curve, PERT, P80, overallocation, band, marked day. `⚠ 4 overallocations ·
+  ⚠ 1 past deadline` is only a warning to someone who already knows the words,
+  and the only place they were explained was the package documentation, which
+  whoever opens the browser does not read.
+
+### Fixed
+- **An error Perth raised for a human to read no longer arrives as "internal
+  error."** A project on a business-day calendar opened without
+  `using BusinessDays` failed every calendar-aware route with a generic 500,
+  hiding the one sentence that solved it. Messages the package raises itself
+  now reach the screen (409, with the text); anything else stays a 500 with no
+  detail, because that is a bug of ours and not the browser's business.
+- **A dependency arrow no longer strikes through a task's name.** The arrow
+  leaves the end of the bar, which is exactly where the label starts, so every
+  link to the right cut the word in half. The line now opens a gap wherever it
+  crosses a label — every label, on any row it passes, not just the one it
+  leaves from. The click target stays whole: what disappears is the stroke, not
+  the sensitive area, so double-clicking an arrow to remove it still works
+  anywhere along it.
+- **The dotted line of a marked day no longer runs through its own name.** The
+  label lies along the line it names, and the dots crossed the letters. Pushing
+  the text aside would detach it from the line, so the *line* opens a gap the
+  size of the name instead — measured after it is in the document, which is the
+  only moment the browser knows how long it is.
+
 ## [0.8.7] - 2026-08-15
 
 ### Added

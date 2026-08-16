@@ -39,6 +39,7 @@ function _to_julia_source(p::Project)
             campos = ["name = " * repr(m.name),
                      "date = Date(" * repr(string(m.date)) * ")"]
             isempty(m.color) || push!(campos, "color = " * repr(m.color))
+            m.label_at == 0 || push!(campos, "label_at = " * string(m.label_at))
             println(io, "        Marker(", join(campos, ", "), "),")
         end
         println(io, "    ],")
@@ -85,6 +86,7 @@ function _to_julia_source(p::Project)
         isempty(t.notes) || println(io, "            notes = ", repr(t.notes), ",")
         t.milestone && println(io, "            milestone = true,")
         isempty(t.parent) || println(io, "            parent = ", repr(t.parent), ",")
+        t.order == 0 || println(io, "            order = ", t.order, ",")
         t.baseline_start === nothing ||
             println(io, "            baseline_start = Date(", repr(string(t.baseline_start)), "),")
         t.baseline_duration == 0 ||

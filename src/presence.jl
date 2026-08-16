@@ -17,6 +17,7 @@ mutable struct PresenceClient
     ip::String
     name::String
     color::Int
+    readonly::Bool     # entrou pelo link somente-leitura (ver _gantt_role)
 end
 
 mutable struct PresenceHub
@@ -93,7 +94,8 @@ function _peer_ip(http::HTTP.Stream)
 end
 
 _peer_payload(c::PresenceClient) =
-    Dict("id" => c.id, "ip" => c.ip, "name" => c.name, "color" => c.color)
+    Dict("id" => c.id, "ip" => c.ip, "name" => c.name, "color" => c.color,
+         "readonly" => c.readonly)
 
 # Endereços IPv4 da máquina na rede local — os links que o host passa para
 # quem vai entrar. Usado pelo gantt e pelo kanban (banner, /api/share, QR).
@@ -121,11 +123,19 @@ end
 # novas, então quem já estava dentro precisa ser desconectado na mão.
 # `reason` escolhe o diálogo do outro lado: "share_off" oferece um retry,
 # "key" pede a chave (é o caso da troca de chave — ver key!).
-function _hub_drop_remote!(hub::PresenceHub; reason::AbstractString = "share_off")
+#
+# `only` limita a derrubada a um dos dois papéis: trocar a chave de edição
+# invalida o que os editores têm na mão, trocar a de leitura invalida o que
+# os espectadores têm — e derrubar quem continua com uma chave válida seria
+# pedir na tela uma chave que a pessoa já digitou certo.
+function _hub_drop_remote!(hub::PresenceHub; reason::AbstractString = "share_off",
+                           only::Symbol = :all)
     gone = lock(hub.lock) do
         out = PresenceClient[]
         for (id, c) in collect(hub.clients)
             _presence_is_host(c.ip) && continue
+            only === :readers && !c.readonly && continue
+            only === :editors && c.readonly && continue
             delete!(hub.clients, id)
             push!(out, c)
         end
@@ -185,17 +195,19 @@ end
 # join/leave e retransmite presença e trocas de nome. `keyok=false`
 # encerra educadamente (mesmo comportamento do kanban).
 function _presence_ws(hub::PresenceHub, ws::HTTP.WebSockets.WebSocket,
-                      ip::String, keyok::Bool = true; extra_init = (;))
+                      ip::String, keyok::Bool = true; readonly::Bool = false,
+                      extra_init = (;))
     keyok || return _presence_deny(ws, "key")
     me = lock(hub.lock) do
         hub.nextid += 1
         c = PresenceClient(hub.nextid, ws, ip, ip,
-                           _color_for_ip(hub.colors, ip))
+                           _color_for_ip(hub.colors, ip), readonly)
         hub.clients[c.id] = c
         c
     end
     try
-        HTTP.WebSockets.send(ws, _hub_init_payload(hub, me; extra = extra_init))
+        HTTP.WebSockets.send(ws, _hub_init_payload(hub, me;
+                                                   extra = merge((; readonly), extra_init)))
         _hub_broadcast(hub, JSON3.write(Dict("type" => "join",
                                              "peer" => _peer_payload(me)));
                        except = me.id)
@@ -214,11 +226,15 @@ function _presence_ws(hub::PresenceHub, ws::HTTP.WebSockets.WebSocket,
                 _hub_broadcast(hub, JSON3.write(Dict("type" => "peer",
                                                      "peer" => _peer_payload(me))))
             elseif t == "chat"
-                _hub_chat_commit!(hub, String(get(msg, "text", "")); actor = me.ip)
+                # o chat persiste em disco e chega a todo mundo: é escrita, e
+                # recusar o PUT deixando o socket passar seria a porta dos
+                # fundos do link somente-leitura
+                readonly || _hub_chat_commit!(hub, String(get(msg, "text", "")); actor = me.ip)
             elseif t == "typing"
                 # sinal efêmero, não persiste: cada cliente expira sozinho
                 # quem estava digitando se ninguém reenviar em alguns segundos
-                _hub_broadcast(hub, JSON3.write(Dict("type" => "typing",
+                # (de quem não pode mandar mensagem, seria um aviso falso)
+                readonly || _hub_broadcast(hub, JSON3.write(Dict("type" => "typing",
                                                      "from" => me.id)); except = me.id)
             end
         end

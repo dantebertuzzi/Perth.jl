@@ -249,6 +249,12 @@ body.presenting .presentation-exit { display: flex; }
 }
 .peer-chip:first-child { margin-left: 0; }
 .peer-chip.me { box-shadow: 0 0 0 1.5px var(--ink); }
+/* quem entrou pelo link somente-leitura: mesma cor, anel vazado — está
+   presente e não escreve, e a diferença tem que dar para ver de longe */
+.peer-chip.watching {
+  background: transparent !important;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
 
 /* chip "+N": mesma pílula, mas neutra e clicável (abre a lista completa) */
 button.peer-chip.peer-more {
