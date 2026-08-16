@@ -41,6 +41,17 @@ const SEMENTE = `
   return 1;`;
 
 (async () => {
+  // O protocolo do DevTools fala por WebSocket, e o cliente aqui é o global do
+  // Node — que só existe a partir do 22. Num Node mais velho o teste PULA, como
+  // pula sem Chrome: teste que não pode rodar tem de dizer isso e sair com 0.
+  // (Foi assim que o CI ficou vermelho: o runner pinava Node 20, achava o Chrome
+  // e morria no `new WebSocket` — falha de ambiente vestida de falha de teste.)
+  if (typeof WebSocket === "undefined") {
+    console.log("navegador · PULADO (este Node não tem WebSocket global — precisa de 22+)");
+    console.log(`  versão encontrada: ${process.version}`);
+    process.exit(0);
+  }
+
   const chrome = acharChrome();
   if (!chrome) {
     console.log("navegador · PULADO (nenhum Chrome/Chromium encontrado)");

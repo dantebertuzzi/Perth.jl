@@ -12,7 +12,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # 22+: o teste de navegador fala DevTools pelo WebSocket global, que
+          # não existe no 20 (ver test/browser/cdp.js)
+          node-version: "22"
       - run: |
           node --check frontend/app.js
           node --check frontend/kanban/app.js
