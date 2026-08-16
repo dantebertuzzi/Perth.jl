@@ -275,15 +275,72 @@ is only one critical path.
 
 ## Kanban: a shared board for the office
 
+`Perth.kanban()` starts a second, independent app. It does not touch the Gantt data
+model — the board is its own entity, persisted as `kanban.json` in the data
+directory.
+
 ```julia
-Perth.kanban(share = true)               # a board on your LAN
-kanban_from_project!(p)                  # turn a plan into cards
+Perth.kanban()                         # this machine only, like Perth.run()
+Perth.kanban(share = true)             # prints the LAN links
+Perth.kanban(share = true, key = "…")  # …and requires the key from them
+Perth.kanban_share!(false)             # stop transmitting, board still running
+Perth.kanban_key!("…")                 # set/change the key with the board up
+
+kanban_from_project!(p)                # turn a plan into cards
 ```
 
-WebSocket-authoritative end to end: every change is broadcast live. Cards carry
-`#tags`, `**markdown**`, checklists, due dates and assignees; a linked card dragged
-to *done* completes the task in the Gantt, and back. Per-machine permissions,
-undo/redo, chat, and the same access-key model as above.
+WebSocket-authoritative end to end: every change is broadcast live, dragging a card
+animates on everyone's screen, and each machine shows up as a labelled cursor
+anchored to a *card*, not to a pixel — so it survives different window sizes and
+zoom levels. Cards carry `#tags`, `**markdown**`, checklists, due dates, assignees,
+per-column **WIP limits** and an archive; a linked card dragged to *done* completes
+the task in the Gantt, and back. `Ctrl+Z` / `Ctrl+Shift+Z` undo your own actions
+without reverting what a colleague did afterwards.
+
+The **host** can restrict what a given machine may do — *Board → Permissions…* is a
+matrix of 19 card and column actions against every IP that has connected. It is
+enforced **server-side**: a client cannot get around it by talking to the WebSocket
+directly, and the UI merely hides what is denied.
+
+And the REPL operates on the same board, broadcasting live to every open browser:
+
+```julia
+kanban_add_card!("backlog", "Ship v1.0")
+kanban_move_card!(id, "doing")
+kanban_alias!("192.168.0.23", "Paulo")   # a name for a machine, on everyone's screen
+kanban_cards() |> DataFrame              # (column, id, text) rows
+kanban_log()                             # who changed what, and when
+kanban_chat!("board is ready")           # the chat panel, from the REPL
+Perth.kanban_stop()
+```
+
+> **Security.** The permission matrix restricts what a *connected* machine can do;
+> it does not gate the connection, and identity is just an IP address (spoofable on
+> an untrusted LAN). Treat it as reducing blast radius, not as authentication.
+
+<details>
+<summary><b>Resetting the board</b></summary>
+
+The whole board lives in two files, so a full reset is: stop the server, delete
+them, start again.
+
+```julia
+Perth.kanban_stop()                       # stop first — the server keeps the board
+                                          # in memory and rewrites the file on
+                                          # every operation
+datadir = joinpath(homedir(), ".perth")   # or your PERTH_DATA_DIR / data_dir
+rm(joinpath(datadir, "kanban.json"); force = true)        # the board
+rm(joinpath(datadir, "kanban-log.jsonl"); force = true)   # the activity log
+Perth.kanban(share = true)                # fresh board: backlog / doing / done
+```
+
+Deleting the log is optional — but if you keep it, the Activity panel will show
+history that refers to the old board. To **keep** the old board instead of deleting
+it, rename the file and rename it back whenever you want it again; to start a
+**separate** board without touching this one, point the server at another folder:
+`Perth.kanban(share = true, data_dir = "/path/to/new-board")`.
+
+</details>
 
 ---
 

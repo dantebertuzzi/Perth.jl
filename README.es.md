@@ -276,15 +276,74 @@ hay una ruta crítica.
 
 ## Kanban: un tablero compartido para la oficina
 
+`Perth.kanban()` levanta una segunda aplicación, independiente. No toca el modelo de
+datos del Gantt — el tablero es una entidad propia, persistida como `kanban.json` en
+el directorio de datos.
+
 ```julia
-Perth.kanban(share = true)               # un tablero en tu red
-kanban_from_project!(p)                  # convierte un plan en tarjetas
+Perth.kanban()                         # solo esta máquina, como Perth.run()
+Perth.kanban(share = true)             # imprime los enlaces de la red
+Perth.kanban(share = true, key = "…")  # …y exige la clave a quien venga de ella
+Perth.kanban_share!(false)             # deja de transmitir, el tablero sigue arriba
+Perth.kanban_key!("…")                 # fija/cambia la clave con el tablero corriendo
+
+kanban_from_project!(p)                # convierte un plan en tarjetas
 ```
 
-Autoridad en el WebSocket de punta a punta: cada cambio se transmite en vivo. Las
-tarjetas llevan `#etiquetas`, `**markdown**`, checklist, fecha límite y responsable;
-una tarjeta enlazada arrastrada a *done* completa la tarea en el Gantt, y al revés.
-Permisos por máquina, deshacer/rehacer, chat y el mismo modelo de clave de acceso.
+Autoridad en el WebSocket de punta a punta: cada cambio se transmite en vivo,
+arrastrar una tarjeta se anima en la pantalla de todos, y cada máquina aparece como
+un cursor etiquetado anclado a una *tarjeta*, no a un píxel — así sobrevive a
+tamaños de ventana y niveles de zoom distintos. Las tarjetas llevan `#etiquetas`,
+`**markdown**`, checklist, fecha límite, responsable, **límite de WIP** por columna y
+archivo; una tarjeta enlazada arrastrada a *done* completa la tarea en el Gantt, y al
+revés. `Ctrl+Z` / `Ctrl+Shift+Z` deshacen lo **tuyo**, sin revertir lo que un colega
+hizo después.
+
+El **anfitrión** puede restringir qué hace cada máquina — *Board → Permissions…* es
+una matriz de 19 acciones de tarjeta y columna contra cada IP que se haya conectado.
+Se aplica **en el servidor**: el cliente no la esquiva hablando directo con el
+WebSocket, y la interfaz solo esconde lo negado.
+
+Y el REPL opera sobre el mismo tablero, transmitiendo en vivo a todos los navegadores:
+
+```julia
+kanban_add_card!("backlog", "Publicar la v1.0")
+kanban_move_card!(id, "doing")
+kanban_alias!("192.168.0.23", "Paulo")   # un nombre para la máquina, para todos
+kanban_cards() |> DataFrame              # filas (columna, id, texto)
+kanban_log()                             # quién cambió qué, y cuándo
+kanban_chat!("tablero listo")            # el panel de chat, desde el REPL
+Perth.kanban_stop()
+```
+
+> **Seguridad.** La matriz de permisos restringe lo que una máquina **conectada**
+> puede hacer; no bloquea la conexión, y la identidad es solo una dirección IP
+> (falsificable en una red en la que no confías). Tómala como reducción de daño, no
+> como autenticación.
+
+<details>
+<summary><b>Reiniciar el tablero</b></summary>
+
+El tablero entero vive en dos archivos, así que reiniciarlo es: parar el servidor,
+borrarlos, arrancar de nuevo.
+
+```julia
+Perth.kanban_stop()                       # para primero — el servidor mantiene el
+                                          # tablero en memoria y reescribe el archivo
+                                          # en cada operación
+datadir = joinpath(homedir(), ".perth")   # o tu PERTH_DATA_DIR / data_dir
+rm(joinpath(datadir, "kanban.json"); force = true)        # el tablero
+rm(joinpath(datadir, "kanban-log.jsonl"); force = true)   # el registro de actividad
+Perth.kanban(share = true)                # tablero nuevo: backlog / doing / done
+```
+
+Borrar el registro es opcional — pero si lo conservas, el panel de Actividad mostrará
+historia de un tablero que ya no existe. Para **guardar** el tablero viejo en vez de
+borrarlo, renombra el archivo y devuélvele el nombre cuando quieras; para empezar un
+tablero **aparte** sin tocar este, apunta el servidor a otra carpeta:
+`Perth.kanban(share = true, data_dir = "/ruta/al/nuevo-tablero")`.
+
+</details>
 
 ---
 

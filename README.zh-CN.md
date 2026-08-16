@@ -255,14 +255,64 @@ sim.p80        # 在 80% 的未来里都能守住的日期
 
 ## 看板：办公室共用的一块板
 
+`Perth.kanban()` 会启动第二个、彼此独立的应用。它不碰甘特图的数据模型 —— 看板是自成
+一体的实体，以 `kanban.json` 保存在数据目录里。
+
 ```julia
-Perth.kanban(share = true)               # 局域网上的一块看板
-kanban_from_project!(p)                  # 把计划变成卡片
+Perth.kanban()                         # 只有本机，和 Perth.run() 一样
+Perth.kanban(share = true)             # 打印局域网链接
+Perth.kanban(share = true, key = "…")  # …并要求来自网络的机器提供密钥
+Perth.kanban_share!(false)             # 停止广播，看板继续运行
+Perth.kanban_key!("…")                 # 看板运行中设置/更换密钥
+
+kanban_from_project!(p)                # 把计划变成卡片
 ```
 
-端到端以 WebSocket 为准：每一次改动都实时广播。卡片支持 `#标签`、`**markdown**`、
-清单、截止日期和负责人；把关联卡片拖到 *done* 会完成甘特图里的对应任务，反之亦然。
-按机器的权限、撤销/重做、聊天，以及与上面相同的访问密钥模型。
+端到端以 WebSocket 为准：每一次改动都实时广播，拖动卡片会在所有人屏幕上同步动起来，
+每台机器显示为一个带标签的光标 —— 它锚定在**卡片**上，而不是像素上，所以窗口大小和
+缩放级别不同也不会错位。卡片支持 `#标签`、`**markdown**`、清单、截止日期、负责人、
+按列的 **WIP 上限**和归档；把关联卡片拖到 *done* 会完成甘特图里的对应任务，反之亦然。
+`Ctrl+Z` / `Ctrl+Shift+Z` 撤销**你自己**的操作，而不会回退同事之后做的改动。
+
+**主机**可以限制某台机器能做什么 —— *Board → Permissions…* 是一张矩阵：19 项卡片与
+列的操作，对应每一个连接过的 IP。限制在**服务器端**生效：客户端无法通过直接与
+WebSocket 对话绕过它，界面只是把被禁止的部分藏起来。
+
+REPL 也在同一块看板上操作，并实时广播到每个打开的浏览器：
+
+```julia
+kanban_add_card!("backlog", "发布 v1.0")
+kanban_move_card!(id, "doing")
+kanban_alias!("192.168.0.23", "Paulo")   # 给机器起个名字，所有人都能看到
+kanban_cards() |> DataFrame              # （列, id, 文本）行
+kanban_log()                             # 谁在什么时候改了什么
+kanban_chat!("看板准备好了")               # 聊天面板，从 REPL 发
+Perth.kanban_stop()
+```
+
+> **安全。** 权限矩阵限制的是**已连接**机器能做什么；它不拦截连接本身，而且身份只是
+> 一个 IP 地址（在不可信的局域网里可以伪造）。请把它当作缩小影响面，而不是身份认证。
+
+<details>
+<summary><b>重置看板</b></summary>
+
+整块看板只存在于两个文件里，所以彻底重置就是：停掉服务器、删掉它们、再启动。
+
+```julia
+Perth.kanban_stop()                       # 先停 —— 服务器把看板保存在内存中，
+                                          # 并在每次操作时重写文件
+datadir = joinpath(homedir(), ".perth")   # 或你的 PERTH_DATA_DIR / data_dir
+rm(joinpath(datadir, "kanban.json"); force = true)        # 看板本身
+rm(joinpath(datadir, "kanban-log.jsonl"); force = true)   # 活动日志
+Perth.kanban(share = true)                # 全新看板：backlog / doing / done
+```
+
+删日志是可选的 —— 但如果留着，活动面板会显示一块已经不存在的看板的历史。想**保留**
+旧看板而不是删除，把文件改个名，需要时再改回来；想在不动这一块的前提下开**另一块**
+看板，就把服务器指向别的目录：
+`Perth.kanban(share = true, data_dir = "/path/to/new-board")`。
+
+</details>
 
 ---
 

@@ -276,15 +276,74 @@ um caminho crítico.
 
 ## Kanban: um quadro compartilhado para o escritório
 
+O `Perth.kanban()` sobe um segundo aplicativo, independente. Ele não encosta no
+modelo de dados do gantt — o quadro é uma entidade própria, persistida como
+`kanban.json` no diretório de dados.
+
 ```julia
-Perth.kanban(share = true)               # um quadro na sua rede
-kanban_from_project!(p)                  # transforma um plano em cartões
+Perth.kanban()                         # só esta máquina, como o Perth.run()
+Perth.kanban(share = true)             # imprime os links da rede
+Perth.kanban(share = true, key = "…")  # …e exige a chave de quem vem dela
+Perth.kanban_share!(false)             # para de transmitir, quadro continua no ar
+Perth.kanban_key!("…")                 # define/troca a chave com o quadro rodando
+
+kanban_from_project!(p)                # transforma um plano em cartões
 ```
 
-Autoridade no WebSocket de ponta a ponta: toda mudança é transmitida ao vivo. Os
-cartões levam `#etiquetas`, `**markdown**`, checklist, prazo e responsável; um cartão
-ligado arrastado para *done* conclui a tarefa no gantt, e vice-versa. Permissões por
-máquina, desfazer/refazer, chat, e o mesmo modelo de chave de acesso.
+Autoridade no WebSocket de ponta a ponta: toda mudança é transmitida ao vivo,
+arrastar um cartão anima na tela de todo mundo, e cada máquina aparece como um
+cursor etiquetado ancorado a um *cartão*, não a um pixel — então ele sobrevive a
+tamanhos de janela e níveis de zoom diferentes. Os cartões levam `#etiquetas`,
+`**markdown**`, checklist, prazo, responsável, **limite de WIP** por coluna e
+arquivo; um cartão ligado arrastado para *done* conclui a tarefa no gantt, e
+vice-versa. `Ctrl+Z` / `Ctrl+Shift+Z` desfazem o que **você** fez, sem reverter o que
+um colega fez depois.
+
+O **host** pode restringir o que cada máquina faz — *Board → Permissions…* é uma
+matriz de 19 ações de cartão e coluna contra cada IP que já se conectou. A restrição
+vale **no servidor**: o cliente não escapa dela falando direto com o WebSocket, e a
+interface apenas esconde o que está negado.
+
+E o REPL opera no mesmo quadro, transmitindo ao vivo para todos os navegadores:
+
+```julia
+kanban_add_card!("backlog", "Publicar a v1.0")
+kanban_move_card!(id, "doing")
+kanban_alias!("192.168.0.23", "Paulo")   # um nome para a máquina, na tela de todos
+kanban_cards() |> DataFrame              # linhas (coluna, id, texto)
+kanban_log()                             # quem mudou o quê, e quando
+kanban_chat!("quadro pronto")            # o painel de chat, pelo REPL
+Perth.kanban_stop()
+```
+
+> **Segurança.** A matriz de permissões restringe o que uma máquina **conectada**
+> pode fazer; ela não barra a conexão, e a identidade é só um endereço IP
+> (falsificável numa rede em que você não confia). Trate-a como redução de estrago,
+> não como autenticação.
+
+<details>
+<summary><b>Zerar o quadro</b></summary>
+
+O quadro inteiro mora em dois arquivos, então zerar é: parar o servidor, apagá-los,
+subir de novo.
+
+```julia
+Perth.kanban_stop()                       # pare primeiro — o servidor mantém o
+                                          # quadro em memória e regrava o arquivo a
+                                          # cada operação
+datadir = joinpath(homedir(), ".perth")   # ou o seu PERTH_DATA_DIR / data_dir
+rm(joinpath(datadir, "kanban.json"); force = true)        # o quadro
+rm(joinpath(datadir, "kanban-log.jsonl"); force = true)   # o log de atividades
+Perth.kanban(share = true)                # quadro novo: backlog / doing / done
+```
+
+Apagar o log é opcional — mas, se você o mantiver, o painel de Atividade vai mostrar
+histórico que fala de um quadro que não existe mais. Para **guardar** o quadro velho
+em vez de apagá-lo, renomeie o arquivo e renomeie de volta quando quiser; para
+começar um quadro **separado** sem mexer neste, aponte o servidor para outra pasta:
+`Perth.kanban(share = true, data_dir = "/caminho/do/novo-quadro")`.
+
+</details>
 
 ---
 

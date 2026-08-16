@@ -64,12 +64,23 @@ const SEMENTE = `
   const pg = await abrirChrome(chrome, url);
 
   try {
-    // espera o app existir (o init é assíncrono e o fetch de projetos falha
-    // de propósito: este servidor devolve lista vazia)
-    for (let i = 0; i < 60; i++) {
-      if (await pg.avaliar(`return typeof renderAll === "function"`)) break;
-      await espera(100);
-    }
+    /* Espera o app existir E o init() TERMINAR.
+     *
+     * Só esperar por `renderAll` não basta: a função existe assim que o
+     * arquivo é avaliado, muito antes de o init() assíncrono acabar. Este
+     * servidor de teste não tem /api, então o init falha de propósito — e a
+     * falha chega DEPOIS, com um renderAll() que apaga o gráfico que a
+     * semente acabou de desenhar. Na minha máquina o init falhava antes da
+     * semente e ninguém via; no runner do CI, mais lento, ele chegava depois
+     * e a barra da tarefa sumia do meio do teste.
+     *
+     * O sinal de que o init terminou é a barra de status: em erro ela recebe
+     * "no connection" ou "startup error"; com projetos, o nome de um. */
+    const pronto = async () => pg.avaliar(`
+      if (typeof renderAll !== "function") return false;
+      const s = document.getElementById("status-left");
+      return !!s && s.textContent !== "—";`);
+    for (let i = 0; i < 100 && !(await pronto()); i++) await espera(100);
     await pg.avaliar(SEMENTE);
 
     console.log("navegador · a faixa PERT não se mexe enquanto se digita");

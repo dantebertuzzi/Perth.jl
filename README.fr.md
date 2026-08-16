@@ -289,16 +289,76 @@ avait qu'un seul chemin critique.
 
 ## Kanban : un tableau partagé pour le bureau
 
+`Perth.kanban()` lance une seconde application, indépendante. Elle ne touche pas au
+modèle de données du Gantt — le tableau est une entité à part, persistée dans
+`kanban.json` au sein du répertoire de données.
+
 ```julia
-Perth.kanban(share = true)               # un tableau sur votre réseau
-kanban_from_project!(p)                  # transforme un plan en cartes
+Perth.kanban()                         # cette machine seulement, comme Perth.run()
+Perth.kanban(share = true)             # affiche les liens du réseau
+Perth.kanban(share = true, key = "…")  # …et exige la clé de ceux qui en viennent
+Perth.kanban_share!(false)             # arrête la diffusion, le tableau reste en vie
+Perth.kanban_key!("…")                 # définit/change la clé, tableau lancé
+
+kanban_from_project!(p)                # transforme un plan en cartes
 ```
 
-Autorité WebSocket de bout en bout : chaque changement est diffusé en direct. Les
-cartes portent des `#étiquettes`, du `**markdown**`, des check-lists, des échéances
-et des responsables ; une carte liée déposée dans *done* termine la tâche dans le
-Gantt, et réciproquement. Permissions par machine, annuler/rétablir, chat, et le même
-modèle de clé d'accès.
+Autorité WebSocket de bout en bout : chaque changement est diffusé en direct, faire
+glisser une carte s'anime sur l'écran de tout le monde, et chaque machine apparaît
+comme un curseur étiqueté ancré à une *carte*, pas à un pixel — il survit donc aux
+tailles de fenêtre et aux niveaux de zoom différents. Les cartes portent des
+`#étiquettes`, du `**markdown**`, des check-lists, des échéances, des responsables,
+des **limites d'en-cours** par colonne et une archive ; une carte liée déposée dans
+*done* termine la tâche dans le Gantt, et réciproquement. `Ctrl+Z` / `Ctrl+Shift+Z`
+annulent **vos** actions sans revenir sur ce qu'un collègue a fait ensuite.
+
+L'**hôte** peut restreindre ce qu'une machine a le droit de faire — *Board →
+Permissions…* est une matrice de 19 actions de carte et de colonne face à chaque IP
+qui s'est connectée. C'est appliqué **côté serveur** : un client ne la contourne pas
+en parlant directement à la WebSocket, et l'interface se contente de masquer ce qui
+est refusé.
+
+Et le REPL agit sur le même tableau, en diffusant en direct à tous les navigateurs :
+
+```julia
+kanban_add_card!("backlog", "Publier la v1.0")
+kanban_move_card!(id, "doing")
+kanban_alias!("192.168.0.23", "Paulo")   # un nom pour la machine, pour tout le monde
+kanban_cards() |> DataFrame              # lignes (colonne, id, texte)
+kanban_log()                             # qui a changé quoi, et quand
+kanban_chat!("le tableau est prêt")      # le panneau de chat, depuis le REPL
+Perth.kanban_stop()
+```
+
+> **Sécurité.** La matrice de permissions restreint ce qu'une machine **connectée**
+> peut faire ; elle ne filtre pas la connexion, et l'identité n'est qu'une adresse IP
+> (usurpable sur un réseau non fiable). Voyez-la comme une réduction des dégâts, pas
+> comme une authentification.
+
+<details>
+<summary><b>Réinitialiser le tableau</b></summary>
+
+Le tableau entier tient dans deux fichiers : une réinitialisation complète consiste à
+arrêter le serveur, les supprimer, puis relancer.
+
+```julia
+Perth.kanban_stop()                       # arrêtez d'abord — le serveur garde le
+                                          # tableau en mémoire et réécrit le fichier
+                                          # à chaque opération
+datadir = joinpath(homedir(), ".perth")   # ou votre PERTH_DATA_DIR / data_dir
+rm(joinpath(datadir, "kanban.json"); force = true)        # le tableau
+rm(joinpath(datadir, "kanban-log.jsonl"); force = true)   # le journal d'activité
+Perth.kanban(share = true)                # tableau neuf : backlog / doing / done
+```
+
+Supprimer le journal est facultatif — mais si vous le gardez, le panneau Activité
+montrera l'histoire d'un tableau qui n'existe plus. Pour **conserver** l'ancien
+tableau au lieu de l'effacer, renommez le fichier et remettez son nom quand vous le
+voudrez ; pour démarrer un tableau **séparé** sans toucher à celui-ci, pointez le
+serveur vers un autre dossier :
+`Perth.kanban(share = true, data_dir = "/chemin/vers/nouveau-tableau")`.
+
+</details>
 
 ---
 
