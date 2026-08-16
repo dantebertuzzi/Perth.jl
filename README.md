@@ -618,5 +618,11 @@ ones (8124, 8125, …).
   engine-fed after CPM runs; while dragging, previews use calendar days
   until the next sync.
 - `.perth.jl` import uses a whitelist AST evaluator (only `Project`,
-  `GanttTask`, `Date`, `DateTime`, literals and vectors); everything
-  else is rejected before any execution.
+  `GanttTask`, `Person`, `Band`, `Marker`, `Date`, `DateTime`, literals
+  and vectors); everything else is rejected before any execution.
+
+## What is next
+
+[CHANGELOG.md](CHANGELOG.md) says what Perth does and when it started doing
+it. [ROADMAP.md](ROADMAP.md) says what it still does not, and why each gap is
+worth closing.
