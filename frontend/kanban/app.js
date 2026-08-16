@@ -996,82 +996,22 @@ function cardEl(card) {
   return el;
 }
 
-// Markdown inline + #tags: **negrito**, *itálico*, `código`, ~~riscado~~,
-// [texto](url), URLs soltas e #tags viram chips/links. Tokenizador que só
-// monta nós DOM — nunca innerHTML com texto do usuário (XSS) — e links
-// restritos a http/https (nada de javascript:). Sem aninhamento: é o
-// subconjunto que resolve uma linha de card, não um renderer completo.
-const INLINE_RE = new RegExp(
-  "(`([^`]+)`)" +
-  "|(\\*\\*([^*]+)\\*\\*)" +
-  "|(\\*([^*\\s](?:[^*]*[^*\\s])?)\\*)" +
-  "|(~~([^~]+)~~)" +
-  "|(\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\))" +
-  "|(https?:\\/\\/[^\\s<>\"')\\]]+)" +
-  "|(#[\\p{L}\\p{N}_-]+)", "gu");
-
-function linkEl(label, href) {
-  if (!/^https?:\/\//i.test(href)) return document.createTextNode(label);
-  const a = document.createElement("a");
-  a.className = "card-link";
-  a.href = href;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  a.textContent = label;
-  a.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (Date.now() - justDragged < 300) e.preventDefault();   // fim de arrasto
-  });
-  return a;
-}
-
-function tagEl(val) {
-  const tag = document.createElement("span");
-  tag.className = "tag";
-  tag.textContent = val;
-  const c = tagColor(val.toLowerCase());
-  tag.style.setProperty("--tagc", c);
-  tag.style.setProperty("--tagbg", c + "26");
-  tag.title = T("filter by") + " " + val;
-  tag.addEventListener("click", (e) => {
-    e.stopPropagation();
-    setFilter(val);
-  });
-  return tag;
-}
-
+/* Markdown inline + #tags do card: **negrito**, *itálico*, `código`,
+ * ~~riscado~~, [texto](url), URL solta e #etiqueta.
+ *
+ * O tokenizador mudou-se para shared/inline.js quando as notas de uma tarefa
+ * do gantt passaram a usar o mesmo subconjunto — duas telas com o mesmo
+ * significado não podem ter dois analisadores. O que fica aqui é o que é do
+ * kanban: a cor da etiqueta, o clique que filtra o quadro, e a guarda que
+ * impede o link de abrir no fim de um arrasto. */
 function renderCardText(container, text) {
-  let last = 0;
-  let m;
-  INLINE_RE.lastIndex = 0;
-  while ((m = INLINE_RE.exec(text))) {
-    if (m.index > last) container.append(text.slice(last, m.index));
-    if (m[1]) {
-      const code = document.createElement("code");
-      code.textContent = m[2];
-      container.append(code);
-    } else if (m[3]) {
-      const b = document.createElement("strong");
-      b.textContent = m[4];
-      container.append(b);
-    } else if (m[5]) {
-      const i = document.createElement("em");
-      i.textContent = m[6];
-      container.append(i);
-    } else if (m[7]) {
-      const s = document.createElement("del");
-      s.textContent = m[8];
-      container.append(s);
-    } else if (m[9]) {
-      container.append(linkEl(m[10], m[11]));
-    } else if (m[12]) {
-      container.append(linkEl(m[12], m[12]));
-    } else if (m[13]) {
-      container.append(tagEl(m[13]));
-    }
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) container.append(text.slice(last));
+  return PerthInline.render(container, text, {
+    linkClass: "card-link",
+    tagClass: "tag",
+    tagColor,
+    onTag: setFilter,
+    podeAbrirLink: () => Date.now() - justDragged >= 300,
+  });
 }
 
 function colMenu(col, ci) {

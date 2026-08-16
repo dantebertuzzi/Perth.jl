@@ -298,16 +298,63 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
 body.presenting .toolbar,
 body.presenting .task-table { display: none; }
 
+/* Balão da nota. Fora do SVG (HTML dentro de <svg> só com <foreignObject>,
+   que traz mais problema do que resolve) e por cima de tudo, com a setinha
+   apontando para o ponto que o abriu. */
+.note-pop {
+  position: fixed;
+  z-index: 60;
+  max-width: 340px;
+  padding: 10px 12px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .16);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.note-pop::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: var(--panel);
+  bottom: -12px;
+}
+.note-pop.abaixo::after { bottom: auto; top: -12px; border-top-color: transparent; border-bottom-color: var(--panel); }
+.note-pop-task {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.note-pop-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-pop-text code {
+  background: var(--sel);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: .92em;
+}
+.note-pop-text del { color: var(--muted); }
+.note-link { color: var(--purple); }
+
 /* Brand agora é um link para o repositório (mesma aparência de antes) */
 
-/* Ponto vermelho: a tarefa tem anotações (hover na barra mostra o texto) */
+/* Ponto vermelho: a tarefa tem anotação — e é ele que a abre. Fica ACIMA da
+   barra justamente porque agora recebe o mouse: dentro dela, no canto, ele
+   engoliria a alça de redimensionar. */
 .note-dot {
   fill: #e5484d;
   stroke: var(--panel);
   stroke-width: 1.2;
-  pointer-events: none;   /* não rouba o drag no canto da barra */
+  cursor: help;
 }
 .note-mark {
+  cursor: help;
   display: inline-block;
   width: 6px;
   height: 6px;

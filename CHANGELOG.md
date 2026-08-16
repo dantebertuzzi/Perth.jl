@@ -8,6 +8,20 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Markdown in a task's notes, and a note you can actually read.** The red dot
+  said "this task has a note" and the text arrived in a native browser tooltip:
+  no formatting, no decent line breaks, gone if the pointer wavers. The dot now
+  *opens* the note, in an HTML popover that renders `**bold**`, `*italic*`,
+  `` `code` ``, `~~strike~~` and links — the same one-line subset the kanban
+  card speaks, which moved to `shared/inline.js` so two screens with the same
+  meaning stop having two parsers.
+- The formatting stops at the notes, on purpose. A task's **name** sorts its
+  siblings, is what the search matches, and is what goes into CSV, iCalendar,
+  `.perth.jl`, the PNG and the REPL — markdown there would either leak as
+  punctuation into all of them or need a stripping step remembered in eight
+  places, and the day one is forgotten an asterisk lands in a client's
+  spreadsheet. The note is the one text field in Perth that is prose and
+  travels nowhere as an identifier.
 - **What you folded survives the reload.** Collapsing the phases *is* how you
   work a plan of a hundred-odd tasks, and it was thrown away on every reload,
   every trip to the kanban and back, every project switch. It now lives in the

@@ -1365,6 +1365,15 @@ function taskRow(t, seq) {
   attachRowDrag(row, t);
   // o ▾ recolhe a subárvore e NÃO seleciona: clique na seta é sobre a
   // árvore, clique na linha é sobre a tarefa
+  const marca = row.querySelector(".note-mark");
+  if (marca) {
+    marca.addEventListener("pointerenter", () => abreNota(t, marca));
+    marca.addEventListener("pointerleave", fechaNotaDepois);
+    marca.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      abreNota(t, marca, { fixo: true });
+    });
+  }
   row.querySelector(".sum-mark")?.addEventListener("click", (ev) => {
     ev.stopPropagation();
     toggleSummary(t.id);
@@ -1558,6 +1567,83 @@ function toggleSummary(id) {
   gravaDobras();
   renderTable();
   renderChart();
+}
+
+/* ------------------------------------------------------------------ */
+/* A nota da tarefa                                                     */
+/* ------------------------------------------------------------------ */
+
+/* O pontinho vermelho dizia "esta tarefa tem anotação" e o texto vinha num
+ * tooltip nativo do navegador: sem formatação, sem quebra de linha decente,
+ * e some se o ponteiro tremer. Agora o ponto ABRE a nota, num balão de HTML
+ * — que é o que permite escrever `*urgente*`, `` `NBR 6118` `` ou um link e
+ * ver isso renderizado (mesmo subconjunto do card do kanban, ver
+ * shared/inline.js).
+ *
+ * A nota é PROSA de quem escreveu, e é o único campo de texto do Perth que
+ * não viaja como identificador: o nome da tarefa ordena, é buscado e sai em
+ * CSV, iCalendar e .perth.jl, e markdown ali vazaria como pontuação em todos
+ * esses lugares. Por isso a formatação para aqui. */
+function pontoDeNota(chart, t, dim, cx, cy) {
+  const ponto = svg("circle", { class: "note-dot" + dim, cx, cy, r: 3.2 });
+  ponto.addEventListener("pointerenter", () => abreNota(t, ponto));
+  ponto.addEventListener("pointerleave", fechaNotaDepois);
+  ponto.addEventListener("click", (ev) => {
+    ev.stopPropagation();          // ver a nota não é selecionar a tarefa
+    abreNota(t, ponto, { fixo: true });
+  });
+  chart.appendChild(ponto);
+  return ponto;
+}
+
+let notaAberta = null;
+let notaTimer = null;
+
+function abreNota(t, alvo, { fixo = false } = {}) {
+  clearTimeout(notaTimer);
+  fechaNota();
+  const balao = document.createElement("div");
+  balao.className = "note-pop";
+  balao.id = "note-pop";
+  const titulo = document.createElement("div");
+  titulo.className = "note-pop-task";
+  titulo.textContent = t.name;
+  const corpo = document.createElement("div");
+  corpo.className = "note-pop-text";
+  PerthInline.render(corpo, t.notes, { linkClass: "note-link" });
+  balao.append(titulo, corpo);
+  // o balão vive fora do SVG: HTML dentro de <svg> só com <foreignObject>,
+  // que traz mais problema (recorte, foco, impressão) do que resolve
+  document.body.append(balao);
+  balao.addEventListener("pointerenter", () => clearTimeout(notaTimer));
+  balao.addEventListener("pointerleave", fechaNotaDepois);
+
+  const r = alvo.getBoundingClientRect();
+  const larg = balao.offsetWidth;
+  const alt = balao.offsetHeight;
+  // encosta na borda da janela em vez de sair dela: nota que só se lê rolando
+  // a página não é nota
+  const left = Math.min(Math.max(8, r.left + r.width / 2 - larg / 2),
+                        window.innerWidth - larg - 8);
+  const acima = r.top - alt - 8;
+  balao.style.left = left + "px";
+  balao.style.top = (acima > 8 ? acima : r.bottom + 8) + "px";
+  balao.classList.toggle("abaixo", acima <= 8);
+  notaAberta = { fixo };
+}
+
+function fechaNota() {
+  document.getElementById("note-pop")?.remove();
+  notaAberta = null;
+}
+
+// some com folga: sair do ponto e entrar no balão passa por um vão de pixels,
+// e fechar nesse vão tornaria o link de dentro impossível de clicar
+function fechaNotaDepois() {
+  clearTimeout(notaTimer);
+  notaTimer = setTimeout(() => {
+    if (!notaAberta?.fixo) fechaNota();
+  }, 220);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1855,15 +1941,11 @@ function renderChart() {
       });
       g.appendChild(capa(x, 1));
       g.appendChild(capa(x + w, -1));
-      if (hasNotes) g.appendChild(svgTitle(t.notes));
+
       g.addEventListener("click", () => selectTask(t.id));
       g.addEventListener("dblclick", () => openModal(t.id));
       chart.appendChild(g);
-      if (hasNotes) {
-        chart.appendChild(svg("circle", {
-          class: "note-dot" + dim, cx: x + w - 2, cy: sy - 1, r: 3.2,
-        }));
-      }
+      if (hasNotes) pontoDeNota(chart, t, dim, x + w - 2, sy - 1);
       if (ui.labels) rotuloDaBarra(chart, t, dim, x + w + 8 + folga, sy + alt + 4, caixasRotulo);
       if (t.id === state.selected) {
         chart.appendChild(svg("rect", {
@@ -1886,14 +1968,10 @@ function renderChart() {
         fill: color,
         "data-id": t.id,
       });
-      if (hasNotes) dia.appendChild(svgTitle(t.notes));
+
       attachDrag(dia, t, "move");
       chart.appendChild(dia);
-      if (hasNotes) {
-        chart.appendChild(svg("circle", {
-          class: "note-dot" + dim, cx: x + r, cy: cy - r, r: 3.2,
-        }));
-      }
+      if (hasNotes) pontoDeNota(chart, t, dim, x + r, cy - r);
       if (ui.labels) rotuloDaBarra(chart, t, dim, x + r + 6 + folga, cy + 4, caixasRotulo);
     } else {
       const info = state.cpm?.byId.get(t.id);
@@ -1908,7 +1986,7 @@ function renderChart() {
         class: "bar" + dim, x, y, width: w, height: h,
         fill: color, opacity: 0.55, "data-id": t.id,
       });
-      if (hasNotes) bar.appendChild(svgTitle(t.notes));
+
       attachDrag(bar, t, "move");
       chart.appendChild(bar);
 
@@ -1919,12 +1997,10 @@ function renderChart() {
         }));
       }
 
-      if (hasNotes) {
-        // Ponto vermelho no canto: a tarefa tem anotações (hover mostra)
-        chart.appendChild(svg("circle", {
-          class: "note-dot" + dim, cx: x + w - 5, cy: y + 5, r: 3.2,
-        }));
-      }
+      // acima da barra, não dentro dela: o ponto passou a receber o mouse
+      // (é ele que abre a nota) e no canto de dentro ele engoliria a alça de
+      // redimensionar, que mora nos últimos 8px
+      if (hasNotes) pontoDeNota(chart, t, dim, x + w - 5, y - 3.5);
 
       const handle = svg("rect", {
         class: "bar-handle" + dim, x: x + w - 8, y, width: 8, height: h, "data-id": t.id,
@@ -4720,6 +4796,12 @@ $$(".menu").forEach((menu) => {
   });
 });
 document.addEventListener("click", () => $$(".menu").forEach((m) => m.classList.remove("open")));
+// nota presa com clique fecha no clique de fora, como qualquer balão
+document.addEventListener("click", (ev) => {
+  if (!notaAberta?.fixo) return;
+  if (ev.target.closest("#note-pop, .note-dot, .note-mark")) return;
+  fechaNota();
+});
 
 document.addEventListener("click", (ev) => {
   const btn = ev.target.closest("[data-action]");
@@ -4939,6 +5021,7 @@ document.addEventListener("keydown", (ev) => {
     case "3": setZoom("month"); break;
     case "4": setZoom("fit"); break;
     case "Escape":
+      if (document.getElementById("note-pop")) { fechaNota(); break; }
       if (state.presenting) { exitPresentation(); break; }
       if (chatOpen) { closeChat(); break; }
       state.selected = null; renderTable(); renderChart();
