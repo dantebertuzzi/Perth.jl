@@ -1175,3 +1175,37 @@ body.presenting .res-pane { display: none; }
   overflow: hidden;
 }
 .stats-bar > span { display: block; height: 100%; background: var(--purple); }
+
+/* Faixas nomeadas do calendário: fundo que diz "este trecho é diferente",
+   sem competir com as barras desenhadas em cima. */
+.cal-band { opacity: .13; pointer-events: none; }
+.cal-edge { opacity: .45; stroke-width: 1; pointer-events: none; }
+.cal-label {
+  fill: var(--ink);
+  opacity: .45;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .1em;
+  pointer-events: none;
+}
+.cal-box { min-width: 420px; }
+.cal-add { display: flex; gap: 8px; align-items: center; }
+.cal-add input[type=text] { flex: 1 1 auto; min-width: 0; }
+.cal-add input[type=date] { flex: 0 0 auto; }
+.cal-row { gap: 8px; }
+/* input[type=color] tem moldura e recheio do sistema: some com os dois e
+   sobra a cor, que é o que interessa. */
+.cal-dot, .cal-pick {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+.cal-dot { width: 14px; height: 14px; border-radius: 4px; }
+.cal-dot::-webkit-color-swatch-wrapper, .cal-pick::-webkit-color-swatch-wrapper { padding: 0; }
+.cal-dot::-webkit-color-swatch, .cal-pick::-webkit-color-swatch { border: 0; border-radius: 3px; }
+.cal-dot::-moz-color-swatch, .cal-pick::-moz-color-swatch { border: 0; border-radius: 3px; }

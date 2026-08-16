@@ -90,6 +90,31 @@ Base.@kwdef mutable struct Person
 end
 
 """
+    Band(; name, from, to, color = "")
+
+A named stretch of calendar shaded behind the chart: a sprint, a shutdown, a
+rainy season, the two weeks when the crane is on site. It is *annotation*,
+not scheduling — a period never moves a task, constrains a date or enters the
+CPM engine. It answers "why is this stretch different?", which until now had
+to live in someone's head or in a note nobody opens.
+
+# Fields
+- `name::String`: written along the band, on its left edge.
+- `from::Date` / `to::Date`: inclusive on both ends — a period of one day has
+  `from == to`. Inverted ranges are swapped on save, the way a negative
+  duration is clamped: it is a typo, not a plan.
+- `color::String`: hex tint (e.g. `"#7cc4a4"`); empty picks one automatically.
+
+Bands may overlap — a crunch week inside a sprint is a real thing to say.
+"""
+Base.@kwdef mutable struct Band
+    name::String = ""
+    from::Date = Dates.today()
+    to::Date = Dates.today()
+    color::String = ""
+end
+
+"""
     Project(; name, kwargs...)
 
 A project: a named collection of [`GanttTask`](@ref)s.
@@ -103,6 +128,10 @@ Base.@kwdef mutable struct Project
     # dá nome (e cargo, setor…) a quem ainda não tem tarefa. Texto livre
     # continua valendo — a lista é conveniência e vocabulário, não cerca.
     people::Vector{Person} = Person[]
+
+    # Faixas nomeadas do calendário (sprints, paradas, período de chuva).
+    # São anotação: não movem tarefa nem entram no motor de CPM.
+    bands::Vector{Band} = Band[]
     # Caminho de espelhamento em disco (estilo Pluto): quando não vazio, cada
     # salvamento também grava o .perth.jl neste caminho. Específico da máquina,
     # por isso NUNCA entra no formato de intercâmbio .perth.jl exportado.
@@ -115,6 +144,7 @@ end
 
 # Serialização JSON via StructTypes (JSON3 cuida de Date/DateTime como ISO-8601)
 StructTypes.StructType(::Type{Person}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{Band}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{GanttTask}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{Project}) = StructTypes.Mutable()
 
@@ -258,6 +288,22 @@ function _clean_people(pessoas)
         push!(vistos, k); push!(out, pe)
     end
     return sort!(out; by = pe -> lowercase(pe.name))
+end
+
+# Faixas arrumadas: sem nome vazio, ponta invertida virada, ordenadas por
+# início. A ordem importa na tela — desenhar na ordem de digitação faria a
+# faixa mais nova cobrir a mais antiga sem motivo.
+function _clean_bands(faixas)
+    out = Band[]
+    for x in faixas
+        f = x isa Band ? x : Band(; (Symbol(k) => v for (k, v) in pairs(x))...)
+        f.name = _cap_text(replace(strip(f.name), r"\s+" => " "))
+        f.color = strip(f.color)
+        isempty(f.name) && continue
+        f.from > f.to && ((f.from, f.to) = (f.to, f.from))
+        push!(out, f)
+    end
+    return sort!(out; by = f -> (f.from, f.to, lowercase(f.name)))
 end
 
 # Remove dependências que apontam para ids inexistentes ou para a própria tarefa

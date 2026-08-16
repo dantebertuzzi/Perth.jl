@@ -543,17 +543,19 @@ function markDirty() {
 async function saveNow() {
   if (!state.current || !state.dirty) return;
   try {
-    await api(`/api/projects/${state.current.id}`, {
+    // guarda a resposta: é o projeto DEPOIS das normalizações do servidor
+    // (grafia de nome, ordem das faixas, ponta invertida virada), e quem
+    // editou precisa ver o que ficou gravado, não o que digitou
+    const salvo = await api(`/api/projects/${state.current.id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         "X-Perth-Base": state.baseUpdatedAt || "",
       },
       body: JSON.stringify(state.current),
-    }).then((saved) => {
-      state.current.updated_at = saved.updated_at;
-      noteBase();
     });
+    state.current.updated_at = salvo.updated_at;
+    noteBase();
     state.dirty = false;
     state.knownRev = await fetchRev();
     await fetchAnalytics();
@@ -565,6 +567,7 @@ async function saveNow() {
     const hh = String(t.getHours()).padStart(2, "0");
     const mm = String(t.getMinutes()).padStart(2, "0");
     setSaveStatus("saved", `saved ${hh}:${mm} ✓`);
+    return salvo;
   } catch (err) {
     if (err && err.status === 409) {
       // outra máquina salvou antes: recarrega em vez de sobrescrever
@@ -1276,6 +1279,31 @@ function renderChart() {
       }
     }
   }
+
+  /* Faixas nomeadas do calendário (sprint, parada, chuvas). Vêm antes da
+     grade e das barras porque são fundo: sombrear é dizer "este trecho é
+     diferente", não competir com o trabalho desenhado em cima. */
+  (state.current.bands || []).forEach((f, i) => {
+    const x0 = Math.max(xOf(parseDate(f.from)), 0);
+    const x1 = Math.min(xOf(parseDate(f.to)) + ppd, totalW);
+    if (x1 <= x0) return;   // faixa inteira fora da janela desenhada
+    const cor = f.color || AUTO_COLORS[i % AUTO_COLORS.length];
+    chart.appendChild(svg("rect", {
+      class: "cal-band", x: x0, y: 0, width: x1 - x0, height: totalH,
+      fill: cor,
+    }));
+    chart.appendChild(svg("line", {
+      class: "cal-edge", x1: x0, y1: 0, x2: x0, y2: totalH, stroke: cor,
+    }));
+    // nome deitado na borda esquerda: horizontal ele seria a primeira coisa
+    // que o zoom corta, e some justo quando a faixa fica estreita
+    const rot = svg("text", {
+      class: "cal-label", x: x0 + 13, y: 10,
+      transform: `rotate(90 ${x0 + 13} 10)`,
+    });
+    rot.textContent = f.name;
+    chart.appendChild(rot);
+  });
 
   // Grade vertical: dias (zoom dia) ou segundas-feiras
   if (state.zoom === "day") {
@@ -2053,11 +2081,15 @@ function showPeople() {
 
   async function gravar(pessoas) {
     state.current.people = pessoas;
-    await saveNowAfterDirty();
-    // quem arruma grafia, ordem e repetição é o servidor — recarregar faz
-    // a tela mostrar o que ficou gravado, não o que foi digitado
-    await loadProjects(state.current.id);
+    // adota a resposta do servidor, que é quem arruma grafia, ordem e
+    // repetição. Recarregar o projeto INTEIRO aqui era pior do que parecia:
+    // uma segunda edição feita durante o recarregamento era engolida quando
+    // a resposta antiga chegava e trocava state.current debaixo dela.
+    const salvo = await saveNowAfterDirty();
+    if (salvo) state.current.people = salvo.people;
     fillPeopleList();
+    renderTable();
+    renderChart();
     desenhar();
   }
 
@@ -2290,6 +2322,117 @@ function celula(texto, cls) {
 /* 12.0 vira "12"; 12.53 vira "12.5". Pessoa-dias com três casas decimais é
    precisão que o plano não tem. */
 const numeroCurto = (v) => (Math.round(v * 10) / 10).toString();
+
+const corAutomatica = (i) => AUTO_COLORS[i % AUTO_COLORS.length];
+
+/* Editor de faixas do calendário. Faixa sem nome não entra: um trecho
+   sombreado que não diz por quê é ruído, não informação. */
+function showBands() {
+  if (!state.current) return;
+  const body = document.createElement("div");
+  body.className = "people-box cal-box";
+
+  const form = document.createElement("form");
+  form.className = "cal-add";
+  const nome = document.createElement("input");
+  nome.type = "text";
+  nome.autocomplete = "off";
+  nome.placeholder = T("Name");
+  const de = document.createElement("input");
+  de.type = "date";
+  const ate = document.createElement("input");
+  ate.type = "date";
+  // o seletor já vem na cor que a faixa teria de graça: quem não liga para
+  // cor não precisa escolher nenhuma, e quem liga muda uma que já existe
+  const cor = document.createElement("input");
+  cor.type = "color";
+  cor.className = "cal-pick";
+  cor.title = T("Colour");
+  cor.value = corAutomatica((state.current.bands || []).length);
+  const add = document.createElement("button");
+  add.type = "submit";
+  add.className = "primary";
+  add.textContent = T("Add");
+  form.append(nome, de, ate, cor, add);
+
+  const lista = document.createElement("div");
+  lista.className = "people-list";
+
+  async function gravar(faixas) {
+    state.current.bands = faixas;
+    // ver o comentário do gravar() dos colaboradores: a resposta do PUT já
+    // é o estado normalizado, e recarregar o projeto abriria uma janela em
+    // que a edição seguinte se perde
+    const salvo = await saveNowAfterDirty();
+    if (salvo) state.current.bands = salvo.bands;
+    renderChart();
+    desenhar();
+  }
+
+  function desenhar() {
+    const faixas = state.current.bands || [];
+    lista.textContent = "";
+    if (!faixas.length) {
+      const vazio = document.createElement("p");
+      vazio.className = "muted";
+      vazio.textContent = T("No bands yet.");
+      lista.append(vazio);
+    }
+    faixas.forEach((f, i) => {
+      const linha = document.createElement("div");
+      linha.className = "people-row cal-row";
+      // a bolinha É o seletor: mostrar a cor e obrigar a abrir outro lugar
+      // para trocá-la seria duas coisas onde cabe uma
+      const cor = document.createElement("input");
+      cor.type = "color";
+      cor.className = "cal-dot";
+      cor.title = T("Colour");
+      cor.value = f.color || corAutomatica(i);
+      cor.addEventListener("change", () => {
+        f.color = cor.value;
+        gravar(faixas);
+      });
+      const n = document.createElement("span");
+      n.className = "people-name";
+      n.textContent = f.name;
+      const quando = document.createElement("span");
+      quando.className = "people-count";
+      quando.textContent = `${f.from} → ${f.to}`;
+      const x = document.createElement("button");
+      x.className = "icon-btn";
+      x.type = "button";
+      x.textContent = "✕";
+      x.title = T("Remove");
+      x.addEventListener("click", () => gravar(faixas.filter((o) => o !== f)));
+      linha.append(cor, n, quando, x);
+      lista.append(linha);
+    });
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const texto = nome.value.trim();
+    if (!texto || !de.value || !ate.value) return;
+    const escolhida = cor.value;
+    // mesma regra do REPL: nome repetido MOVE a faixa em vez de duplicar,
+    // e ponta invertida é engano de digitação, não plano
+    const [from, to] = de.value <= ate.value ? [de.value, ate.value]
+                                             : [ate.value, de.value];
+    const resto = (state.current.bands || [])
+      .filter((f) => f.name.toLowerCase() !== texto.toLowerCase());
+    gravar([...resto, { name: texto, from, to, color: escolhida }]);
+    // próxima faixa já vem com a próxima cor da paleta, para duas seguidas
+    // não saírem iguais sem ninguém pedir
+    cor.value = corAutomatica(resto.length + 1);
+    nome.value = "";
+    nome.focus();
+  });
+
+  desenhar();
+  body.append(form, lista);
+  showOverlay("Calendar bands", body);
+  nome.focus();
+}
 
 function showOverlay(title, bodyEl) {
   document.getElementById("perth-overlay")?.remove();
@@ -3044,7 +3187,7 @@ async function renameProject() {
 async function saveNowAfterDirty() {
   state.dirty = true;
   clearTimeout(saveTimer);
-  await saveNow();
+  return saveNow();
 }
 
 async function deleteProject() {
@@ -3210,6 +3353,7 @@ const ACTIONS = {
   "new-project": newProject,
   "rename-project": renameProject,
   "people": showPeople,
+  "bands": showBands,
   "delete-project": deleteProject,
   "import": importProject,
   "export": exportProject,

@@ -91,6 +91,12 @@ julia> using CairoMakie; save("timeline.png", ganttplot(p))
 - Double-click a bar (or table row) to edit; **duplicate** a task from
   the Edit menu or `Ctrl+D` (also `duplicate_task!(p, id)` in the REPL)
 - Tasks with notes show a **red dot** on the bar — hover to read them
+- **Calendar bands** (File → Calendar bands…, or `add_band!`): shade a named
+  stretch of calendar behind the chart — a sprint, a shutdown, the rainy
+  season, the two weeks the crane is on site. Pick its colour, overlap them
+  freely. A band is annotation: it never moves a task or enters the CPM
+  engine, it answers *why this stretch is different*, which until now lived
+  in someone's head.
 - **Statistics by person and by team** (View → Statistics…, or `people_stats`
   / `team_stats`): tasks, effort, how much is done, days busy, days
   double-booked and tasks past their deadline — the same weight the S-curve

@@ -8,6 +8,19 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Calendar bands** (`Band`, `bands`, `bands!`, `add_band!`, `remove_band!`,
+  and File → Calendar bands…): a named stretch of calendar shaded behind the
+  chart, with the name written along its left edge — a sprint, a shutdown, the
+  rainy season, the fortnight the crane is on site. The colour is yours to
+  pick (the swatch starts on the next colour of the palette, so two bands in a
+  row are never the same by accident), and bands may overlap: a crunch week
+  inside a sprint is a real thing to say.
+- A band is **annotation**, not scheduling: it never moves a task, constrains
+  a date or enters the CPM engine. It answers "why is this stretch different?",
+  which until now had to live in someone's head or in a note nobody opens.
+  Inverted ranges are swapped on save, the way a negative duration is clamped,
+  and a nameless band is dropped — shading that does not say why is noise.
+
 - **Statistics by person and by team** (`people_stats`, `team_stats`, and
   View → Statistics…). The engine already knew all of it and never added it
   up: how much each person carries, how much of that is done, how many days
@@ -108,6 +121,11 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   nowhere on the chart.
 
 ### Fixed
+- The collaborator panel could **lose an edit**: it reloaded the whole project
+  after saving, and a second edit made during that reload was overwritten when
+  the older response landed. Both panels now adopt the answer to their own
+  `PUT`, which is already the normalized state, and never reload underneath
+  themselves.
 - Four translation keys were defined twice with **different** wording in the
   same dictionary, where the last one silently wins; 27 duplicate definitions
   in total were removed. The suite now fails on any repeated key, and on any

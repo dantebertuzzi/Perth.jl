@@ -40,6 +40,10 @@ person
 people!
 add_person!
 remove_person!
+bands
+bands!
+add_band!
+remove_band!
 tasktable
 icalendar
 overallocations

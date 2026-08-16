@@ -19,6 +19,9 @@ Base.show(io::IO, t::GanttTask) =
     print(io, "GanttTask(\"", t.name, "\", ", t.start,
           t.milestone ? ", milestone)" : " +$(t.duration)d)")
 
+Base.show(io::IO, f::Band) =
+    print(io, "Band(\"", f.name, "\" ", f.from, " → ", f.to, ")")
+
 # Cargo e setor entram no formato compacto porque é para isso que eles
 # existem: um nome solto numa lista não diz quem é a pessoa.
 function Base.show(io::IO, pe::Person)

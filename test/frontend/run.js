@@ -2775,6 +2775,99 @@ console.log("gantt · raias por responsável");
   close();
 }
 
+console.log("gantt · faixas do calendário");
+{
+  const { runIn, close } = loadGanttApp();
+
+  const seed = `
+    window.__salvos = [];
+    window.saveNowAfterDirty = async () => {
+      window.__salvos.push(JSON.parse(JSON.stringify(state.current.bands)));
+      // devolve o que o servidor devolveria: ordenado por início
+      return { ...state.current,
+               bands: [...state.current.bands].sort((a, b) => a.from < b.from ? -1 : 1) };
+    };
+    state.current = { id: "p1", name: "P", people: [], bands: [], tasks: [{
+      id: "t1", name: "A", start: "2026-03-02", duration: 5, assignee: "",
+      progress: 0, dependencies: [], color: "", notes: "", milestone: false,
+      parent: "", baseline_start: null, baseline_duration: 0, cost: 0,
+      deadline: null, pinned: false }] };
+    state.cpm = { cycle: false, finish: "2026-03-06", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  const addFaixa = (nome, de, ate) => `
+    { const f = document.querySelector(".cal-add");
+      const i = f.querySelectorAll("input");
+      i[0].value = ${JSON.stringify(nome)};
+      i[1].value = ${JSON.stringify(de)};
+      i[2].value = ${JSON.stringify(ate)};
+      f.dispatchEvent(new Event("submit")); }`;
+
+  runIn(`${seed} showBands();
+    ${addFaixa("Sprint 1", "2026-03-02", "2026-03-27")} return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+
+  // ponta invertida é engano de digitação, não plano
+  runIn(`${addFaixa("Chuvas", "2026-04-20", "2026-03-25")} return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  let r = runIn(`return window.__salvos.at(-1);`);
+  check(r.length === 2, "gantt: duas edições seguidas não se atropelam");
+  check(r[1].from === "2026-03-25" && r[1].to === "2026-04-20",
+        "gantt: ponta invertida é virada na hora de gravar");
+
+  // a cor sai da paleta automática e ANDA: duas faixas seguidas iguais
+  // seriam duas faixas que não dá para distinguir
+  check(r[0].color !== r[1].color, "gantt: cada faixa nova pega a próxima cor da paleta");
+
+  r = runIn(`return { nomes: [...document.querySelectorAll(".cal-row .people-name")]
+                        .map((x) => x.textContent),
+             tipos: [...document.querySelectorAll(".cal-dot")].map((x) => x.type) };`);
+  check(r.nomes.join("|") === "Sprint 1|Chuvas", "gantt: a lista mostra as faixas");
+  check(r.tipos.join("|") === "color|color",
+        "gantt: a bolinha da linha É o seletor de cor");
+
+  // trocar a cor de uma faixa existente grava só isso
+  r = runIn(`const dot = document.querySelector(".cal-dot");
+    dot.value = "#123456";
+    dot.dispatchEvent(new Event("change"));
+    return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  check(runIn(`return window.__salvos.at(-1)[0].color;`) === "#123456",
+        "gantt: mudar a cor no seletor grava a faixa");
+
+  // e a faixa aparece no gráfico, do primeiro ao último dia (fim inclusive)
+  r = runIn(`renderChart();
+    const b = [...document.querySelectorAll("#chart .cal-band")];
+    return { n: b.length, fill: b[0].getAttribute("fill"),
+             x: +b[0].getAttribute("x"), w: +b[0].getAttribute("width"),
+             x0: xOf(parseDate("2026-03-02")),
+             x1: xOf(parseDate("2026-03-27")) + PPD[state.zoom],
+             rotulos: [...document.querySelectorAll("#chart .cal-label")]
+               .map((t) => t.textContent),
+             alturaDaFaixa: +b[0].getAttribute("height"),
+             alturaDoGrafico: +document.getElementById("chart").getAttribute("height") };`);
+  check(r.n === 2, "gantt: uma faixa desenhada para cada período");
+  check(r.x === r.x0 && r.x + r.w === r.x1,
+        "gantt: a faixa cobre do primeiro ao último dia, fim inclusive");
+  check(r.fill === "#123456", "gantt: com a cor escolhida");
+  check(r.alturaDaFaixa === r.alturaDoGrafico,
+        "gantt: e vai de cima a baixo — é fundo, não mais uma barra");
+  check(r.rotulos.join("|") === "Sprint 1|Chuvas", "gantt: cada faixa leva o nome");
+
+  // faixa é anotação: não mexe em tarefa nenhuma
+  check(runIn(`return state.current.tasks[0].start;`) === "2026-03-02",
+        "gantt: sombrear o calendário não move tarefa");
+
+  r = runIn(`[...document.querySelectorAll(".cal-row .icon-btn")][0].click(); return 0;`);
+  await new Promise((ok) => setTimeout(ok, 0));
+  check(runIn(`return window.__salvos.at(-1).map((f) => f.name).join("|");`) === "Chuvas",
+        "gantt: o ✕ remove a faixa");
+
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
 console.log("gantt · painel de estatísticas");
 {
   const { runIn, close } = loadGanttApp();

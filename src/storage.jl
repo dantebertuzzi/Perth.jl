@@ -181,6 +181,7 @@ function _save!(st::AppState, p::Project)
     _rollup_summaries!(p)
     foreach(_normalize!, p.tasks)
     _unify_assignees!(p)
+    p.bands = _clean_bands(p.bands)
     write(_project_file(st, p), JSON3.write(p))
     # Espelhamento estilo Pluto: se o usuário escolheu um arquivo na UI
     # (caixa de caminho na menubar) ou via set_file_path!, cada salvamento
@@ -346,6 +347,57 @@ someone from the list must not silently orphan their work.
 function remove_person!(p::Project, name::AbstractString)
     alvo = lowercase(_clean_person(name))
     return people!(p, filter(pe -> lowercase(pe.name) != alvo, p.people))
+end
+
+"""
+    bands(p::Project) -> Vector{Band}
+
+Named calendar bands, earliest first. See [`Band`](@ref).
+"""
+bands(p::Project) = copy(p.bands)
+
+"""
+    bands!(p::Project, entries) -> Vector{Band}
+
+Replace the band list. Entries may be `Band`s or NamedTuples/Dicts of
+fields; nameless bands are dropped (a shaded stretch that does not say why is
+noise) and inverted ranges are swapped.
+"""
+function bands!(p::Project, entries)
+    p.bands = _clean_bands(entries)
+    _with_state(st -> _save!(st, p))
+    return copy(p.bands)
+end
+
+"""
+    add_band!(p::Project, name, from, to; color = "") -> Vector{Band}
+
+Shade `from`–`to` (both inclusive) and label it `name`.
+
+```julia
+add_band!(p, "Sprint 1", Date(2026, 3, 2), Date(2026, 3, 27))
+add_band!(p, "Chuvas", Date(2026, 1, 1), Date(2026, 3, 31); color = "#6fa8dc")
+```
+
+A name that already exists is *moved*, not duplicated: two bands with the
+same label on different weeks is almost always a second attempt, not a plan.
+"""
+function add_band!(p::Project, name::AbstractString, from::Date, to::Date;
+                     color::AbstractString = "")
+    alvo = lowercase(strip(name))
+    resto = filter(f -> lowercase(f.name) != alvo, p.bands)
+    return bands!(p, [resto; Band(; name = String(name), from, to,
+                                      color = String(color))])
+end
+
+"""
+    remove_band!(p::Project, name) -> Vector{Band}
+
+Remove the band with this name (case-insensitive).
+"""
+function remove_band!(p::Project, name::AbstractString)
+    alvo = lowercase(strip(name))
+    return bands!(p, filter(f -> lowercase(f.name) != alvo, p.bands))
 end
 
 """

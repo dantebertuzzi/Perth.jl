@@ -1131,6 +1131,60 @@ end
         delete_project(p.id); delete_project(r.id)
     end
 
+    @testset "faixas do calendário" begin
+        p = create_project("Sprints")
+        add_task!(p, "A"; start = Date(2026, 3, 2), duration = 5)
+
+        @test isempty(bands(p))
+        add_band!(p, "Sprint 2", Date(2026, 3, 30), Date(2026, 4, 24))
+        # ponta invertida é engano de digitação, não plano: vira em vez de
+        # desenhar uma faixa de largura negativa
+        add_band!(p, "Sprint 1", Date(2026, 3, 27), Date(2026, 3, 2))
+        fs = bands(p)
+        @test [f.name for f in fs] == ["Sprint 1", "Sprint 2"]   # por início
+        @test (fs[1].from, fs[1].to) == (Date(2026, 3, 2), Date(2026, 3, 27))
+
+        # faixa sem nome não entra: trecho sombreado que não diz por quê é
+        # ruído, não informação
+        @test length(bands!(p, [fs; Band(from = Date(2026, 5, 1),
+                                             to = Date(2026, 5, 5))])) == 2
+
+        # nome repetido MOVE a faixa em vez de duplicar
+        add_band!(p, "sprint 1", Date(2026, 2, 2), Date(2026, 2, 9))
+        @test length(bands(p)) == 2
+        @test person(p, "x") === nothing   # cadastro segue intacto ao lado
+        movida = bands(p)[1]
+        @test movida.name == "sprint 1" && movida.from == Date(2026, 2, 2)
+
+        # cor é livre; faixas podem se sobrepor (semana crítica dentro de um
+        # sprint é coisa que se quer dizer)
+        add_band!(p, "Crítico", Date(2026, 2, 4), Date(2026, 2, 6); color = "#cb3c33")
+        @test bands(p)[2].color == "#cb3c33"
+        @test length(bands(p)) == 3
+
+        @test length(remove_band!(p, "CRÍTICO")) == 2
+
+        # ida e volta pelo .perth.jl e pelo JSON
+        dir = mktempdir()
+        arq = joinpath(dir, "s.perth.jl")
+        set_file_path!(p, arq)
+        fonte = read(arq, String)
+        @test occursin("Band(name = \"sprint 1\", from = Date(\"2026-02-02\"), " *
+                       "to = Date(\"2026-02-09\"))", fonte)
+        lido = Perth.load(arq)
+        @test [f.name for f in lido.bands] == ["sprint 1", "Sprint 2"]
+        @test JSON3.read(JSON3.write(p), Project).bands[2].to == Date(2026, 4, 24)
+        # projeto gravado antes do campo existir ainda abre
+        sem = replace(JSON3.write(p), r"\"bands\":\[.*?\}\]," => "")
+        @test JSON3.read(sem, Project).bands == Band[]
+
+        # a faixa é anotação: não move tarefa nem entra no motor
+        @test p.tasks[1].start == Date(2026, 3, 2)
+        @test project_finish(p) == Date(2026, 3, 6)
+
+        delete_project(p.id)
+    end
+
     @testset "estatísticas por pessoa e por setor" begin
         p = create_project("Obra")
         pai = add_task!(p, "Estrutura"; start = Date(2026, 3, 2), duration = 1)
