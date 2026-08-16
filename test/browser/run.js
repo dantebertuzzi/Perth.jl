@@ -142,6 +142,26 @@ const SEMENTE = `
       check(r.dentro === true, "e a barra ficou inteira dentro da área visível");
     }
 
+    console.log("navegador · o zoom \"caber\" cabe mesmo");
+    {
+      // A conta do "caber" divide pela largura MEDIDA da timeline. No jsdom
+      // essa largura é dada pelo teste; aqui ela é a de verdade, com
+      // barra de rolagem, padding e o que mais o layout resolver cobrar.
+      const r = await pg.avaliar(`
+        setZoom("fit");
+        const svg = document.getElementById("chart");
+        return { largura: Number(svg.getAttribute("width")),
+                 visivel: el.tlBody.clientWidth,
+                 rolagem: el.tlBody.scrollWidth - el.tlBody.clientWidth,
+                 ativo: document.querySelector(".zoom-group .active").dataset.zoom };`);
+      check(r.ativo === "fit", "o botão Caber fica marcado");
+      check(Math.abs(r.largura - r.visivel) <= 1,
+            `o gráfico tem a largura da janela (${r.largura} vs ${r.visivel})`);
+      check(r.rolagem <= 1,
+            `e não sobra rolagem horizontal (${r.rolagem}px)`);
+      await pg.avaliar(`setZoom("week"); return 1;`);
+    }
+
     console.log("navegador · raia e barra na mesma altura");
     {
       // A altura da linha de raia vem do CSS (--row-h), que o jsdom não
@@ -175,6 +195,63 @@ const SEMENTE = `
       }
       await pg.avaliar(`el.groupSelect.value = "";
         el.groupSelect.dispatchEvent(new Event("change")); return 1;`);
+    }
+
+    console.log("navegador · ligar duas tarefas arrastando");
+    {
+      // O que o jsdom não pode dizer: quem decide o alvo do arrasto é a
+      // PILHA de formas sob o ponteiro, e pilha só existe com layout de
+      // verdade. Na borda da barra o topo é o contorno do crítico ou da
+      // seleção, que não carregam data-id.
+      const pos = await pg.avaliar(`
+        setZoom("week");
+        state.current.tasks.forEach((t) => { t.dependencies = []; });
+        state.selected = "t1"; renderAll();
+        // as duas barras têm que estar na vista: fora dela
+        // elementFromPoint devolve null e o teste mede o nada
+        revealTask("t1");
+        el.tlBody.scrollLeft = Math.max(0, el.tlBody.scrollLeft - 60);
+        const dot = [...document.querySelectorAll("#chart .link-dot")]
+          .find((d) => d.dataset.side === "right");
+        const alvo = document.querySelector('#chart .bar[data-id="t2"]');
+        const a = dot.getBoundingClientRect(), b = alvo.getBoundingClientRect();
+        return { dx: Math.round(a.left + a.width / 2), dy: Math.round(a.top + a.height / 2),
+                 ax: Math.round(b.left + b.width / 2), ay: Math.round(b.top + b.height / 2),
+                 // o topo da pilha no meio do alvo, e o que o gesto resolve
+                 topo: document.elementFromPoint(Math.round(b.left + b.width / 2),
+                                                 Math.round(b.top + b.height / 2)).getAttribute("class"),
+                 achado: formaSobOPonteiro(Math.round(b.left + b.width / 2),
+                                           Math.round(b.top + b.height / 2))?.dataset.id };`);
+      check(pos.achado === "t2",
+            `o gesto atravessa a pilha de formas e acha a tarefa (topo: ${pos.topo})`);
+
+      await pg.enviar("Input.dispatchMouseEvent", { type: "mousePressed", x: pos.dx,
+                                                    y: pos.dy, button: "left", clickCount: 1 });
+      await pg.enviar("Input.dispatchMouseEvent", { type: "mouseMoved", x: pos.ax,
+                                                    y: pos.ay, button: "left", buttons: 1 });
+      const meio = await pg.avaliar(`
+        return { elastico: document.querySelectorAll("#chart .link-rubber").length,
+                 aceso: document.querySelectorAll("#chart .link-target").length };`);
+      check(meio.elastico === 1, "durante o arrasto há um elástico até o cursor");
+      check(meio.aceso === 1, "e o alvo acende antes de soltar");
+
+      await pg.enviar("Input.dispatchMouseEvent", { type: "mouseReleased", x: pos.ax,
+                                                    y: pos.ay, button: "left", clickCount: 1 });
+      await espera(120);
+      const r = await pg.avaliar(`
+        const t2 = state.current.tasks.find((t) => t.id === "t2");
+        return { deps: t2.dependencies.slice(),
+                 setas: document.querySelectorAll("#chart .dep").length,
+                 elastico: document.querySelectorAll("#chart .link-rubber").length,
+                 aceso: document.querySelectorAll("#chart .link-target").length };`);
+      check(r.deps.join(",") === "t1",
+            `soltar sobre a outra barra cria a dependência (${r.deps.join(",") || "nenhuma"})`);
+      check(r.setas === 1, "e a seta aparece no gráfico");
+      check(r.elastico === 0 && r.aceso === 0,
+            "o elástico e o realce somem ao soltar");
+
+      await pg.avaliar(`state.current.tasks.forEach((t) => { t.dependencies = []; });
+        state.selected = null; renderAll(); return 1;`);
     }
 
     console.log("navegador · duplo clique na régua marca o dia");

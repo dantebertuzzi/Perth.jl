@@ -11,7 +11,12 @@
 
 let ROW_H = 34;  // mutável: densidade cozy/compact
 const HEAD_H = 46;
-const PPD = { day: 36, week: 14, month: 5 };          // pixels por dia
+// pixels por dia. "fit" não é um passo fixo: é recalculado a cada render para
+// o projeto inteiro caber na largura disponível — dia/semana/mês são passos
+// escolhidos a dedo, e nenhum deles serve para um plano de dois anos.
+const PPD = { day: 36, week: 14, month: 5, fit: 5 };
+const PPD_FIT_MIN = 0.6;   // abaixo disto o gráfico vira um traço
+const PPD_FIT_MAX = 36;    // e acima, "caber" viraria zoom de dia
 const AUTO_COLORS = ["#9558b2", "#389826", "#4063d8", "#b58900", "#cb3c33"];
 const POLL_MS = 2500;
 const REPO_URL = "https://github.com/dantebertuzzi/Perth.jl";
@@ -810,6 +815,13 @@ function computeRange() {
   min = addDays(min, -7);
   max = addDays(max, 21);
   state.range = { start: min, days: diffDays(min, max) + 1 };
+  // o passo do "caber" depende da janela, então é aqui — depois de saber
+  // quantos dias existem e antes de qualquer coisa medir a tela
+  const largura = el.tlBody?.clientWidth || 0;
+  if (largura > 0) {
+    PPD.fit = Math.min(PPD_FIT_MAX,
+                       Math.max(PPD_FIT_MIN, largura / state.range.days));
+  }
 }
 
 function xOf(date) {
@@ -1103,9 +1115,11 @@ function renderHeader() {
     d = next;
   }
 
-  // Dias (zoom dia) ou semanas (zoom semana/mês)
+  // Dias ou semanas — pelo espaço que existe, não pelo nome do zoom: no
+  // "caber" o passo é calculado, e uma régua de dias com 2px por dia é uma
+  // faixa preta
   const today = todayUTC();
-  if (state.zoom === "day") {
+  if (ppd >= 20) {
     for (let i = 0; i < days; i++) {
       const dt = addDays(start, i);
       const cell = document.createElement("div");
@@ -1129,9 +1143,8 @@ function renderHeader() {
       cell.dataset.date = fmtISO(w);   // primeiro dia da semana da coluna
       cell.style.left = xOf(w) + "px";
       cell.style.width = 7 * ppd + "px";
-      cell.textContent = state.zoom === "week"
-        ? fmtShort(fmtISO(w))
-        : String(w.getUTCDate());
+      // data curta quando cabe; só o número do dia quando não cabe
+      cell.textContent = ppd >= 8 ? fmtShort(fmtISO(w)) : String(w.getUTCDate());
       el.tlDays.appendChild(cell);
     }
   }
@@ -1342,8 +1355,8 @@ function renderChart() {
     chart.appendChild(rot);
   });
 
-  // Grade vertical: dias (zoom dia) ou segundas-feiras
-  if (state.zoom === "day") {
+  // Grade vertical: dias quando cabem, senão segundas-feiras
+  if (ppd >= 20) {
     for (let i = 0; i <= days; i++) {
       chart.appendChild(svg("line", {
         class: "grid-line", x1: i * ppd, y1: 0, x2: i * ppd, y2: totalH,
@@ -1386,11 +1399,22 @@ function renderChart() {
       const y1 = rowOf.get(dep) * ROW_H + ROW_H / 2;
       const x2 = xOf(parseDate(t.start));
       const y2 = rowOf.get(t.id) * ROW_H + ROW_H / 2;
-      chart.appendChild(svg("path", { class: "dep", d: depPath(x1, y1, x2, y2) }));
+      const caminho = depPath(x1, y1, x2, y2);
+      chart.appendChild(svg("path", { class: "dep", d: caminho }));
       chart.appendChild(svg("polygon", {
         class: "dep-head",
         points: `${x2},${y2} ${x2 - 7},${y2 - 4} ${x2 - 7},${y2 + 4}`,
       }));
+      // Alvo de clique por cima da seta: 1px de traço não se acerta com o
+      // mouse. Criar ligação com a mão e ter que abrir o modal para desfazer
+      // seria dar a ida sem a volta.
+      const alvo = svg("path", { class: "dep-hit", d: caminho });
+      alvo.appendChild(svgTitle(`${pred.name} → ${t.name}\n${T("Double-click to remove")}`));
+      alvo.addEventListener("dblclick", (ev) => {
+        ev.stopPropagation();
+        unlinkTasks(t, depRef);
+      });
+      chart.appendChild(alvo);
     }
   }
 
@@ -1462,6 +1486,9 @@ function renderChart() {
         chart.appendChild(svg("rect", {
           class: "bar-sel", x: x - 3, y: sy - 3, width: w + 6, height: alt + 11,
         }));
+        // um resumo pode ser predecessor (o fim dele é o fim do bloco), mas
+        // não sucessor: o motor agenda folhas. Ver linkTasks().
+        drawLinkDots(chart, t, i, x, x + w);
       }
       return;   // resumo não tem barra normal nem drag
     }
@@ -1586,6 +1613,7 @@ function renderChart() {
       chart.appendChild(svg("rect", {
         class: "bar-sel", x: selX, y: y - 3, width: selW, height: h + 6,
       }));
+      drawLinkDots(chart, t, i, selX, selX + selW);
     }
   });
 
@@ -1672,6 +1700,162 @@ function selectTask(id) {
   state.selected = state.selected === id ? null : id;
   renderTable();
   renderChart();
+}
+
+/* Ligar tarefas com a mão.
+
+   A dependência era a única relação DESENHADA no gráfico que só dava para
+   declarar por formulário. Agora a barra selecionada mostra dois pontos nas
+   pontas e arrastar de um deles até outra barra cria a ligação.
+
+   Só na barra selecionada, e não em toda barra sob o cursor: um ponto que
+   aparece ao passar o mouse compete com o arrasto da própria barra e com o
+   punho de redimensionar, que moram nos mesmos pixels. Selecionar já é o
+   gesto que diz "é desta aqui que estou falando".
+
+   Ponta direita = "esta alimenta a próxima"; ponta esquerda = "esta é
+   alimentada por". As duas criam a MESMA ligação término→início — o que muda
+   é de que lado da cadeia você está montando. SS/FF e folga continuam no
+   modal: são a exceção, e exceção não precisa de gesto. */
+function drawLinkDots(chart, t, i, xEsq, xDir) {
+  const cy = i * ROW_H + ROW_H / 2;
+  for (const [lado, cx] of [["left", xEsq - 9], ["right", xDir + 9]]) {
+    const dot = svg("circle", { class: "link-dot", cx, cy, r: 4.5,
+                                "data-side": lado });
+    dot.appendChild(svgTitle(T(lado === "right" ? "Drag to the task that follows"
+                                                : "Drag to the task that comes before")));
+    attachLink(dot, t, lado);
+    chart.appendChild(dot);
+  }
+}
+
+/* A forma de tarefa sob o ponteiro. elementFromPoint devolve só a do topo, e
+   sobre a barra moram contornos que NÃO carregam data-id: a moldura do
+   caminho crítico e a da seleção. Ambas têm fill:none, então só o traço é
+   clicável — mas é justamente na borda da barra que se solta o arrasto.
+   (O preenchimento do progresso não entra na conta: tem pointer-events:none.)
+   Aqui a pilha inteira é percorrida até achar uma tarefa, com
+   elementFromPoint como reserva para ambiente sem a versão plural. */
+function formaSobOPonteiro(x, y) {
+  const pilha = document.elementsFromPoint
+    ? document.elementsFromPoint(x, y)
+    : [document.elementFromPoint(x, y)];
+  for (const n of pilha) {
+    const id = n?.dataset?.id;
+    if (id && taskById(id)) return n;
+  }
+  return null;
+}
+
+function attachLink(node, task, lado) {
+  node.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();          // não é arrastar a barra
+    const caixa = el.chart.getBoundingClientRect();
+    const x0 = Number(node.getAttribute("cx"));
+    const y0 = Number(node.getAttribute("cy"));
+    const elastico = svg("line", { class: "link-rubber", x1: x0, y1: y0, x2: x0, y2: y0 });
+    el.chart.appendChild(elastico);
+    state.dragging = true;
+    let aceso = null;
+
+    const onMove = (mv) => {
+      elastico.setAttribute("x2", mv.clientX - caixa.left);
+      elastico.setAttribute("y2", mv.clientY - caixa.top);
+      // realce do alvo: dizer ANTES do clique o que vai acontecer é metade
+      // do gesto — soltar em cima de nada não pode ser uma surpresa
+      const sob = formaSobOPonteiro(mv.clientX, mv.clientY);
+      const id = sob?.dataset?.id;
+      const novo = id && id !== task.id ? id : null;
+      if (novo === aceso) return;
+      el.chart.querySelectorAll(".link-target")
+        .forEach((n) => n.classList.remove("link-target"));
+      aceso = novo;
+      if (aceso) sob.classList.add("link-target");
+    };
+
+    const onUp = (up) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      state.dragging = false;
+      elastico.remove();
+      el.chart.querySelectorAll(".link-target")
+        .forEach((n) => n.classList.remove("link-target"));
+      const sob = formaSobOPonteiro(up.clientX, up.clientY);
+      const outra = taskById(sob?.dataset?.id || "");
+      if (!outra || outra.id === task.id) return;
+      lado === "right" ? linkTasks(task, outra) : linkTasks(outra, task);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  });
+}
+
+/* Descendentes de uma tarefa, pela WBS. Serve às duas recusas de baixo. */
+function descendentes(id, byId) {
+  const out = new Set();
+  const filhos = new Map();
+  for (const t of byId.values()) {
+    if (!t.parent) continue;
+    if (!filhos.has(t.parent)) filhos.set(t.parent, []);
+    filhos.get(t.parent).push(t.id);
+  }
+  const anda = (x) => (filhos.get(x) || []).forEach((f) => {
+    if (out.has(f)) return;
+    out.add(f); anda(f);
+  });
+  anda(id);
+  return out;
+}
+
+/* A ligação fecharia um ciclo? Caminha das predecessoras de `antes` para
+   trás procurando `depois`. O motor recusa plano cíclico DEPOIS de gravado —
+   o aviso aparece e o cronograma para de agendar. Recusar o gesto é melhor
+   do que gravar e explicar. */
+function fechariaCiclo(antes, depois, byId) {
+  const pilha = [antes.id];
+  const visto = new Set();
+  while (pilha.length) {
+    const id = pilha.pop();
+    if (id === depois.id) return true;
+    if (visto.has(id)) continue;
+    visto.add(id);
+    for (const d of byId.get(id)?.dependencies || []) pilha.push(depId(d));
+  }
+  return false;
+}
+
+/* Cria `depois` depende de `antes` (término→início, sem folga). */
+function linkTasks(antes, depois) {
+  const byId = new Map(state.current.tasks.map((t) => [t.id, t]));
+  const jaTem = (depois.dependencies || []).some((d) => depId(d) === antes.id);
+  if (jaTem) return PerthToast.info(T("Already linked"));
+  // Resumo é recipiente: o motor agenda as folhas, então uma dependência
+  // APONTANDO para um resumo não moveria nada — prometeria o que não cumpre.
+  if (state.wbs?.summary.has(depois.id)) {
+    return PerthToast.info(T("A summary is scheduled by its subtasks — link one of them"));
+  }
+  // dentro do próprio bloco: um resumo já espera pelos filhos por definição
+  if (descendentes(antes.id, byId).has(depois.id) ||
+      descendentes(depois.id, byId).has(antes.id)) {
+    return PerthToast.info(T("A task and its own block are already tied"));
+  }
+  if (fechariaCiclo(antes, depois, byId)) {
+    return PerthToast.info(T("That would close a loop"));
+  }
+  pushUndo();
+  depois.dependencies = [...(depois.dependencies || []), antes.id];
+  state.selected = depois.id;
+  renderAll();
+  markDirty();
+}
+
+function unlinkTasks(depois, depRef) {
+  pushUndo();
+  depois.dependencies = (depois.dependencies || []).filter((d) => d !== depRef);
+  renderAll();
+  markDirty();
 }
 
 function attachDrag(node, task, mode) {
@@ -3391,10 +3575,13 @@ el.importFile.addEventListener("change", async () => {
 
 function setZoom(z) {
   state.zoom = z;
+  localStorage.setItem("perth-zoom", z);
   $$(".zoom-group button").forEach((b) =>
     b.classList.toggle("active", b.dataset.zoom === z));
   renderAll();
-  scrollToToday();
+  // no "caber" o projeto inteiro já está na tela: rolar até hoje seria
+  // desfazer o que o botão acabou de fazer
+  if (z !== "fit") scrollToToday();
 }
 
 /* ------------------------------------------------------------------ */
@@ -3531,6 +3718,7 @@ const ACTIONS = {
   "zoom-day": () => setZoom("day"),
   "zoom-week": () => setZoom("week"),
   "zoom-month": () => setZoom("month"),
+  "zoom-fit": () => setZoom("fit"),
   "goto-today": scrollToToday,
   "activity": showActivity,
   "share": showShare,
@@ -3568,7 +3756,7 @@ function showShortcuts() {
     ["R", "resource load"],
     ["D", "toggle dark mode"],
     ["P", "presentation mode"],
-    ["1 / 2 / 3", "zoom day / week / month"],
+    ["1 / 2 / 3 / 4", "zoom day / week / month / fit"],
     ["T", "go to today"],
     ["Esc", "close / deselect / exit presentation"],
   ]));
@@ -3815,6 +4003,7 @@ document.addEventListener("keydown", (ev) => {
     case "1": setZoom("day"); break;
     case "2": setZoom("week"); break;
     case "3": setZoom("month"); break;
+    case "4": setZoom("fit"); break;
     case "Escape":
       if (state.presenting) { exitPresentation(); break; }
       if (chatOpen) { closeChat(); break; }
@@ -4146,6 +4335,13 @@ function bootFailed(err) {
 
 (async function init() {
   applyUI();
+  // o zoom é preferência de quem olha, como o tema: volta como estava
+  const zoomGuardado = localStorage.getItem("perth-zoom");
+  if (zoomGuardado && PPD[zoomGuardado] !== undefined) {
+    state.zoom = zoomGuardado;
+    $$(".zoom-group button").forEach((b) =>
+      b.classList.toggle("active", b.dataset.zoom === zoomGuardado));
+  }
   state.groupBy = localStorage.getItem("perth-lanes") || "";
   el.groupSelect.value = state.groupBy;
   // um valor guardado de uma versão futura/antiga não pode deixar o seletor

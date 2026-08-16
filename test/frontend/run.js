@@ -2647,6 +2647,183 @@ console.log("gantt · cadastro de colaboradores");
   close();
 }
 
+console.log("gantt · zoom que faz o projeto caber");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // jsdom não tem layout: clientWidth é 0 e o "caber" não teria como medir
+  // nada. O teste dá a largura, que é justamente a entrada da conta.
+  // dois seeds no mesmo runIn compartilham escopo: a fábrica de tarefa vai
+  // dentro de um bloco para o segundo não redeclarar o primeiro
+  const seed = (largura, dias) => `
+    { Object.defineProperty(el.tlBody, "clientWidth",
+      { configurable: true, value: ${largura} });
+    const mk = (id, name, start, dur) => ({
+      id, name, start, duration: dur, assignee: "", progress: 0,
+      dependencies: [], color: "", notes: "", milestone: false, parent: "",
+      baseline_start: null, baseline_duration: 0, cost: 0, deadline: null,
+      pinned: false });
+    state.current = { id: "p1", name: "P", people: [], bands: [], markers: [],
+      tasks: [mk("t1", "A", "2026-03-02", 1), mk("t2", "B", "2026-03-02", ${dias})] };
+    state.cpm = { cycle: false, finish: "2026-03-02", calendar: "", pert: null,
+                  byId: new Map() };
+    setZoom("fit"); }`;
+
+  let r = runIn(`${seed(1000, 200)}
+    return { ppd: PPD.fit, dias: state.range.days,
+             larguraSVG: Number(document.getElementById("chart").getAttribute("width")) };`);
+  check(Math.abs(r.ppd * r.dias - 1000) < 1,
+        "gantt: o passo do dia é a largura disponível dividida pelos dias");
+  check(Math.abs(r.larguraSVG - 1000) < 1,
+        "gantt: e o gráfico inteiro cabe na tela, sem rolagem horizontal");
+
+  // um projeto curto não vira zoom de dia gigante, nem um de dez anos vira
+  // um traço. (A janela desenhada sempre inclui HOJE com folga, então o vão
+  // mínimo é da ordem de dois meses — daí a tela larguíssima aqui.)
+  r = runIn(`${seed(9000, 1)} const curto = PPD.fit;
+    ${seed(200, 4000)} return { curto, longo: PPD.fit, dias: state.range.days };`);
+  check(r.curto === 36, "gantt: projeto curto para no teto do passo (zoom de dia)");
+  check(r.longo === 0.6, "gantt: projeto longuíssimo para no piso, em vez de sumir");
+
+  // a régua troca de granularidade pelo ESPAÇO, não pelo nome do zoom
+  r = runIn(`${seed(1000, 200)}
+    const apertado = { celulas: document.querySelectorAll("#tl-days .tl-cell").length,
+                       dias: state.range.days, ppd: PPD.fit };
+    ${seed(9000, 1)}
+    const folgado = { celulas: document.querySelectorAll("#tl-days .tl-cell").length,
+                      dias: state.range.days, ppd: PPD.fit };
+    return { apertado, folgado,
+             comData: !!document.querySelector("#tl-days .tl-cell").dataset.date };`);
+  check(r.apertado.ppd < 20 && r.apertado.celulas < r.apertado.dias / 5,
+        "gantt: com pouco espaço a régua mostra semanas, não dias");
+  check(r.folgado.ppd >= 20 && r.folgado.celulas === r.folgado.dias,
+        "gantt: com espaço de sobra ela volta a mostrar um dia por coluna");
+  check(r.comData === true, "gantt: e as colunas continuam dizendo que dia são");
+
+  // "caber" não rola para hoje: rolar seria desfazer o que o botão fez
+  r = runIn(`${seed(1000, 200)}
+    el.tlBody.scrollLeft = 0;
+    setZoom("fit");
+    const depoisDoCaber = el.tlBody.scrollLeft;
+    setZoom("week");
+    return { depoisDoCaber, depoisDaSemana: el.tlBody.scrollLeft,
+             guardado: localStorage.getItem("perth-zoom") };`);
+  check(r.depoisDoCaber === 0, "gantt: caber não mexe na rolagem");
+  check(r.depoisDaSemana !== 0, "gantt: mas os zooms de passo fixo ainda vão para hoje");
+  check(r.guardado === "week", "gantt: e o zoom escolhido é lembrado");
+
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
+console.log("gantt · ligar tarefas arrastando");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // Estrutura(resumo) > Fundação, Alvenaria ; e três tarefas soltas
+  const seed = `
+    const mk = (id, name, start, dur, parent = "") => ({
+      id, name, start, duration: dur, assignee: "", progress: 0,
+      dependencies: [], color: "", notes: "", milestone: false, parent,
+      baseline_start: null, baseline_duration: 0, cost: 0, deadline: null,
+      pinned: false });
+    window.__salvo = 0;
+    window.markDirty = () => { window.__salvo++; };
+    state.current = { id: "p1", name: "P", people: [], bands: [], markers: [],
+      tasks: [
+        mk("pai", "Estrutura", "2026-03-02", 1),
+        mk("f1", "Fundação", "2026-03-02", 5, "pai"),
+        mk("f2", "Alvenaria", "2026-03-09", 5, "pai"),
+        mk("t1", "Telhado", "2026-03-16", 4),
+        mk("t2", "Pintura", "2026-03-23", 3),
+        mk("t3", "Limpeza", "2026-03-30", 2)] };
+    state.cpm = { cycle: false, finish: "2026-04-01", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  // o gesto: pointerdown no ponto, pointermove/up sobre a outra barra. O
+  // alvo é resolvido por formaSobOPonteiro, então o teste troca
+  // elementsFromPoint por uma função que devolve a barra pedida — jsdom não
+  // tem layout, e sem isso o teste estaria medindo o nada.
+  const arrastar = (deId, paraId, lado = "right") => `
+    { // selectTask alterna; aqui o teste quer POR a seleção onde ela deve
+      // estar, não brincar de liga-desliga
+      state.selected = ${JSON.stringify(deId)};
+      renderTable(); renderChart();
+      document.elementsFromPoint = () => [
+        document.querySelector(\`#chart [data-id="${paraId}"]\`)];
+      const dot = [...document.querySelectorAll("#chart .link-dot")]
+        .find((d) => d.dataset.side === ${JSON.stringify(lado)});
+      dot.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+      window.dispatchEvent(new MouseEvent("pointermove", { bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true })); }`;
+
+  const avisos = `[...document.querySelectorAll("#perth-toasts > *")]
+    .map((t) => t.textContent.replace("✕", ""))`;
+  const deps = `state.current.tasks.map((t) => t.name + ":" +
+    (t.dependencies || []).map((d) => state.current.tasks
+      .find((x) => x.id === depId(d)).name).join("+")).filter((l) => !l.endsWith(":"))`;
+
+  // os pontos só existem na barra SELECIONADA: um ponto por barra competiria
+  // com o arrasto e com o punho de redimensionar, que moram nos mesmos pixels
+  let r = runIn(`${seed} return { semSel: document.querySelectorAll(".link-dot").length,
+    comSel: (selectTask("t1"), document.querySelectorAll(".link-dot").length),
+    lados: [...document.querySelectorAll(".link-dot")].map((d) => d.dataset.side) };`);
+  check(r.semSel === 0, "gantt: sem seleção não há ponto de ligação na tela");
+  check(r.comSel === 2 && r.lados.join("|") === "left|right",
+        "gantt: a barra selecionada mostra um ponto em cada ponta");
+
+  // ponta direita: "esta alimenta a próxima"
+  r = runIn(`${arrastar("t1", "t2")} return { deps: ${deps}, salvo: window.__salvo };`);
+  check(r.deps.join("|") === "Pintura:Telhado",
+        "gantt: arrastar da ponta direita cria término→início na outra tarefa");
+  check(r.salvo === 1, "gantt: e a ligação é gravada (markDirty)");
+
+  // ponta esquerda: "esta vem depois daquela" — mesma ligação, cadeia
+  // montada de trás para frente
+  r = runIn(`${arrastar("t3", "t2", "left")} return ${deps};`);
+  check(r.join("|") === "Pintura:Telhado|Limpeza:Pintura",
+        "gantt: arrastar da ponta esquerda liga na direção contrária");
+
+  // as quatro recusas, cada uma com o seu motivo na tela
+  r = runIn(`PerthToast.clear(); ${arrastar("t1", "t2")} return { deps: ${deps}, avisos: ${avisos} };`);
+  check(r.deps.length === 2 && /Already linked/.test(r.avisos[0]),
+        "gantt: ligar duas vezes não duplica — e diz por quê");
+
+  r = runIn(`PerthToast.clear(); ${arrastar("t2", "t1")} return { deps: ${deps}, avisos: ${avisos} };`);
+  check(r.deps.length === 2 && /close a loop/.test(r.avisos[0]),
+        "gantt: a ligação que fecharia um ciclo é recusada antes de gravar");
+
+  r = runIn(`PerthToast.clear(); ${arrastar("t1", "pai")} return { deps: ${deps}, avisos: ${avisos} };`);
+  check(r.deps.length === 2 && /summary is scheduled/.test(r.avisos[0]),
+        "gantt: resumo como sucessor é recusado — quem agenda são as folhas");
+
+  r = runIn(`PerthToast.clear(); ${arrastar("pai", "f1")} return { deps: ${deps}, avisos: ${avisos} };`);
+  check(r.deps.length === 2 && /own block/.test(r.avisos[0]),
+        "gantt: uma tarefa não depende do próprio bloco");
+
+  // resumo PODE ser predecessor: o fim dele é o fim do bloco
+  r = runIn(`PerthToast.clear(); ${arrastar("pai", "t3")} return ${deps};`);
+  check(r.some((l) => l === "Limpeza:Pintura+Estrutura"),
+        "gantt: mas um resumo pode ser predecessor de quem vem depois do bloco");
+
+  // e o desfazer alcança a ligação, como qualquer edição
+  r = runIn(`undo(); return ${deps};`);
+  check(!r.some((l) => /Estrutura/.test(l)), "gantt: Ctrl+Z desfaz a ligação");
+
+  // criar com a mão e ter que abrir o modal para desfazer seria dar a ida
+  // sem a volta: duplo clique na seta remove
+  r = runIn(`const alvo = document.querySelector("#chart .dep-hit");
+    alvo.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    return { deps: ${deps}, dicas: alvo.querySelector("title")?.textContent };`);
+  check(r.deps.length === 1, "gantt: duplo clique na seta remove a dependência");
+  check(/Double-click to remove/.test(r.dicas || ""),
+        "gantt: e a seta diz isso ao passar o mouse");
+
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
 console.log("gantt · arrastar a divisa da tabela");
 {
   const { runIn, close } = loadGanttApp();
