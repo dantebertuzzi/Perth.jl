@@ -341,7 +341,7 @@ window.PerthI18n = (function () {
       "Progress": "Avanço",
       "Duration": "Duração",
       "Slack": "Folga",
-      "Baseline": "Baseline",
+      "Baseline": "Linha de base",
       "What the words mean":
         "O que as palavras querem dizer",
       "Turn lanes off to reorder tasks by hand.":
@@ -822,6 +822,7 @@ window.PerthI18n = (function () {
       "starts before its dependencies allow": "empieza antes de lo que permiten sus dependencias",
       "can start on": "puede empezar el",
       "Label position": "Posición del texto",
+      "Baseline": "Línea base",
       "read-only": "solo lectura",
       "Read-only link — ask for an editing link to change anything.":
         "Enlace de solo lectura — pide un enlace de edición para cambiar algo.",
@@ -1216,6 +1217,7 @@ window.PerthI18n = (function () {
       "starts before its dependencies allow": "commence avant ce que ses dépendances permettent",
       "can start on": "peut commencer le",
       "Label position": "Position du nom",
+      "Baseline": "Ligne de base",
       "read-only": "lecture seule",
       "Read-only link — ask for an editing link to change anything.":
         "Lien en lecture seule — demandez un lien d'édition pour changer quoi que ce soit.",
@@ -1609,6 +1611,7 @@ window.PerthI18n = (function () {
       "starts before its dependencies allow": "早于依赖允许的时间开始",
       "can start on": "最早可开始于",
       "Label position": "标签位置",
+      "Baseline": "基线",
       "read-only": "只读",
       "Read-only link — ask for an editing link to change anything.":
         "只读链接 — 需要改动请索取可编辑链接。",

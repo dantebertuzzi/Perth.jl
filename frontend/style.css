@@ -343,6 +343,19 @@ body.presenting .task-table { display: none; }
 
 /* Baseline: barra-fantasma do plano original + badge de derrapagem */
 .baseline-ghost { fill: var(--muted); opacity: .45; pointer-events: none; }
+/* Fantasma da tarefa selecionada: acende, e um tracejado liga os dois. É a
+   resposta para "de quem é este fantasma?" — dada só a quem perguntou, e o
+   comprimento do tracejado é a derrapagem em tamanho real. */
+.baseline-ghost.sel { opacity: .9; }
+.baseline-link {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: .75;
+  pointer-events: none;
+}
+/* alvo de mouse do fantasma (4px não se acerta) — ver .dep-hit, mesma ideia */
+.baseline-hit { fill: transparent; pointer-events: all; cursor: help; }
 .slip-label { fill: #e5484d; font-weight: 650; }
 
 /* Destaque: o que não casa com o filtro fica esmaecido */
