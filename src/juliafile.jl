@@ -13,6 +13,7 @@ const _SAFE_CONSTRUCTORS = Dict{Symbol,Any}(
     :Person    => Person,
     :Band     => Band,
     :Marker   => Marker,
+    :MonthMark => MonthMark,
     :Date      => Dates.Date,
     :DateTime  => Dates.DateTime,
 )
@@ -41,6 +42,16 @@ function _to_julia_source(p::Project)
             isempty(m.color) || push!(campos, "color = " * repr(m.color))
             m.label_at == 0 || push!(campos, "label_at = " * string(m.label_at))
             println(io, "        Marker(", join(campos, ", "), "),")
+        end
+        println(io, "    ],")
+    end
+    if !isempty(p.month_marks)
+        println(io, "    month_marks = [")
+        for m in p.month_marks
+            campos = ["month = Date(" * repr(string(m.month)) * ")"]
+            isempty(m.name) || push!(campos, "name = " * repr(m.name))
+            isempty(m.color) || push!(campos, "color = " * repr(m.color))
+            println(io, "        MonthMark(", join(campos, ", "), "),")
         end
         println(io, "    ],")
     end

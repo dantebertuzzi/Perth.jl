@@ -149,6 +149,33 @@ Base.@kwdef mutable struct Marker
 end
 
 """
+    MonthMark(; month, name = "", color = "")
+
+A whole month painted in the ruler at the top of the chart. It is the
+month-sized companion of [`Marker`](@ref): where a marked *day* draws a
+line across the plan, a marked *month* colours the strip that names it —
+"this is the month of the shutdown", said once, at the top, instead of
+repeated on every task inside it.
+
+Unlike [`Band`](@ref) it does not touch the body of the chart. A band
+shades the work behind it and answers "why is this stretch different?"; a
+marked month is a label on the calendar itself, and leaves the bars alone.
+Both are annotation: neither moves a task or enters the CPM engine.
+
+# Fields
+- `month::Date`: any day of the month; it is normalised to the first.
+- `name::String`: shown next to the month in the ruler when it fits, and
+  in the tooltip either way. Optional — the month already writes its own
+  name, so the colour alone is allowed to be the whole message.
+- `color::String`: hex tint; empty picks one automatically.
+"""
+Base.@kwdef mutable struct MonthMark
+    month::Date = Dates.firstdayofmonth(Dates.today())
+    name::String = ""
+    color::String = ""
+end
+
+"""
     Project(; name, kwargs...)
 
 A project: a named collection of [`GanttTask`](@ref)s.
@@ -168,6 +195,9 @@ Base.@kwdef mutable struct Project
     bands::Vector{Band} = Band[]
     # Dias nomeados, desenhados como linha vertical (igual à linha de hoje)
     markers::Vector{Marker} = Marker[]
+    # Meses pintados na régua do topo — só lá: o fundo do gráfico é assunto
+    # das faixas (ver MonthMark)
+    month_marks::Vector{MonthMark} = MonthMark[]
     # Caminho de espelhamento em disco (estilo Pluto): quando não vazio, cada
     # salvamento também grava o .perth.jl neste caminho. Específico da máquina,
     # por isso NUNCA entra no formato de intercâmbio .perth.jl exportado.
@@ -182,6 +212,7 @@ end
 StructTypes.StructType(::Type{Person}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{Band}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{Marker}) = StructTypes.Mutable()
+StructTypes.StructType(::Type{MonthMark}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{GanttTask}) = StructTypes.Mutable()
 StructTypes.StructType(::Type{Project}) = StructTypes.Mutable()
 
@@ -345,6 +376,23 @@ end
 
 # Marcos de calendário arrumados: sem nome vazio (uma linha que não diz o que
 # marca é só um risco na tela), ordenados por data.
+# Meses marcados: normaliza para o primeiro dia do mês (é a chave), tira
+# repetido — o último vence, como em add_month_mark! — e ordena por data.
+# Nome vazio é permitido, ao contrário do dia marcado: a célula da régua já
+# escreve "set 2026", então a cor sozinha pode ser o recado.
+function _clean_month_marks(meses)
+    out = MonthMark[]
+    for x in meses
+        m = x isa MonthMark ? x : MonthMark(; (Symbol(k) => v for (k, v) in pairs(x))...)
+        m.month = Dates.firstdayofmonth(m.month)
+        m.name = _cap_text(replace(strip(m.name), r"\s+" => " "))
+        m.color = strip(m.color)
+        filter!(o -> o.month != m.month, out)
+        push!(out, m)
+    end
+    return sort!(out; by = m -> m.month)
+end
+
 function _clean_markers(marcos)
     out = Marker[]
     for x in marcos

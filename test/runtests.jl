@@ -1409,6 +1409,51 @@ end
         delete_project(p.id)
     end
 
+    @testset "meses marcados" begin
+        # Irmão do dia marcado, para o mês — e a diferença com a faixa é onde
+        # cada um pinta: a faixa sombreia o fundo do gráfico, o mês marcado
+        # pinta só a célula da régua que já escreve o nome dele.
+        p = create_project("Meses")
+        add_task!(p, "T"; start = Date(2026, 9, 1), duration = 3)
+
+        @test isempty(month_marks(p))
+        add_month_mark!(p, Date(2026, 9, 17); name = "chuvas", color = "#4063d8")
+        add_month_mark!(p, Date(2026, 12, 2))
+        # qualquer dia do mês serve: a chave é o primeiro dia
+        @test [m.month for m in month_marks(p)] == [Date(2026, 9, 1), Date(2026, 12, 1)]
+        @test month_marks(p)[1].name == "chuvas"
+
+        # nome vazio é permitido, ao contrário do dia marcado: a célula da
+        # régua já escreve "dez 2026", então a cor sozinha pode ser o recado
+        @test month_marks(p)[2].name == ""
+
+        # marcar de novo o mesmo mês é CORREÇÃO, não um segundo mês
+        add_month_mark!(p, Date(2026, 9, 30); name = "estação de chuvas",
+                        color = "#cb3c33")
+        @test length(month_marks(p)) == 2
+        @test month_marks(p)[1].name == "estação de chuvas"
+        @test month_marks(p)[1].color == "#cb3c33"
+
+        # é anotação: não move tarefa nem entra no motor
+        @test p.tasks[1].start == Date(2026, 9, 1)
+        @test project_finish(p) == Date(2026, 9, 3)
+
+        @test length(remove_month_mark!(p, Date(2026, 12, 25))) == 1
+
+        # vai e volta pelo disco e pelo .perth.jl
+        volta = JSON3.read(JSON3.write(p), Project)
+        @test volta.month_marks[1].month == Date(2026, 9, 1)
+        fonte = Perth._to_julia_source(p)
+        @test occursin("MonthMark(month = Date(\"2026-09-01\")", fonte)
+        @test [m.month for m in Perth._parse_project_source(fonte).month_marks] ==
+              [Date(2026, 9, 1)]
+        # projeto gravado antes do campo existir volta sem mês nenhum
+        sem = replace(JSON3.write(p), r"\"month_marks\":\[.*?\}\]," => "")
+        @test JSON3.read(sem, Project).month_marks == MonthMark[]
+
+        delete_project(p.id)
+    end
+
     @testset "estatísticas por pessoa e por setor" begin
         p = create_project("Obra")
         pai = add_task!(p, "Estrutura"; start = Date(2026, 3, 2), duration = 1)
