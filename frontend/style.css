@@ -31,6 +31,11 @@
   --res-row: 26px;        /* altura da faixa de um responsável */
   --res-h: 152px;         /* altura do painel de recursos docado */
 
+  /* A interface inteira é monoespaçada — menubar, tabela, nomes de tarefa e
+     rótulos do gráfico. O Perth se parece com o REPL de onde ele vem, e ter
+     duas famílias na mesma tela fazia o nome da tarefa parecer de outro
+     aplicativo que o cabeçalho logo acima dela. --sans fica definida para
+     quem precisar de uma proporcional (nada usa hoje). */
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace,
           "SF Mono", Menlo, Consolas, monospace;
@@ -46,7 +51,7 @@ html, body {
   height: 100%;
   background: var(--paper);
   color: var(--ink);
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: 14px;
   overflow: hidden;
 }
@@ -619,7 +624,7 @@ body.row-dragging { cursor: grabbing; user-select: none; }
 .bar { rx: 4; cursor: grab; }
 .bar-progress { rx: 4; pointer-events: none; }
 .bar-label {
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: 12px;
   fill: var(--ink);
   pointer-events: none;

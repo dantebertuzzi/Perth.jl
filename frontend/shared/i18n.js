@@ -316,6 +316,10 @@ window.PerthI18n = (function () {
       "No access key": "Sem chave de acesso",
       // link somente-leitura (view_key!)
       "Label position": "Posição do nome",
+      "move the selection": "mover a seleção",
+      "collapse / expand a summary": "recolher / abrir um resumo",
+      "first / last task": "primeira / última tarefa",
+      "zoom keeping the date under the pointer": "zoom mantendo a data sob o ponteiro",
       "read-only": "somente leitura",
       "Read-only link — ask for an editing link to change anything.":
         "Link somente leitura — peça um link de edição para mudar qualquer coisa.",
@@ -932,6 +936,10 @@ window.PerthI18n = (function () {
         "sobrecarga",
       "past deadline":
         "plazo vencido",
+      "move the selection": "mover la selección",
+      "collapse / expand a summary": "plegar / abrir un resumen",
+      "first / last task": "primera / última tarea",
+      "zoom keeping the date under the pointer": "zoom manteniendo la fecha bajo el puntero",
       "read-only": "solo lectura",
       "Read-only link — ask for an editing link to change anything.":
         "Enlace de solo lectura — pide un enlace de edición para cambiar algo.",
@@ -1436,6 +1444,10 @@ window.PerthI18n = (function () {
         "surcharge",
       "past deadline":
         "délai dépassé",
+      "move the selection": "déplacer la sélection",
+      "collapse / expand a summary": "replier / ouvrir un récapitulatif",
+      "first / last task": "première / dernière tâche",
+      "zoom keeping the date under the pointer": "zoom en gardant la date sous le pointeur",
       "read-only": "lecture seule",
       "Read-only link — ask for an editing link to change anything.":
         "Lien en lecture seule — demandez un lien d'édition pour changer quoi que ce soit.",
@@ -1939,6 +1951,10 @@ window.PerthI18n = (function () {
         "超负荷",
       "past deadline":
         "超过期限",
+      "move the selection": "移动选择",
+      "collapse / expand a summary": "折叠 / 展开摘要任务",
+      "first / last task": "第一个 / 最后一个任务",
+      "zoom keeping the date under the pointer": "缩放时保持指针下的日期不动",
       "read-only": "只读",
       "Read-only link — ask for an editing link to change anything.":
         "只读链接 — 需要改动请索取可编辑链接。",

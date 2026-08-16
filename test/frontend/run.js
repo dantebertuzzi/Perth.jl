@@ -1875,15 +1875,18 @@ console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
 
   let r = runIn(`PerthI18n.set("pt"); showShortcuts();
     const linhas = [...document.querySelectorAll("#perth-overlay .shortcut-row")];
+    // a linha é achada pela TECLA, não pelo índice: acrescentar um atalho no
+    // meio da lista não pode quebrar a verificação da tradução
+    const linhaN = linhas.find((l) => l.querySelector(".shortcut-keys").textContent === "N");
     return { titulo: document.querySelector("#perth-overlay h2").textContent,
              linhas: linhas.length,
-             primeira: linhas[0].querySelector(".shortcut-keys").textContent,
-             descricao: linhas[0].querySelector(".shortcut-desc").textContent,
+             primeira: linhaN.querySelector(".shortcut-keys").textContent,
+             descricao: linhaN.querySelector(".shortcut-desc").textContent,
              duasTeclas: linhas.find((l) => l.textContent.includes("Ctrl+Y"))
                                .querySelectorAll("kbd").length,
              fechar: document.querySelector("#perth-overlay .modal-actions button").textContent };`);
-  check(r.titulo === "Atalhos de teclado" && r.linhas === 14,
-        "gantt: Atalhos abre um overlay com as 14 teclas");
+  check(r.titulo === "Atalhos de teclado" && r.linhas === 18,
+        "gantt: Atalhos abre um overlay com as 18 teclas");
   check(r.primeira === "N" && r.descricao === "nova tarefa",
         "gantt: tecla de um lado, descrição traduzida do outro");
   check(r.duasTeclas === 2, "gantt: \"Ctrl+Shift+Z / Ctrl+Y\" vira dois <kbd>, não um");
@@ -2883,6 +2886,129 @@ console.log("gantt · arrastar a divisa da tabela");
   check(r === 380, "gantt: a largura escolhida é lembrada no navegador");
 
   await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
+console.log("gantt · andar pelo plano com o teclado");
+{
+  const { runIn, close } = loadGanttApp();
+  // deixa o init() assíncrono assentar antes de mexer (e antes de fechar):
+  // fechar a janela com ele pendente derruba o arquivo inteiro
+  await new Promise((r) => setTimeout(r, 50));
+  const seed = `
+    const mk = (id, name, start, extra) => Object.assign({
+      id, name, start, duration: 3, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false }, extra || {});
+    state.current = { id: "pk", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("f1", "Fase 1", "2026-03-02"),
+      mk("a", "A", "2026-03-02", { parent: "f1" }),
+      mk("b", "B", "2026-03-05", { parent: "f1" }),
+      mk("f2", "Fase 2", "2026-03-10"),
+      mk("c", "C", "2026-03-10", { parent: "f2" }) ] };
+    state.cpm = { cycle: false, finish: "2026-03-13", calendar: "", pert: null, byId: new Map() };
+    state.selected = null;
+    renderAll();`;
+  const tecla = (k) => `document.dispatchEvent(new KeyboardEvent("keydown", { key: "${k}", bubbles: true, cancelable: true }));`;
+
+  // ↓ sem nada selecionado entra pelo topo; ↑ entraria pelo fim
+  let r = runIn(`${seed} ${tecla("ArrowDown")} return state.selected;`);
+  check(r === "f1", "gantt: ↓ sem seleção começa pela primeira linha");
+  r = runIn(`${seed} ${tecla("ArrowUp")} return state.selected;`);
+  check(r === "c", "gantt: ↑ sem seleção começa pela última");
+
+  // anda pelas linhas VISÍVEIS, na ordem da tela
+  r = runIn(`${seed} state.selected = "f1";
+    ${tecla("ArrowDown")} ${tecla("ArrowDown")} return state.selected;`);
+  check(r === "b", "gantt: ↓↓ desce duas linhas");
+  r = runIn(`${seed} state.selected = "c"; ${tecla("Home")} return state.selected;`);
+  check(r === "f1", "gantt: Home vai para a primeira");
+  r = runIn(`${seed} state.selected = "f1"; ${tecla("End")} return state.selected;`);
+  check(r === "c", "gantt: End vai para a última");
+
+  // nas pontas, para — em vez de dar a volta e desorientar
+  r = runIn(`${seed} state.selected = "c"; ${tecla("ArrowDown")} return state.selected;`);
+  check(r === "c", "gantt: ↓ na última linha não dá a volta");
+
+  // ← fecha o resumo; a linha recolhida some da lista e ↓ pula a subárvore
+  r = runIn(`${seed} state.selected = "f1"; ${tecla("ArrowLeft")}
+    return { fechado: state.wbsClosed.has("f1"),
+             visiveis: displayRows().filter(x => x.kind === "task").length };`);
+  check(r.fechado === true && r.visiveis === 3,
+        "gantt: ← fecha o resumo e a subárvore sai da lista");
+  r = runIn(`${seed} state.selected = "f1"; ${tecla("ArrowLeft")} ${tecla("ArrowRight")}
+    return { fechado: state.wbsClosed.has("f1"),
+             visiveis: displayRows().filter(x => x.kind === "task").length };`);
+  check(r.fechado === false && r.visiveis === 5, "gantt: → abre de novo");
+
+  // ← numa folha sobe para o pai, como em qualquer árvore de arquivos
+  r = runIn(`${seed} state.selected = "b"; ${tecla("ArrowLeft")} return state.selected;`);
+  check(r === "f1", "gantt: ← numa folha sobe para o pai");
+
+  // digitando, as setas são do campo — não do plano
+  r = runIn(`${seed} state.selected = "f1";
+    el.taskSearch.focus();
+    ${tecla("ArrowDown")}
+    return state.selected;`);
+  check(r === "f1", "gantt: com o foco num campo, as setas não movem a seleção");
+  close();
+}
+
+console.log("gantt · o que está dobrado é lembrado");
+{
+  const { runIn, close } = loadGanttApp();
+  // deixa o init() assíncrono assentar antes de mexer (e antes de fechar):
+  // fechar a janela com ele pendente derruba o arquivo inteiro
+  await new Promise((r) => setTimeout(r, 50));
+  const seed = `
+    const mk = (id, name, extra) => Object.assign({
+      id, name, start: "2026-03-02", duration: 3, assignee: "", progress: 0,
+      dependencies: [], color: "", notes: "", milestone: false, parent: "",
+      cost: 0, baseline_start: null, baseline_duration: 0, deadline: null,
+      pinned: false }, extra || {});
+    localStorage.clear();
+    // a janela do jsdom é a MESMA entre os runIn deste bloco: sem zerar aqui,
+    // o teste seguinte herda o que o anterior dobrou
+    state.wbsClosed.clear();
+    state.lanesClosed.clear();
+    state.current = { id: "pd", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("f1", "Fase 1"), mk("a", "A", { parent: "f1" }), mk("b", "B", { parent: "f1" }) ] };
+    state.cpm = { cycle: false, finish: "2026-03-05", calendar: "", pert: null, byId: new Map() };
+    renderAll();`;
+
+  let r = runIn(`${seed} toggleSummary("f1");
+    return JSON.parse(localStorage.getItem("perth-folds-pd"));`);
+  check(r && r.wbs.length === 1 && r.wbs[0] === "f1",
+        "gantt: dobrar um resumo escreve no armazenamento do navegador");
+
+  // abrir de novo apaga a chave: preferência vazia não precisa ocupar espaço
+  r = runIn(`${seed} toggleSummary("f1"); toggleSummary("f1");
+    return localStorage.getItem("perth-folds-pd");`);
+  check(r === null, "gantt: desdobrar tudo apaga a chave em vez de guardar vazio");
+
+  // é o que faz o F5 (e a volta do kanban) devolverem o plano como estava
+  r = runIn(`${seed}
+    localStorage.setItem("perth-folds-pd", JSON.stringify({ wbs: ["f1"], lanes: [] }));
+    restauraDobras(state.current); renderAll();
+    return { fechado: state.wbsClosed.has("f1"),
+             visiveis: displayRows().filter(x => x.kind === "task").length };`);
+  check(r.fechado === true && r.visiveis === 1,
+        "gantt: ao abrir o projeto, o que estava dobrado volta dobrado");
+
+  // id que não existe mais não pode continuar dobrando nada
+  r = runIn(`${seed}
+    localStorage.setItem("perth-folds-pd", JSON.stringify({ wbs: ["f1", "apagada"], lanes: [] }));
+    restauraDobras(state.current);
+    return [...state.wbsClosed];`);
+  check(r.length === 1 && r[0] === "f1",
+        "gantt: id de tarefa que não existe mais é descartado na volta");
+
+  // e é POR PROJETO: "Fase 1" fechada aqui não fecha nada no projeto seguinte
+  r = runIn(`${seed} toggleSummary("f1");
+    state.current = { ...state.current, id: "outro" };
+    restauraDobras(state.current);
+    return [...state.wbsClosed];`);
+  check(r.length === 0, "gantt: o que está dobrado é de um projeto só");
   close();
 }
 
