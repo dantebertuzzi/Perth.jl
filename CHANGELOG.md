@@ -55,6 +55,12 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   warnings list says it out loud, with the earliest date the task could start
   and how many days early it is; when the start is **pinned** the row says so,
   because that is precisely the case auto-schedule will not fix.
+- **Telling whose baseline a ghost bar is.** The ghost lives on its task's own
+  row, but a task that moved a long way leaves it far from its bar, and "same
+  row" becomes guesswork on a busy chart. Hovering it now names the task and
+  gives the promised dates (and the slippage, when there is any); selecting the
+  task lights its ghost up and joins the two with a dotted line — which is the
+  slippage drawn at actual size. Neither adds anything to the chart at rest.
 - **A slider for where a marked day's name sits.** The name lies along the
   line it names, so it always lands on *something* — and which bar it lands on
   depends on the plan. `label_at` (0–100 percent of the chart height, a slider

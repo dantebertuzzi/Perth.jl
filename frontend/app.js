@@ -1676,14 +1676,42 @@ function renderChart() {
     const isSum = state.wbs?.summary.has(t.id) ?? false;
     const slip = !isSum && !t.milestone ? slipDays(t) : 0;
 
-    // Barra-fantasma do baseline (plano original), rente à base da linha
+    /* Barra-fantasma do baseline (plano original), rente à base da linha.
+     *
+     * De quem é este fantasma? Ele mora na linha da tarefa, mas quando ela
+     * andou muito ele aparece longe da barra — e aí "mesma linha" vira
+     * palpite, ainda mais com as linhas vizinhas cheias. Duas respostas, cada
+     * uma no momento em que a pergunta aparece, e nenhuma delas desenhando
+     * nada a mais no estado de repouso: o mouse em cima diz o nome e as datas
+     * prometidas; selecionar a tarefa acende o fantasma e liga os dois com um
+     * tracinho, que de quebra é a derrapagem desenhada em tamanho real.
+     */
     if (ui.baseline && t.baseline_start && !isSum && !t.milestone) {
       const bx = xOf(parseDate(t.baseline_start));
       const bw = Math.max(t.baseline_duration, 1) * ppd;
+      const gy = i * ROW_H + ROW_H - 9;
+      const escolhida = t.id === state.selected;
       chart.appendChild(svg("rect", {
-        class: "baseline-ghost" + dim,
-        x: bx, y: i * ROW_H + ROW_H - 9, width: bw, height: 4, rx: 2,
+        class: "baseline-ghost" + dim + (escolhida ? " sel" : ""),
+        x: bx, y: gy, width: bw, height: 4, rx: 2,
       }));
+      // Alvo de mouse próprio, como o das setas: 4px de altura não se acerta.
+      // Vai ANTES da barra, que é desenhada depois e fica por cima — onde os
+      // dois se sobrepõem quem manda é a barra, com o arrasto dela intacto.
+      const alvo = svg("rect", {
+        class: "baseline-hit", x: bx, y: gy, width: bw, height: 9,
+      });
+      alvo.appendChild(svgTitle(
+        `${T("Baseline")} · ${t.name}\n` +
+        `${t.baseline_start} → ${fmtISO(baselineEnd(t))}` +
+        (slip > 0 ? `\n${slip} d · ${T("behind the baseline")}` : "")));
+      chart.appendChild(alvo);
+      if (escolhida && Math.abs(bx - x) > 1) {
+        chart.appendChild(svg("line", {
+          class: "baseline-link",
+          x1: Math.min(bx, x), y1: gy + 2, x2: Math.max(bx, x), y2: gy + 2,
+        }));
+      }
     }
 
     if (isSum) {
