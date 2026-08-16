@@ -45,6 +45,7 @@ const state = {
   highlight: null,      // {kind: "assignee"|"status"|"type", value} ou null
   groupBy: "",          // "" | "assignee" | "team" — raias na tabela e no gráfico
   lanesClosed: new Set(),  // chaves de raia recolhidas
+  wbsClosed: new Set(),    // ids de resumo com a subárvore recolhida
   search: "",           // busca por nome de tarefa (ver matchesSearch)
   searchAt: 0,          // ocorrência atual, percorrida com Enter
   warnings: [],         // problemas do plano, vindos do servidor
@@ -460,9 +461,10 @@ async function openProject(id) {
   state.current = await api(`/api/projects/${id}`);
   noteBase();
   state.selected = null;
-  // raia recolhida é sobre AQUELE projeto: "Ana" fechada aqui não quer
+  // o que está recolhido é sobre AQUELE projeto: "Ana" fechada aqui não quer
   // dizer "Ana" fechada no projeto seguinte
   state.lanesClosed.clear();
+  state.wbsClosed.clear();
   el.projectSelect.value = id;
   localStorage.setItem("perth-last-project", id);
   await fetchAnalytics();
@@ -1160,9 +1162,27 @@ const laneLabel = (chave) => chave ||
    diferente, e pendurá-lo na raia de alguém diria que aquela pessoa é dona do
    bloco inteiro. O motor de CPM já os trata assim — agenda folhas, resumos
    são recipientes. */
+/* Um resumo recolhido esconde a subárvore inteira, não só os filhos diretos:
+   recolher "Estrutura" e continuar vendo os netos seria recolher pela
+   metade. O colchete dele no gráfico já resume o período dos filhos, então o
+   que sobra na tela continua dizendo quando o bloco acontece. */
+function hiddenByCollapse(t, byId) {
+  let pai = t.parent;
+  while (pai) {
+    if (state.wbsClosed.has(pai)) return true;
+    pai = byId.get(pai)?.parent || "";
+  }
+  return false;
+}
+
 function displayRows() {
   const tasks = state.current?.tasks || [];
-  if (!state.groupBy) return tasks.map((task) => ({ kind: "task", task }));
+  if (!state.groupBy) {
+    if (!state.wbsClosed.size) return tasks.map((task) => ({ kind: "task", task }));
+    const byId = new Map(tasks.map((t) => [t.id, t]));
+    return tasks.filter((t) => !hiddenByCollapse(t, byId))
+                .map((task) => ({ kind: "task", task }));
+  }
 
   const raias = new Map();
   for (const t of tasks) {
@@ -1225,6 +1245,7 @@ function taskRow(t) {
   // raia, e o recuo apontaria para uma linha que não está ali
   const depth = state.groupBy ? 0 : (state.wbs?.depth.get(t.id) ?? 0);
   const isSum = state.wbs?.summary.has(t.id) ?? false;
+  const fechado = state.wbsClosed.has(t.id);
   row.className = "tt-row" + (t.id === state.selected ? " selected" : "")
     + (crit ? " critical" : "")
     + (isSum ? " summary" : "")
@@ -1232,13 +1253,25 @@ function taskRow(t) {
   if (state.showCritical && info) row.title = `slack: ${info.slack_days}d`;
   row.dataset.id = t.id;
   row.innerHTML = `
-    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? '<span class="sum-mark">▾</span>' : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
+    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? `<button type="button" class="sum-mark" title="${T(fechado ? "Expand" : "Collapse")}">${fechado ? "▸" : "▾"}</button>` : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
     <span class="c-date">${t.start}</span>
     <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
     <span class="c-num">${t.progress}</span>`;
   row.addEventListener("click", () => selectTask(t.id));
   row.addEventListener("dblclick", () => openModal(t.id));
+  // o ▾ recolhe a subárvore e NÃO seleciona: clique na seta é sobre a
+  // árvore, clique na linha é sobre a tarefa
+  row.querySelector(".sum-mark")?.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    toggleSummary(t.id);
+  });
   return row;
+}
+
+function toggleSummary(id) {
+  state.wbsClosed.has(id) ? state.wbsClosed.delete(id) : state.wbsClosed.add(id);
+  renderTable();
+  renderChart();
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -3627,9 +3660,13 @@ function revealTask(id) {
   const t = state.current.tasks.find((x) => x.id === id);
   if (!t) return;
   state.selected = id;
-  // numa raia fechada é preciso ABRIR a raia: apontar para uma linha que não
-  // está na tela é pior do que não apontar
+  // numa raia fechada — ou dentro de um resumo recolhido — é preciso ABRIR:
+  // apontar para uma linha que não está na tela é pior do que não apontar
   if (state.groupBy) state.lanesClosed.delete(laneKeyOf(t));
+  const byId = new Map(state.current.tasks.map((x) => [x.id, x]));
+  for (let pai = t.parent; pai; pai = byId.get(pai)?.parent || "") {
+    state.wbsClosed.delete(pai);
+  }
   renderTable();
   renderChart();
   const linha = displayRows()
@@ -3799,10 +3836,78 @@ $$("#set-density button").forEach((b) =>
     saveUI();
     state.current && renderAll();
   }));
+/* Arrastar a divisa entre a tabela e o gráfico. A régua de largura já
+   existia nas configurações; o que faltava era o gesto — ninguém abre um
+   painel de preferências para ver um nome de tarefa que está cortado.
+
+   Os limites saem da PRÓPRIA régua (min/max/step do input), não de números
+   repetidos aqui: dois lugares com o mesmo limite escrito à mão é um lugar
+   que vai ficar para trás. Arrastar também move a régua, e o passo é o dela
+   — largura fora do passo faria o input arredondar em silêncio e os dois
+   passariam a discordar em alguns pixels. */
+const faixaTabela = () => {
+  const reg = $("#set-tablew");
+  return { min: Number(reg.min) || 260, max: Number(reg.max) || 560,
+           passo: Number(reg.step) || 1 };
+};
+
+function setTableWidth(w, { gravar = true } = {}) {
+  const { min, max, passo } = faixaTabela();
+  const alvo = Math.min(Math.max(Math.round(w / passo) * passo, min), max);
+  ui.tableWidth = alvo;
+  document.documentElement.style.setProperty("--table-w", alvo + "px");
+  $("#set-tablew").value = alvo;
+  if (gravar) {
+    saveUI();
+    state.current && renderChart();
+  }
+  return alvo;
+}
+
+(function arrastarDivisa() {
+  const alca = $("#tt-resizer");
+  if (!alca) return;
+  let x0 = 0, w0 = 0;
+
+  // durante o arrasto só a variável CSS e a régua andam; redesenhar o SVG a
+  // cada pixel deixaria o gesto pesado
+  const mover = (ev) => setTableWidth(w0 + ev.clientX - x0, { gravar: false });
+  const soltar = (ev) => {
+    alca.releasePointerCapture?.(ev.pointerId);
+    alca.classList.remove("dragging");
+    document.body.classList.remove("resizing");
+    alca.removeEventListener("pointermove", mover);
+    alca.removeEventListener("pointerup", soltar);
+    setTableWidth(ui.tableWidth);
+  };
+
+  alca.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    x0 = ev.clientX;
+    w0 = ui.tableWidth;
+    alca.setPointerCapture?.(ev.pointerId);
+    alca.classList.add("dragging");
+    document.body.classList.add("resizing");
+    alca.addEventListener("pointermove", mover);
+    alca.addEventListener("pointerup", soltar);
+  });
+
+  // duplo clique volta ao padrão: desfazer um arrasto infeliz sem ter de
+  // acertar o pixel de onde ele começou
+  alca.addEventListener("dblclick", () => setTableWidth(UI_DEFAULTS.tableWidth));
+
+  // a divisa tem foco, então as setas também movem
+  alca.addEventListener("keydown", (ev) => {
+    const { passo } = faixaTabela();
+    const d = ev.key === "ArrowLeft" ? -passo : ev.key === "ArrowRight" ? passo : 0;
+    if (!d) return;
+    ev.preventDefault();
+    setTableWidth(ui.tableWidth + d);
+  });
+})();
+
 $("#set-tablew").addEventListener("input", () => {
-  ui.tableWidth = Number($("#set-tablew").value);
-  applyUI();
-  saveUI();
+  setTableWidth(Number($("#set-tablew").value));
 });
 $("#set-weekends").addEventListener("click", () => {
   ui.weekends = !ui.weekends;

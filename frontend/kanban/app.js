@@ -177,9 +177,9 @@ function handleMessage(msg) {
         state.log.length > 500 && state.log.shift();
         if (state.openModal === "activity") showActivity();
       }
-      showToast(window.PerthI18n
-        ? PerthI18n.t(msg.shared ? "Transmission on" : "Transmission off")
-        : (msg.shared ? "Transmission on" : "Transmission off"), "toast-info");
+      // sem aviso flutuante: quem ligou a transmissão acabou de clicar no
+      // botão, e o botão já muda de cor e de rótulo. O gantt nunca avisou,
+      // e a diferença entre os dois era só herança.
       refreshShare();
       break;
     }

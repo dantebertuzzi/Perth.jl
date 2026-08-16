@@ -8,6 +8,27 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 ## [Unreleased]
 
 ### Added
+- **Collapsible WBS summaries.** The `▾` on a summary row was decoration: the
+  chart could group tasks into lanes and fold those, but a category — the
+  thing the WBS exists to create — could not be closed. Clicking the arrow now
+  folds the whole subtree, not just the direct children, and the summary
+  bracket stays on the chart, so a folded block still says when it happens.
+  The arrow does not select the task: a click on the arrow is about the tree,
+  a click on the row is about the task. Searching a task inside a folded
+  summary opens it, the same way it opens a folded lane.
+- **Drag the divider** between the task table and the timeline. The width was
+  already a preference with a slider in settings, but nobody opens a
+  preferences panel to read a task name that is cut off. The handle takes its
+  bounds *and its step* from that same slider — two places with the same limit
+  written by hand is one place that falls behind — and moves it live, so the
+  two never disagree. Double-click resets to the default; the arrows move it
+  one step when the handle has focus.
+
+### Changed
+- The kanban no longer pops a **"Transmission on"** toast when sharing is
+  switched on: whoever turned it on just clicked the button, and the button
+  already changes colour and label. The gantt never announced it, and the
+  difference between the two was only inheritance.
 - **Marked days** (`Marker`, `markers`, `markers!`, `add_marker!`,
   `remove_marker!`, File → Marked days…, and a **double-click on the day**
   ruler): a named day drawn as a vertical line across the whole chart, the way

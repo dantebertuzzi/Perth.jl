@@ -2647,6 +2647,138 @@ console.log("gantt · cadastro de colaboradores");
   close();
 }
 
+console.log("gantt · arrastar a divisa da tabela");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // MouseEvent no lugar de PointerEvent: o handler só lê clientX, e assim o
+  // teste não depende de o jsdom implementar PointerEvent
+  const arrastar = (de, ate) => `
+    { const a = document.getElementById("tt-resizer");
+      const ev = (t, x) => a.dispatchEvent(new MouseEvent(t, { bubbles: true, clientX: x }));
+      ev("pointerdown", ${de}); ev("pointermove", ${ate}); ev("pointerup", ${ate}); }`;
+
+  let r = runIn(`setTableWidth(400);
+    ${arrastar(400, 520)}
+    return { largura: ui.tableWidth,
+             regua: Number(document.getElementById("set-tablew").value),
+             css: document.documentElement.style.getPropertyValue("--table-w") };`);
+  check(r.largura === 520, "gantt: arrastar a divisa muda a largura da tabela");
+  check(r.regua === 520, "gantt: e a régua das configurações anda junto");
+  check(r.css === "520px", "gantt: a largura vai para a variável do CSS");
+
+  // limites e passo saem da PRÓPRIA régua: dois lugares com o mesmo número
+  // escrito à mão é um lugar que fica para trás
+  r = runIn(`const reg = document.getElementById("set-tablew");
+    setTableWidth(400);
+    ${arrastar(400, 4000)}
+    const cheio = ui.tableWidth;
+    setTableWidth(400);
+    ${arrastar(400, -4000)}
+    return { cheio, vazio: ui.tableWidth,
+             min: Number(reg.min), max: Number(reg.max) };`);
+  check(r.cheio === r.max && r.vazio === r.min,
+        "gantt: o arrasto para nos limites da régua, não em números próprios");
+
+  r = runIn(`setTableWidth(400); ${arrastar(400, 437)}
+    return { largura: ui.tableWidth,
+             regua: Number(document.getElementById("set-tablew").value) };`);
+  check(r.largura === 440 && r.regua === 440,
+        "gantt: a largura anda no passo da régua — fora do passo os dois discordariam");
+
+  // duplo clique volta ao padrão
+  r = runIn(`document.getElementById("tt-resizer")
+      .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    return ui.tableWidth;`);
+  check(r === 380, "gantt: duplo clique na divisa volta à largura padrão");
+
+  // e o teclado, já que a divisa tem foco
+  r = runIn(`const a = document.getElementById("tt-resizer");
+    a.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    const dir = ui.tableWidth;
+    a.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    return { dir, esq: ui.tableWidth };`);
+  check(r.dir === 390 && r.esq === 380,
+        "gantt: as setas movem a divisa um passo por vez");
+
+  // o que foi arrastado fica guardado, como o tema e a densidade
+  r = runIn(`return JSON.parse(localStorage.getItem("perth-ui")).tableWidth;`);
+  check(r === 380, "gantt: a largura escolhida é lembrada no navegador");
+
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
+console.log("gantt · recolher um resumo de WBS");
+{
+  const { runIn, close } = loadGanttApp();
+
+  // avó → mãe → filha, para provar que recolher pega a subárvore inteira e
+  // não só os filhos diretos
+  const seed = `
+    const mk = (id, name, start, dur, parent = "") => ({
+      id, name, start, duration: dur, assignee: "", progress: 0,
+      dependencies: [], color: "", notes: "", milestone: false, parent,
+      baseline_start: null, baseline_duration: 0, cost: 0, deadline: null,
+      pinned: false });
+    state.current = { id: "p1", name: "P", people: [], bands: [], markers: [],
+      tasks: [
+        mk("t0", "Projeto", "2026-03-02", 5),
+        mk("pai", "Estrutura", "2026-03-09", 1),
+        mk("meio", "Fundação", "2026-03-09", 8, "pai"),
+        mk("neta", "Sapata", "2026-03-09", 3, "meio"),
+        mk("fim", "Pintura", "2026-04-17", 4)] };
+    state.cpm = { cycle: false, finish: "2026-04-20", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  const nomes = `[...document.querySelectorAll("#task-rows .tt-row .c-name")]
+    .map((x) => x.textContent.trim())`;
+
+  let r = runIn(`${seed} return ${nomes};`);
+  check(r.join("|") === "Projeto|▾Estrutura|▾Fundação|Sapata|Pintura",
+        "gantt: a árvore inteira aparece, com seta em cada resumo");
+
+  // clicar na seta recolhe — e NÃO seleciona a tarefa: o clique na seta é
+  // sobre a árvore, o clique na linha é sobre a tarefa
+  r = runIn(`document.querySelector(".tt-row .sum-mark").click();
+    return { nomes: ${nomes}, sel: state.selected,
+             marca: document.querySelector(".tt-row .sum-mark").textContent };`);
+  check(!r.nomes.some((n) => /Fundação|Sapata/.test(n)),
+        "gantt: recolher esconde a subárvore inteira, não só os filhos diretos");
+  check(r.sel === null, "gantt: e não seleciona a tarefa do resumo");
+  check(r.marca === "▸", "gantt: a seta vira ▸");
+
+  // o colchete continua no gráfico: recolher esconde as tarefas, não o
+  // período que elas ocupam
+  r = runIn(`return { colchetes: document.querySelectorAll("#chart .bar-summary").length,
+             barras: document.querySelectorAll("#chart .bar").length };`);
+  check(r.colchetes === 1 && r.barras === 2,
+        "gantt: o colchete do resumo fica, as barras de dentro saem");
+
+  // buscar tem que ALCANÇAR o que está recolhido
+  r = runIn(`el.taskSearch.value = "sapata";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    el.taskSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    return { nomes: ${nomes}, sel: state.selected, conta: el.taskSearchCount.textContent };`);
+  check(r.nomes.some((n) => /Sapata/.test(n)) && r.sel === "neta",
+        "gantt: buscar dentro de um resumo recolhido abre o resumo");
+  check(r.conta === "1/1", "gantt: e a busca conta a tarefa escondida");
+
+  // trocar de projeto não leva o que estava recolhido junto
+  r = runIn(`el.taskSearch.value = "";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    document.querySelector(".tt-row .sum-mark").click();
+    const antes = state.wbsClosed.size;
+    state.lanesClosed.clear(); state.wbsClosed.clear();   // o que openProject faz
+    return { antes, depois: state.wbsClosed.size };`);
+  check(r.antes === 1 && r.depois === 0,
+        "gantt: o que está recolhido é sobre AQUELE projeto");
+
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
 console.log("gantt · raias por responsável");
 {
   const { runIn, close } = loadGanttApp();
