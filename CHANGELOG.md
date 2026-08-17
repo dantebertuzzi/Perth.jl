@@ -5,6 +5,81 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.3] - 2026-08-17
+
+### Added
+- **Multi-select and bulk actions, in the Gantt and in the kanban.** Everything
+  was one task at a time. With collaborators and lanes already on screen,
+  "push these six by three days" and "hand these four to Bruno" had become
+  obvious operations that did not exist. Ctrl-click adds one, Shift-click takes
+  the range, `Shift+↑`/`↓` extends it, `Ctrl+A` takes everything visible, and
+  the status bar says how many are in hand before any action runs.
+- **The selection is a set with an anchor**, not a set alone: almost everything
+  that reads it wants *one* task — the modal edits one, the arrow keys move one
+  cursor, the search points at one, a dependency runs from one bar to another.
+  A set cannot answer "which one", and deriving it on the spot ("the first",
+  "the last") gives a different answer in each place. So `state.selected` stayed
+  as the anchor and `state.selection` became the set, with the invariant that
+  the anchor is always inside it — which is why there is no longer a bare
+  `state.selected = id` anywhere in either app. The far end of a Shift range is
+  a third field, and that is what makes `Shift+↓` `Shift+↓` `Shift+↑` *shrink*
+  the range instead of leaving three rows lit: the range is recomputed whole
+  from an anchor that does not move.
+- **The gestures that already existed now carry the whole selection.** Dragging
+  one bar pushes every selected task by the same delta — the gesture already
+  knew how to turn pixels into days — and dragging one card in the kanban moves
+  the whole selection to the target column, in board order, with the count on
+  the drag clone and every source card lifted out of its place, not just the one
+  under the cursor. A bar or a card *outside* the selection still moves alone:
+  what is under the pointer must not lie about what is about to move.
+- **Edit selected tasks…** (`Ctrl+E`) does the composite ask in one dialog and
+  one undo: shift the dates by N days, set the assignee, set the colour. Each
+  row has a checkbox that arms it, because an empty field is ambiguous between
+  "leave this alone" and "clear this" — and clearing the assignee of six tasks
+  is a legitimate thing to want to say.
+- In the kanban, the same for cards: **archive** (`A`), **mark done**
+  (`Space`), **assign**, **delete** and **move** the selection. Each bulk action
+  still sends one op per card — the server is what resolves conflict, WIP and
+  permission card by card, and a compound op in the protocol would mean teaching
+  all of that again on the other side — but the client groups them into a single
+  undo entry. Which direction the group is replayed in depends on what the ops
+  do: inverses that carry a *position* (a card going back to index 3) have to run
+  back-to-front, or the second card lands where the first just went; inverses
+  that *append* (a card coming back from the archive, which has always returned
+  to the bottom of its column) have to run front-to-back, or six cards come back
+  in reverse order.
+- **A summary in the selection moves its subtasks, not itself.** A summary has
+  no date of its own — `sortTasks` recomputes its start and duration from its
+  children on every render — so writing a date into it would be writing into a
+  field the next render overwrites. Bulk-delete and bulk-duplicate drop any task
+  whose own parent is also selected, for the mirror-image reason: duplicating a
+  phase already copies the subtree, and doing the child as well would leave a
+  loose copy beside it.
+- **A selected row that leaves the screen leaves the selection.** Collapsing a
+  phase or closing a lane hides rows, and a selected task with no row is a task
+  the next bulk action would reach without anyone seeing it. Same for a task
+  that disappears entirely — deleted here, in the REPL or on another machine.
+- **`Ctrl+A` takes what is on screen *and lit*.** With a highlight on ("Ana")
+  or a filter typed into the kanban's search, the other rows are dimmed exactly
+  because they are not the subject, and "select all → hand these to Bruno" has
+  to mean what is being looked at. The Shift range is deliberately the opposite:
+  it promises "from here to there", so whatever sits between the two ends comes
+  along, dimmed or not — what points at the two ends is a finger, not a filter.
+- **Stretching is not pushing.** Dragging a bar's edge with a selection resizes
+  every selected task by the same number of days, but a *summary* is skipped
+  rather than expanded: pushing a block means pushing its leaves, while giving
+  two days to each of five leaves does not give two days to the block.
+- Selecting works through a read-only link, and the bulk *edits* do not:
+  choosing what to look at is reading. The dependency dots on a bar appear only
+  when exactly one task is selected — dragging one means "from this to that",
+  and there is no "this" when there are six.
+
+### Fixed
+- Deleting a task left behind dependencies that pointed at it through a **lag or
+  a type** (`"id+3"`, `"SS:id"`): the filter compared the whole reference string
+  instead of the id inside it. Found while rewriting that loop to delete a
+  selection.
+
 ## [0.9.2] - 2026-08-17
 
 ### Added

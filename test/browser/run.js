@@ -347,6 +347,76 @@ const SEMENTE = `
       check(r.depois !== r.antes && r.depois !== r.custo,
             "e o campo MUDA de aparência — travado sem parecer travado engole o clique");
     }
+    console.log("navegador · selecionar várias com o mouse de verdade");
+    {
+      // Aqui a cadeia de eventos é a real: Ctrl+clique e Shift+clique passam
+      // pelo mesmo pointerdown/click que o arrasto da barra disputa, e é isso
+      // que o jsdom não consegue provar. O modificador viaja no evento do
+      // navegador (Input.dispatchMouseEvent → modifiers), não num objeto
+      // montado à mão.
+      const CTRL = 2, SHIFT = 8;
+      const centro = (id) => `
+        const r = document.querySelector('.tt-row[data-id="${id}"]').getBoundingClientRect();
+        return { x: Math.round(r.left + 60), y: Math.round(r.top + r.height / 2) };`;
+      const clicar = async (id, modifiers = 0) => {
+        const p = await pg.avaliar(centro(id));
+        for (const type of ["mousePressed", "mouseReleased"]) {
+          await pg.enviar("Input.dispatchMouseEvent",
+            { type, x: p.x, y: p.y, button: "left", clickCount: 1, modifiers });
+        }
+        await espera(40);
+      };
+      const sel = `return selectedTasks().map((t) => t.id);`;
+
+      await pg.avaliar(`clearSelection(); renderAll(); return 1;`);
+      await clicar("t1");
+      await clicar("t3", CTRL);
+      check((await pg.avaliar(sel)).join() === "t1,t3",
+            "Ctrl+clique de verdade soma a segunda tarefa");
+
+      await pg.avaliar(`clearSelection(); renderAll(); return 1;`);
+      await clicar("t1");
+      await clicar("t4", SHIFT);
+      check((await pg.avaliar(sel)).join() === "t1,t2,t3,t4",
+            "Shift+clique de verdade pega o intervalo inteiro");
+
+      const molduras = await pg.avaliar(`
+        return document.querySelectorAll("#chart .bar-sel").length;`);
+      check(molduras === 4, "e as quatro barras aparecem molduradas no gráfico");
+
+      const status = await pg.avaliar(`return document.getElementById("status-left").textContent;`);
+      check(/· 4 tasks selected/.test(status), "a barra de status conta as quatro");
+
+      // Arrastar UMA barra da seleção empurra as quatro pelo mesmo delta —
+      // com o layout de verdade, que é o que converte pixels em dias
+      // a pilha de desfazer vem suja dos testes anteriores (mesma página):
+      // o que importa é quantas entradas ESTE gesto acrescenta
+      const antes = await pg.avaliar(`
+        state.undoStack = []; state.redoStack = [];
+        return state.current.tasks.map((t) => t.start);`);
+      const pos = await pg.avaliar(`
+        const b = document.querySelector('#chart .bar[data-id="t2"]').getBoundingClientRect();
+        return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2),
+                 ppd: PPD[state.zoom] };`);
+      await pg.enviar("Input.dispatchMouseEvent", { type: "mousePressed", x: pos.x, y: pos.y,
+                                                    button: "left", clickCount: 1 });
+      await pg.enviar("Input.dispatchMouseEvent", { type: "mouseMoved",
+                                                    x: pos.x + 3 * pos.ppd, y: pos.y, buttons: 1 });
+      await pg.enviar("Input.dispatchMouseEvent", { type: "mouseReleased",
+                                                    x: pos.x + 3 * pos.ppd, y: pos.y,
+                                                    button: "left", clickCount: 1 });
+      await espera(150);
+      const depois = await pg.avaliar(`
+        return { datas: state.current.tasks.map((t) => t.start),
+                 undo: state.undoStack.length };`);
+      const andou = depois.datas.map((d, i) =>
+        (Date.parse(d) - Date.parse(antes[i])) / 86400000);
+      check(andou.join() === "3,3,3,3",
+            `arrastar uma barra da seleção empurra as quatro pelos mesmos 3 dias (${andou.join()})`);
+      check(depois.undo === 1, "e o lote inteiro é uma entrada de desfazer");
+      await pg.avaliar(`undo(); clearSelection(); renderAll(); return 1;`);
+    }
+
     console.log("navegador · nada é escrito por cima de nada");
     {
       /* O varredor: mede a caixa de cada texto, forma e linha do gráfico e

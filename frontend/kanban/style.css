@@ -260,6 +260,24 @@ kbd {
 }
 .card:hover { border-color: var(--muted); }
 .card.selected { outline: 2px solid var(--purple); outline-offset: -1px; }
+/* Quantos cards estão voando no arrasto em lote: o clone é um card só, e sem
+   este número o gesto move seis mostrando um. */
+.drag-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--purple);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 19px;
+  text-align: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
 .card.ghost { opacity: 0.35; }             /* original enquanto eu arrasto  */
 
 /* clone flutuante que segue o ponteiro durante o arrasto */

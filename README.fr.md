@@ -369,7 +369,9 @@ serveur vers un autre dossier :
 | `↑` `↓` | déplace la sélection dans les lignes visibles |
 | `←` `→` | replie un récapitulatif / l'ouvre — sur une feuille, `←` remonte au parent |
 | `Home` `End` · `PageUp` `PageDown` | extrémités du plan · un écran |
-| `N` · `Enter` · `Suppr` · `Ctrl+D` | nouvelle · modifier · supprimer · dupliquer |
+| `N` · `Enter` · `Suppr` · `Ctrl+D` | nouvelle · modifier · supprimer · dupliquer la sélection |
+| `Ctrl+clic` · `Shift+clic` · `Shift+↑` `↓` | ajouter à la sélection · prendre l'intervalle · l'étendre |
+| `Ctrl+A` · `Ctrl+E` | tout sélectionner · modifier la sélection (dates, responsable, couleur) |
 | `Ctrl+Z` · `Ctrl+Shift+Z` | annuler · rétablir |
 | `S` · `C` · `R` | planifier automatiquement · chemin critique · charge |
 | `1` `2` `3` `4` · `Ctrl+molette` | zoom jour / semaine / mois / ajuster · zoom sous le pointeur |

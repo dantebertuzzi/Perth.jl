@@ -38,7 +38,9 @@ const state = {
   projects: [],        // resumos {id, name, ...}
   current: null,       // projeto completo {id, name, tasks: []}
   zoom: "week",
-  selected: null,      // id da tarefa selecionada
+  selected: null,      // âncora da seleção (ver selectTask)
+  selection: new Set(), // a seleção inteira — um id só no caso comum
+  selEdge: null,       // ponta longe do intervalo com Shift (null: sem intervalo)
   range: null,         // {start: Date, days: n}
   knownRev: -1,
   dirty: false,
@@ -75,7 +77,7 @@ function _snapshot() {
 function _restore(snap) {
   state.current.name = snap.name;
   state.current.tasks = snap.tasks.map((t) => ({ ...t, dependencies: [...t.dependencies] }));
-  state.selected = null;
+  clearSelection();
 }
 
 // pushUndo() só guarda o "antes" (antes de qualquer mutação local); o
@@ -148,7 +150,7 @@ function _reconcile(before, after, reference, target) {
     if (cur.name === reference.name) state.current.name = target.name;
     else skipped = true;
   }
-  state.selected = null;
+  clearSelection();
   return skipped;
 }
 
@@ -468,7 +470,7 @@ async function loadProjects(keepId = null) {
 async function openProject(id) {
   state.current = await api(`/api/projects/${id}`);
   noteBase();
-  state.selected = null;
+  clearSelection();
   // o que está recolhido é sobre AQUELE projeto: "Ana" fechada aqui não quer
   // dizer "Ana" fechada no projeto seguinte — e é lembrado por projeto
   restauraDobras(state.current);
@@ -616,7 +618,7 @@ function setSaveStatus(cls, text) {
 const WRITE_ACTIONS = new Set([
   "new-project", "rename-project", "delete-project", "import",
   "people", "bands", "markers",
-  "new-task", "delete-task", "duplicate-task",
+  "new-task", "delete-task", "duplicate-task", "bulk-edit",
   "set-baseline", "clear-baseline", "undo", "redo",
   "auto-schedule", "apply-pert",
 ]);
@@ -944,6 +946,11 @@ function renderAll() {
   }
   computeRange();
   sortTasks();
+  // depois de sortTasks (que recalcula state.wbs, de onde saem as linhas
+  // visíveis): tarefa que sumiu — apagada aqui, pelo REPL ou por outra
+  // máquina — sai da seleção junto, e a contagem na barra de status continua
+  // prometendo exatamente o que a próxima ação em lote vai atingir
+  pruneHiddenSelection();
   computeOverallocations();
   renderHighlightSelect();
   renderHeader();
@@ -1187,6 +1194,12 @@ function renderStatus() {
   } else {
     el.statusLeft.removeAttribute("title");
   }
+  // Por último, e só quando são mais de uma: quantas estão selecionadas é o
+  // número que toda ação em lote vai usar, e ele tem que estar visível ANTES
+  // de a ação acontecer — inclusive quando a última selecionada está fora da
+  // tela. Depois dos avisos porque é estado da tela, não do plano.
+  if (selCount() > 1) text += ` · ${selCount()} ${T("tasks selected")}`;
+
   el.statusLeft.textContent = text;
 
   // Barra de progresso do projeto: só folhas (resumos são agregados delas)
@@ -1359,8 +1372,8 @@ function toggleLane(key) {
   state.lanesClosed.has(key) ? state.lanesClosed.delete(key)
                              : state.lanesClosed.add(key);
   gravaDobras();
-  renderTable();
-  renderChart();
+  pruneHiddenSelection();
+  redrawSelection();
 }
 
 function renderTable() {
@@ -1398,7 +1411,7 @@ function taskRow(t, seq) {
   const depth = state.groupBy ? 0 : (state.wbs?.depth.get(t.id) ?? 0);
   const isSum = state.wbs?.summary.has(t.id) ?? false;
   const fechado = state.wbsClosed.has(t.id);
-  row.className = "tt-row" + (t.id === state.selected ? " selected" : "")
+  row.className = "tt-row" + (isSelected(t.id) ? " selected" : "")
     + (crit ? " critical" : "")
     + (isSum ? " summary" : "")
     + (taskMatchesHighlight(t) ? "" : " dim");
@@ -1410,7 +1423,7 @@ function taskRow(t, seq) {
     <span class="c-date">${t.start}</span>
     <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
     <span class="c-num">${t.progress}</span>`;
-  row.addEventListener("click", () => selectTask(t.id));
+  row.addEventListener("click", (ev) => selectTask(t.id, ev));
   row.addEventListener("dblclick", () => openModal(t.id));
   attachRowDrag(row, t);
   // o ▾ recolhe a subárvore e NÃO seleciona: clique na seta é sobre a
@@ -1607,7 +1620,7 @@ function aplicaArrasto(t, destino) {
   reorderSiblings(t, destino.position);
   // selecionada depois de solta: a linha andou, e o olho precisa achá-la
   // de novo (selectTask alterna, e aqui a intenção é sempre selecionar)
-  state.selected = t.id;
+  selectOnly(t.id);
   renderAll();
   markDirty();
 }
@@ -1615,8 +1628,8 @@ function aplicaArrasto(t, destino) {
 function toggleSummary(id) {
   state.wbsClosed.has(id) ? state.wbsClosed.delete(id) : state.wbsClosed.add(id);
   gravaDobras();
-  renderTable();
-  renderChart();
+  pruneHiddenSelection();
+  redrawSelection();
 }
 
 /* ------------------------------------------------------------------ */
@@ -1716,11 +1729,18 @@ function navegarComTeclado(ev) {
   if (!state.current || ev.ctrlKey || ev.metaKey || ev.altKey) return false;
   const linhas = displayRows().filter((r) => r.kind === "task").map((r) => r.task);
   if (!linhas.length) return false;
-  const i = linhas.findIndex((t) => t.id === state.selected);
+  const i = linhas.findIndex((t) => t.id === cursorId());
   const porTela = Math.max(1, Math.floor(el.tlBody.clientHeight / ROW_H) - 1);
+  // Com Shift a mesma tecla estende: o intervalo é recalculado da âncora até
+  // a linha nova, então ↓↓↑ deixa duas selecionadas e não três. Sem Shift é
+  // o que sempre foi — revealTask leva a seleção para uma só.
   const ir = (k) => {
     const alvo = linhas[Math.min(Math.max(k, 0), linhas.length - 1)];
     if (!alvo) return false;
+    if (ev.shiftKey && state.selected && extendSelection(alvo.id, false)) {
+      revealRow(alvo.id);
+      return true;
+    }
     revealTask(alvo.id);
     return true;
   };
@@ -1921,7 +1941,7 @@ function renderChart() {
     const hasNotes = (t.notes || "").trim().length > 0;
     const isSum = state.wbs?.summary.has(t.id) ?? false;
     const slip = !isSum && !t.milestone ? slipDays(t) : 0;
-    const escolhida = t.id === state.selected;
+    const escolhida = isSelected(t.id);
     // afastamento do nome: cede lugar ao ponto de ligar quando ele existe
     const folga = escolhida ? ESPACO_PONTO : 0;
 
@@ -1992,18 +2012,20 @@ function renderChart() {
       g.appendChild(capa(x, 1));
       g.appendChild(capa(x + w, -1));
 
-      g.addEventListener("click", () => selectTask(t.id));
+      g.addEventListener("click", (ev) => selectTask(t.id, ev));
       g.addEventListener("dblclick", () => openModal(t.id));
       chart.appendChild(g);
       if (hasNotes) pontoDeNota(chart, t, dim, x + w - 2, sy - 1);
       if (ui.labels) rotuloDaBarra(chart, t, dim, x + w + 8 + folga, sy + alt + 4, caixasRotulo);
-      if (t.id === state.selected) {
+      if (escolhida) {
         chart.appendChild(svg("rect", {
           class: "bar-sel", x: x - 3, y: sy - 3, width: w + 6, height: alt + 11,
         }));
         // um resumo pode ser predecessor (o fim dele é o fim do bloco), mas
         // não sucessor: o motor agenda folhas. Ver linkTasks().
-        drawLinkDots(chart, t, i, x, x + w);
+        // Só com UMA selecionada: arrastar um ponto significa "desta para
+        // aquela", e não há "desta" quando são seis.
+        if (selCount() === 1) drawLinkDots(chart, t, i, x, x + w);
       }
       return;   // resumo não tem barra normal nem drag
     }
@@ -2115,13 +2137,13 @@ function renderChart() {
       chart.appendChild(pin);
     }
 
-    if (t.id === state.selected) {
+    if (escolhida) {
       const selW = t.milestone ? h + 8 : Math.max(t.duration, 1) * ppd + 6;
       const selX = t.milestone ? x - h / 2 - 4 : x - 3;
       chart.appendChild(svg("rect", {
         class: "bar-sel", x: selX, y: y - 3, width: selW, height: h + 6,
       }));
-      drawLinkDots(chart, t, i, selX, selX + selW);
+      if (selCount() === 1) drawLinkDots(chart, t, i, selX, selX + selW);
     }
   });
 
@@ -2469,10 +2491,178 @@ function escapeHTML(s) {
 /* Interação: seleção, drag para mover, drag na borda para redimensionar */
 /* ------------------------------------------------------------------ */
 
-function selectTask(id) {
-  state.selected = state.selected === id ? null : id;
+/* A seleção é um conjunto, e `state.selected` é a âncora dele.
+ *
+ * Por que dois campos e não só o conjunto: quase tudo que lê a seleção quer
+ * UMA tarefa — o modal edita uma, as setas do teclado movem um cursor, a
+ * busca aponta para uma, os pontos de ligar dependência saem de uma ponta e
+ * chegam na outra. Um Set não responde "qual delas", e derivar isso na hora
+ * ("a primeira", "a última") dá respostas diferentes em cada lugar. Então a
+ * âncora é explícita: é a tarefa em que o gesto tocou por último, é de onde
+ * o Shift mede o intervalo, e é o que os leitores de uma-só usam.
+ *
+ * Invariante: se `selected` não é null, ele está em `selection`. Todo mundo
+ * passa pelos helpers abaixo para não quebrar isso — daí não haver mais
+ * nenhum `state.selected = id` solto no arquivo.
+ */
+function clearSelection() {
+  state.selection.clear();
+  state.selected = null;
+  state.selEdge = null;
+}
+
+function selectOnly(id) {
+  state.selection = new Set(id ? [id] : []);
+  state.selected = id || null;
+  state.selEdge = null;
+}
+
+function setSelection(ids, ancora) {
+  state.selection = new Set(ids);
+  state.selected = state.selection.has(ancora) ? ancora
+    : (state.selection.size === 1 ? [...state.selection][0] : null);
+  state.selEdge = null;
+}
+
+// Ids das linhas na ordem em que estão na TELA. O intervalo do Shift se mede
+// aqui e não na lista de tarefas: com raias ligadas a ordem da tela não é a
+// ordem do plano, e numa fase recolhida as linhas do meio não existem.
+// Shift promete "daqui até ali, o que está entre os dois na tela".
+const visibleIds = () =>
+  displayRows().filter((r) => r.kind === "task").map((r) => r.task.id);
+
+// A linha que o teclado move. Depois de um Shift o cursor é a ponta longe do
+// intervalo, não a âncora: mais um Shift+↓ tem que continuar de onde o olho
+// parou, e ↓ sem Shift também.
+const cursorId = () => state.selEdge || state.selected;
+
+/* Intervalo da âncora até `id`, SUBSTITUINDO a seleção (a menos que venha
+ * com Ctrl, que soma um segundo intervalo ao que já havia).
+ *
+ * Substituir é o que faz Shift+↓ seguido de Shift+↑ ENCOLHER em vez de
+ * deixar as duas pontas acesas: o intervalo é recalculado inteiro a partir
+ * de uma âncora que não se move, então ele cresce e diminui pelo mesmo
+ * gesto. Somar (o primeiro reflexo, `selection.add(...)`) transforma o
+ * arrepender-se num segundo clique em cada linha. */
+function extendSelection(id, somar) {
+  const linhas = visibleIds();
+  const a = linhas.indexOf(state.selected), b = linhas.indexOf(id);
+  if (a < 0 || b < 0) return false;
+  const faixa = linhas.slice(Math.min(a, b), Math.max(a, b) + 1);
+  state.selection = somar ? new Set([...state.selection, ...faixa]) : new Set(faixa);
+  state.selEdge = id;
+  return true;
+}
+
+const isSelected = (id) => state.selection.has(id);
+const selCount = () => state.selection.size;
+
+// Redesenha o que a seleção pinta: as linhas, as barras e a contagem na
+// barra de status. Não é renderAll — mudar de seleção não mexe no plano, e
+// não há por que recalcular sobrecarga, intervalo e recursos por um clique.
+function redrawSelection() {
+  if (!state.current) return;
   renderTable();
   renderChart();
+  renderStatus();
+}
+
+// Na ordem do plano, não na de clique: toda ação em lote (excluir, duplicar,
+// empurrar) lê daqui, e "seis tarefas" tem que significar a mesma coisa
+// independentemente de em que ordem elas foram apanhadas. Filtra por
+// existência de tabela: um id que ficou para trás (poll, undo, outra aba)
+// não é uma tarefa.
+function selectedTasks() {
+  return (state.current?.tasks || []).filter((t) => state.selection.has(t.id));
+}
+
+/* Uma seleção pode conter um resumo, e resumo não tem data própria:
+ * sortTasks() recalcula start/duration dele a partir dos filhos a cada
+ * render. Empurrar um bloco é empurrar as folhas dele — escrever a data no
+ * resumo seria escrever num campo que o próximo render sobrescreve. */
+function leafTargets(tarefas) {
+  const eResumo = (id) => state.wbs?.summary.has(id) ?? false;
+  const out = new Map();
+  for (const t of tarefas) {
+    if (!eResumo(t.id)) { out.set(t.id, t); continue; }
+    for (const c of collectDescendants(t.id)) if (!eResumo(c.id)) out.set(c.id, c);
+  }
+  return [...out.values()];
+}
+
+/* Duplicar/apagar em lote: um filho cuja própria mãe está na seleção não é
+ * um alvo separado. duplicateTask copia a subárvore inteira, então duplicar
+ * os dois daria uma cópia do filho dentro da cópia da fase MAIS uma cópia
+ * solta; apagar os dois é a mesma conta com o sinal trocado. */
+function topmostSelected() {
+  const byId = new Map((state.current?.tasks || []).map((t) => [t.id, t]));
+  return selectedTasks().filter((t) => {
+    for (let p = t.parent; p; p = byId.get(p)?.parent || "") {
+      if (state.selection.has(p)) return false;
+    }
+    return true;
+  });
+}
+
+/* Clique numa tarefa. Sem modificador é o que sempre foi (alterna uma só);
+ * Ctrl/⌘ soma ou tira uma; Shift pega o intervalo desde a âncora. */
+function selectTask(id, ev) {
+  const add = ev && (ev.ctrlKey || ev.metaKey);
+
+  if (ev && ev.shiftKey && state.selected && extendSelection(id, add)) {
+    redrawSelection();
+    return;
+  }
+  if (add) {
+    state.selEdge = null;
+    if (state.selection.delete(id)) {
+      if (state.selected === id) {
+        state.selected = state.selection.size === 1 ? [...state.selection][0] : null;
+      }
+    } else {
+      state.selection.add(id);
+      state.selected = id;
+    }
+  } else {
+    // sozinha e já selecionada: o clique tira — o alternar de sempre. Com
+    // várias selecionadas o clique COLAPSA na tarefa clicada, que é o que a
+    // mão espera depois de uma ação em lote.
+    selectOnly(state.selection.size === 1 && state.selection.has(id) ? null : id);
+  }
+  redrawSelection();
+}
+
+/* Ctrl+A pega o que está na tela E ACESO: com um destaque ligado ("Ana"), as
+ * outras linhas estão apagadas justamente porque não são o assunto, e
+ * "selecionar tudo" seguido de "passa para o Bruno" tem que valer sobre o que
+ * se está olhando. Sem destaque nenhum, aceso é tudo.
+ *
+ * O intervalo do Shift é o contrário e de propósito: ele promete "daqui até
+ * ali", e o que está entre as duas pontas vai junto, apagado ou não — quem
+ * aponta as duas linhas é o dedo, não o filtro.
+ *
+ * taskMatchesHighlight é a MESMA função que decide o que fica aceso na tabela
+ * e nas barras (e já inclui a busca dentro dela), então não há como as duas
+ * respostas divergirem. */
+function selectAllVisible() {
+  if (!state.current) return;
+  const byId = new Map(state.current.tasks.map((t) => [t.id, t]));
+  setSelection(visibleIds().filter((id) => taskMatchesHighlight(byId.get(id))),
+               state.selected);
+  redrawSelection();
+}
+
+/* Recolher uma fase (ou fechar uma raia) tira linhas da tela, e uma tarefa
+ * selecionada que já não tem linha é uma tarefa que a próxima ação em lote
+ * atingiria sem ninguém ver. Some da seleção junto com a linha. */
+function pruneHiddenSelection() {
+  if (!state.selection.size) return;
+  const vistas = new Set(visibleIds());
+  for (const id of [...state.selection]) if (!vistas.has(id)) state.selection.delete(id);
+  if (state.selEdge && !state.selection.has(state.selEdge)) state.selEdge = null;
+  if (state.selected && !state.selection.has(state.selected)) {
+    state.selected = state.selection.size === 1 ? [...state.selection][0] : null;
+  }
 }
 
 /* Ligar tarefas com a mão.
@@ -2631,7 +2821,7 @@ function linkTasks(antes, depois) {
   }
   pushUndo();
   depois.dependencies = [...(depois.dependencies || []), antes.id];
-  state.selected = depois.id;
+  selectOnly(depois.id);
   renderAll();
   markDirty();
 }
@@ -2662,8 +2852,21 @@ function attachDrag(node, task, mode) {
     // original, então não dá para depender de pointer capture nele.
     const ppd = PPD[state.zoom];
     const startX = ev.clientX;
-    const origStart = task.start;
-    const origDur = task.duration;
+    // Arrastar UMA da seleção arrasta a seleção inteira, o mesmo delta em
+    // todas: é literalmente o "empurra essas seis por três dias", e o gesto
+    // já sabe converter pixels em dias. Arrastar uma barra de FORA da seleção
+    // continua sendo sobre ela só — senão a barra sob o cursor mentiria.
+    //
+    // Mover e esticar tratam o resumo de formas diferentes, e por bons
+    // motivos: EMPURRAR um bloco é empurrar as folhas dele (a data do resumo
+    // é recalculada delas a cada render, então escrevê-la seria escrever num
+    // campo que o próximo render apaga), mas ESTICAR não tem essa tradução —
+    // dar dois dias a cada uma das cinco folhas não dá dois dias ao bloco.
+    // Então empurrar desce até as folhas e esticar pula o resumo.
+    const naSelecao = isSelected(task.id) && selCount() > 1 ? selectedTasks() : [task];
+    const grupo = mode === "move" ? leafTargets(naSelecao)
+      : naSelecao.filter((t) => !(state.wbs?.summary.has(t.id) ?? false));
+    const orig = new Map(grupo.map((t) => [t.id, { start: t.start, duration: t.duration }]));
     let moved = false;
 
     const onMove = (mv) => {
@@ -2674,10 +2877,14 @@ function attachDrag(node, task, mode) {
         moved = true;
       }
       state.dragging = true;
-      if (mode === "move") {
-        task.start = fmtISO(addDays(parseDate(origStart), deltaDays));
-      } else {
-        task.duration = Math.max(1, origDur + deltaDays);
+      for (const t of grupo) {
+        const o = orig.get(t.id);
+        if (mode === "move") {
+          t.start = fmtISO(addDays(parseDate(o.start), deltaDays));
+        } else if (!t.milestone) {
+          // marco ocupa o próprio dia: esticar a seleção não estica o losango
+          t.duration = Math.max(1, o.duration + deltaDays);
+        }
       }
       requestAnimationFrame(() => {
         renderChart();
@@ -2710,7 +2917,7 @@ function attachDrag(node, task, mode) {
   // Sem guarda de "isto foi um arrasto": um gesto que moveu passa pelo
   // renderAll() acima, que destrói este nó — o click nem chega a se formar
   // nele. Só clique parado chega aqui.
-  node.addEventListener("click", () => selectTask(task.id));
+  node.addEventListener("click", (ev) => selectTask(task.id, ev));
   node.addEventListener("dblclick", () => openModal(task.id));
 }
 
@@ -2800,7 +3007,11 @@ function taskById(id) {
 function openModal(id) {
   const t = taskById(id);
   if (!t) return;
-  state.selected = id;
+  // o modal é sobre uma tarefa: ela passa a ser a âncora. Se já fazia parte
+  // de uma seleção em lote, a seleção continua de pé — abrir uma para
+  // conferir um detalhe não é motivo para perder as outras cinco.
+  if (isSelected(id)) state.selected = id;
+  else selectOnly(id);
   // T(): o título é reescrito a cada abertura, depois de PerthI18n já ter
   // varrido o DOM — sem traduzir aqui, o cabeçalho ficava em inglês no meio
   // de um modal inteiro traduzido
@@ -3023,7 +3234,7 @@ function closeModal(discardNew, ask) {
   state.modalClean = null;
   if (discardNew && state.editingNew && state.selected) {
     state.current.tasks = state.current.tasks.filter((t) => t.id !== state.selected);
-    state.selected = null;
+    clearSelection();
     renderAll();
   }
   state.editingNew = false;
@@ -4454,23 +4665,46 @@ function newTask() {
     baseline_duration: 0,
   };
   state.current.tasks.push(t);
-  state.selected = t.id;
+  selectOnly(t.id);
   state.editingNew = true;
   renderAll();
   openModal(t.id);
 }
 
+/* Apaga a seleção inteira: um confirm, um desfazer.
+ *
+ * Um desfazer para as seis e não seis: pushUndo() já tira instantâneo do
+ * projeto todo, então o lote sai de graça como uma entrada só — e é assim
+ * que a mão espera, porque o gesto foi um.
+ *
+ * topmostSelected() porque apagar uma fase apaga a subárvore: com a fase e
+ * um filho dela selecionados, o filho não é um alvo separado. */
 function deleteSelectedTask() {
-  const t = taskById(state.selected);
-  if (!t) return;
-  if (!confirm(`Delete task “${t.name}”?`)) return;
-  pushUndo();
-  state.current.tasks = state.current.tasks.filter((o) => o.id !== t.id);
-  for (const o of state.current.tasks) {
-    o.dependencies = (o.dependencies || []).filter((d) => d !== t.id);
-    if (o.parent === t.id) o.parent = t.parent;   // promove os filhos
+  const alvos = topmostSelected();
+  if (!alvos.length) return;
+  const mortos = new Set();
+  for (const t of alvos) {
+    mortos.add(t.id);
+    for (const c of collectDescendants(t.id)) mortos.add(c.id);
   }
-  state.selected = null;
+  const pergunta = alvos.length === 1 && mortos.size === 1
+    ? `${T("Delete this task?")} “${alvos[0].name}”`
+    : `${T("Delete these tasks?")} (${mortos.size})`;
+  if (!confirm(pergunta)) return;
+  pushUndo();
+  const byId = new Map(state.current.tasks.map((o) => [o.id, o]));
+  state.current.tasks = state.current.tasks.filter((o) => !mortos.has(o.id));
+  for (const o of state.current.tasks) {
+    // depId(): a referência pode ser "id+3" ou "SS:id", e comparar a string
+    // inteira deixava para trás uma dependência apontando para o nada
+    o.dependencies = (o.dependencies || []).filter((d) => !mortos.has(depId(d)));
+    // pai apagado sobe os filhos um nível — e, se o avô também foi, mais um:
+    // apagar uma seleção pode tirar vários níveis de uma vez
+    let p = o.parent || "";
+    while (p && mortos.has(p)) p = byId.get(p)?.parent || "";
+    o.parent = p;
+  }
+  clearSelection();
   renderAll();
   markDirty();
 }
@@ -4496,10 +4730,24 @@ function collectDescendants(id) {
   return out;
 }
 
-function duplicateTask(id = state.selected) {
-  const t = taskById(id);
-  if (!t) return;
+/* Duplica a seleção inteira. Chamada sem argumento (menu, Ctrl+D) toma a
+ * seleção como alvo; com um id, só aquela tarefa. Um pushUndo para o lote,
+ * pelo mesmo motivo de deleteSelectedTask. */
+function duplicateTask(id) {
+  const alvos = id ? [taskById(id)].filter(Boolean) : topmostSelected();
+  if (!alvos.length) return;
   pushUndo();
+  const novos = [];
+  for (const t of alvos) novos.push(...duplicaUma(t));
+  // as cópias ficam selecionadas: duplicar seis para em seguida empurrá-las
+  // é o par de gestos que essa ação existe para servir
+  setSelection(novos.map((o) => o.id), novos[0]?.id);
+  renderAll();
+  markDirty();
+}
+
+// Sem pushUndo/render: quem chama junta o lote numa entrada só.
+function duplicaUma(t) {
   // Resumo duplica a subárvore inteira: ids novos, pais e dependências
   // internas remapeados; dependências externas preservadas
   const subtree = [t, ...collectDescendants(t.id)];
@@ -4516,9 +4764,133 @@ function duplicateTask(id = state.selected) {
   // grupo com ordem manual: a cópia fica ao lado do original, não no fim
   // (mesma regra do duplicate_task! do servidor)
   if (t.order) reorderSiblings(clones[0], t.order + 1);
-  state.selected = clones[0].id;
-  renderAll();
-  markDirty();
+  return clones;
+}
+
+/* Editar a seleção de uma vez: empurrar as datas, trocar o responsável,
+ * trocar a cor.
+ *
+ * Uma caixa com três linhas em vez de três itens de menu, cada um com o seu
+ * prompt(): o pedido real é composto ("estas seis vão três dias para frente
+ * E passam para o Bruno"), e três diálogos em fila são três desfazeres,
+ * três gravações e três chances de errar o alvo no meio do caminho.
+ *
+ * Cada linha tem uma caixinha que a liga: campo em branco é ambíguo entre
+ * "não mexa" e "apague" — e apagar o responsável de seis tarefas é uma
+ * operação legítima, que precisava de um jeito de ser dita. Mexer no campo
+ * liga a caixinha sozinho, que é o que a mão faz sem ler.
+ */
+function showBulkEdit() {
+  const alvos = selectedTasks();
+  if (!alvos.length) return;
+  fillPeopleList();          // o mesmo datalist do modal de uma tarefa
+
+  const body = document.createElement("div");
+  body.className = "people-box bulk-box";
+
+  const linha = (rotulo, campo, sufixo) => {
+    const wrap = document.createElement("label");
+    wrap.className = "bulk-row";
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    const nome = document.createElement("span");
+    nome.className = "bulk-label";
+    nome.textContent = T(rotulo);
+    wrap.append(chk, nome, campo);
+    if (sufixo) {
+      const s = document.createElement("span");
+      s.className = "bulk-suffix";
+      s.textContent = T(sufixo);
+      wrap.append(s);
+    }
+    // mexer no campo arma a linha; a caixinha continua servindo para armar
+    // sem mexer (é assim que se diz "apague o responsável")
+    campo.addEventListener("input", () => { chk.checked = true; });
+    body.append(wrap);
+    return chk;
+  };
+
+  const dias = document.createElement("input");
+  dias.type = "number";
+  dias.step = "1";
+  dias.value = "1";
+  dias.className = "bulk-num";
+  const cDias = linha("Shift start dates by", dias, "days");
+
+  const quem = document.createElement("input");
+  quem.type = "text";
+  quem.setAttribute("list", "people-list");
+  quem.placeholder = T("nobody");
+  // a seleção inteira com o mesmo responsável: mostra qual é, para que a
+  // caixa diga o estado atual antes de propor um novo
+  const donos = new Set(alvos.map((t) => (t.assignee || "").trim()));
+  if (donos.size === 1) quem.value = [...donos][0];
+  const cQuem = linha("Assignee", quem, null);
+
+  const corWrap = document.createElement("span");
+  corWrap.className = "bulk-color";
+  const cor = document.createElement("input");
+  cor.type = "color";
+  cor.className = "cal-pick";
+  const cores = new Set(alvos.map((t) => t.color || ""));
+  cor.value = cores.size === 1 && [...cores][0] ? [...cores][0] : AUTO_COLORS[0];
+  const autoWrap = document.createElement("label");
+  autoWrap.className = "bulk-auto";
+  const auto = document.createElement("input");
+  auto.type = "checkbox";
+  autoWrap.append(auto, document.createTextNode(" " + T("automatic")));
+  corWrap.append(cor, autoWrap);
+  const cCor = linha("Colour", corWrap, null);
+  // o wrapper não emite input; os dois controles de dentro emitem
+  for (const c of [cor, auto]) c.addEventListener("input", () => { cCor.checked = true; });
+  auto.addEventListener("change", () => { cor.disabled = auto.checked; });
+
+  // Aviso, não legenda: a contagem já está no título, e repeti-la no pé só
+  // ocuparia a linha que o caso especial precisa. O caso especial é o resumo,
+  // cuja data não é dele — quem anda são as folhas.
+  if (alvos.some((t) => state.wbs?.summary.has(t.id))) {
+    const nota = document.createElement("p");
+    nota.className = "bulk-note";
+    nota.textContent =
+      T("a block moves its own subtasks — a summary has no date of its own");
+    body.append(nota);
+  }
+
+  const acoes = document.createElement("div");
+  acoes.className = "bulk-actions";
+  const aplicar = document.createElement("button");
+  aplicar.className = "primary";
+  aplicar.textContent = T("Apply");
+  acoes.append(aplicar);
+  body.append(acoes);
+
+  aplicar.addEventListener("click", () => {
+    const nDias = cDias.checked ? parseInt(dias.value, 10) : 0;
+    if (cDias.checked && !Number.isFinite(nDias)) return dias.focus();
+    const mudaQuem = cQuem.checked, nome = quem.value.trim();
+    const mudaCor = cCor.checked, valor = auto.checked ? "" : cor.value;
+    if (!nDias && !mudaQuem && !mudaCor) return;   // nada armado: nada a fazer
+
+    pushUndo();
+    if (nDias) {
+      for (const t of leafTargets(alvos)) {
+        t.start = fmtISO(addDays(parseDate(t.start), nDias));
+      }
+    }
+    // responsável e cor são da tarefa, resumo incluído: um bloco tem dono e
+    // tem cor próprios (a barra do resumo é desenhada com ela)
+    for (const t of alvos) {
+      if (mudaQuem) t.assignee = nome;
+      if (mudaCor) t.color = valor;
+    }
+    document.getElementById("perth-overlay")?.remove();
+    renderAll();
+    markDirty();
+  });
+
+  showOverlay(`${T("Edit selected tasks")} · ${alvos.length}`, body);
+  dias.focus();
+  dias.select();
 }
 
 function setBaselineUI() {
@@ -4778,6 +5150,8 @@ const ACTIONS = {
   "export": exportProject,
   "new-task": newTask,
   "edit-task": () => state.selected && openModal(state.selected),
+  "select-all": selectAllVisible,
+  "bulk-edit": showBulkEdit,
   "delete-task": deleteSelectedTask,
   "duplicate-task": () => duplicateTask(),
   "set-baseline": setBaselineUI,
@@ -4816,10 +5190,15 @@ const ACTIONS = {
 function showShortcuts() {
   showOverlay("Keyboard shortcuts", PerthShortcuts.list([
     ["↑ / ↓", "move the selection"],
+    ["Shift+↑ / ↓", "extend the selection"],
+    ["Ctrl+click", "add or remove one task from the selection"],
+    ["Shift+click", "select everything in between"],
+    ["Ctrl+A", "select all — with a filter on, only what it leaves lit"],
     ["← / →", "collapse / expand a summary"],
     ["Home / End", "first / last task"],
     ["N", "new task"],
     ["Enter / duplo clique", "edit task"],
+    ["Ctrl+E", "edit the whole selection (dates, assignee, colour)"],
     ["Del", "delete selected task"],
     ["Ctrl+D", "duplicate selected task"],
     ["Ctrl+Z", "undo"],
@@ -4997,7 +5376,7 @@ function goToHit(k) {
   if (!hits.length) return;
   const n = hits.length;
   state.searchAt = ((k % n) + n) % n;              // volta nas duas direções
-  state.selected = hits[state.searchAt];
+  selectOnly(hits[state.searchAt]);
   revealTask(state.selected);
   el.taskSearchCount.textContent = `${state.searchAt + 1}/${n}`;
 }
@@ -5007,9 +5386,18 @@ function goToHit(k) {
    aviso tem que levar ao problema, não só nomeá-lo. */
 function revealTask(id) {
   if (!state.current) return;
+  if (!state.current.tasks.some((x) => x.id === id)) return;
+  // revelar é apontar para UMA: a busca, o painel de avisos e as setas do
+  // teclado (sem Shift) todos querem dizer "esta aqui", não "esta também".
+  // Estender com Shift usa revealRow, que rola sem tocar na seleção.
+  selectOnly(id);
+  revealRow(id);
+}
+
+function revealRow(id) {
+  if (!state.current) return;
   const t = state.current.tasks.find((x) => x.id === id);
   if (!t) return;
-  state.selected = id;
   // numa raia fechada — ou dentro de um resumo recolhido — é preciso ABRIR:
   // apontar para uma linha que não está na tela é pior do que não apontar
   if (state.groupBy) state.lanesClosed.delete(laneKeyOf(t));
@@ -5018,8 +5406,7 @@ function revealTask(id) {
     state.wbsClosed.delete(pai);
   }
   gravaDobras();   // abrir para revelar também é uma dobra a menos
-  renderTable();
-  renderChart();
+  redrawSelection();
   const linha = displayRows()
     .findIndex((r) => r.kind === "task" && r.task.id === id);
   if (linha < 0) return;   // resumo, escondido enquanto há raias
@@ -5106,7 +5493,13 @@ el.projectSelect.addEventListener("change", () => openProject(el.projectSelect.v
 $("#modal-save").addEventListener("click", submitModal);
 $("#modal-cancel").addEventListener("click", () => closeModal(true));
 $("#modal-delete").addEventListener("click", () => {
+  const alvo = state.selected;
   closeModal(false);
+  // O modal é sobre UMA tarefa: o botão de excluir dele apaga aquela, não a
+  // seleção em lote que estava de pé quando ele abriu (ver openModal). Sem
+  // encolher a seleção antes, abrir uma das seis para conferir um detalhe e
+  // clicar em excluir levaria as seis.
+  selectOnly(alvo);
   deleteSelectedTask();
 });
 el.modal.addEventListener("click", (ev) => {
@@ -5153,6 +5546,16 @@ document.addEventListener("keydown", (ev) => {
     canEdit() && duplicateTask();
     return;
   }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "a") {
+    ev.preventDefault();     // senão o navegador seleciona o texto da página
+    selectAllVisible();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "e") {
+    ev.preventDefault();
+    canEdit() && showBulkEdit();
+    return;
+  }
   switch (ev.key) {
     // mesma tecla do kanban: quem alterna entre os dois não reaprende
     case "/": ev.preventDefault(); el.taskSearch.focus(); el.taskSearch.select(); break;
@@ -5173,7 +5576,7 @@ document.addEventListener("keydown", (ev) => {
       if (document.getElementById("note-pop")) { fechaNota(); break; }
       if (state.presenting) { exitPresentation(); break; }
       if (chatOpen) { closeChat(); break; }
-      state.selected = null; renderTable(); renderChart();
+      clearSelection(); redrawSelection();
       break;
   }
 });

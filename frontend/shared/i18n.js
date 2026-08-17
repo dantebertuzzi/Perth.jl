@@ -38,6 +38,40 @@ window.PerthI18n = (function () {
 
   const STR = {
     pt: {
+      // seleção múltipla e ações em lote (gantt e kanban)
+      "Select all tasks": "Selecionar todas as tarefas",
+      "Select all cards": "Selecionar todos os cards",
+      "Edit selected tasks…": "Editar tarefas selecionadas…",
+      "Edit selected tasks": "Editar tarefas selecionadas",
+      "Push the dates, change the assignee or the colour of everything selected, in one go":
+        "Empurra as datas, troca o responsável ou a cor de tudo o que está selecionado, de uma vez",
+      "Mark selection done": "Concluir a seleção",
+      "Assign selection…": "Atribuir a seleção…",
+      "Archive selection": "Arquivar a seleção",
+      "tasks selected": "tarefas selecionadas",
+      "cards selected": "cards selecionados",
+      "Shift start dates by": "Empurrar as datas em",
+      "automatic": "automática",
+      "nobody": "ninguém",
+      "Apply": "Aplicar",
+      "a block moves its own subtasks — a summary has no date of its own":
+        "um bloco move as subtarefas dele — resumo não tem data própria",
+      "Delete this task?": "Excluir esta tarefa?",
+      "Delete these tasks?": "Excluir estas tarefas?",
+      "Delete these cards?": "Excluir estes cards?",
+      "Assign to whom? (empty clears)": "Atribuir a quem? (vazio limpa)",
+      "extend the selection": "estender a seleção",
+      "add or remove one task from the selection": "somar ou tirar uma tarefa da seleção",
+      "add or remove one card from the selection": "somar ou tirar um card da seleção",
+      "select everything in between": "selecionar tudo o que está entre as duas",
+      "select everything in between (same column)":
+        "selecionar tudo entre os dois (mesma coluna)",
+      "select all — with a filter on, only what it leaves lit":
+        "selecionar tudo — com um filtro ligado, só o que ele deixa aceso",
+      "edit the whole selection (dates, assignee, colour)":
+        "editar a seleção inteira (datas, responsável, cor)",
+      "archive the selection": "arquivar a seleção",
+      "mark the selection done": "concluir a seleção",
       // menus (gantt)
       "File": "Arquivo", "Edit": "Editar", "View": "Exibir", "Help": "Ajuda",
       "Home screen": "Tela inicial",
@@ -560,6 +594,40 @@ window.PerthI18n = (function () {
     },
 
     es: {
+      // selección múltiple y acciones en lote (gantt y kanban)
+      "Select all tasks": "Seleccionar todas las tareas",
+      "Select all cards": "Seleccionar todas las tarjetas",
+      "Edit selected tasks…": "Editar tareas seleccionadas…",
+      "Edit selected tasks": "Editar tareas seleccionadas",
+      "Push the dates, change the assignee or the colour of everything selected, in one go":
+        "Empuja las fechas, cambia el responsable o el color de todo lo seleccionado, de una vez",
+      "Mark selection done": "Completar la selección",
+      "Assign selection…": "Asignar la selección…",
+      "Archive selection": "Archivar la selección",
+      "tasks selected": "tareas seleccionadas",
+      "cards selected": "tarjetas seleccionadas",
+      "Shift start dates by": "Desplazar las fechas",
+      "automatic": "automático",
+      "nobody": "nadie",
+      "Apply": "Aplicar",
+      "a block moves its own subtasks — a summary has no date of its own":
+        "un bloque mueve sus propias subtareas — un resumen no tiene fecha propia",
+      "Delete this task?": "¿Eliminar esta tarea?",
+      "Delete these tasks?": "¿Eliminar estas tareas?",
+      "Delete these cards?": "¿Eliminar estas tarjetas?",
+      "Assign to whom? (empty clears)": "¿Asignar a quién? (vacío borra)",
+      "extend the selection": "extender la selección",
+      "add or remove one task from the selection": "sumar o quitar una tarea de la selección",
+      "add or remove one card from the selection": "sumar o quitar una tarjeta de la selección",
+      "select everything in between": "seleccionar todo lo que hay entre las dos",
+      "select everything in between (same column)":
+        "seleccionar todo entre las dos (misma columna)",
+      "select all — with a filter on, only what it leaves lit":
+        "seleccionar todo — con un filtro activo, solo lo que deja encendido",
+      "edit the whole selection (dates, assignee, colour)":
+        "editar toda la selección (fechas, responsable, color)",
+      "archive the selection": "archivar la selección",
+      "mark the selection done": "completar la selección",
       "File": "Archivo", "Edit": "Editar", "View": "Ver", "Help": "Ayuda",
       "Home screen": "Pantalla de inicio",
       "New project…": "Nuevo proyecto…",
@@ -1074,6 +1142,42 @@ window.PerthI18n = (function () {
     },
 
     fr: {
+      // sélection multiple et actions groupées (gantt et kanban)
+      "Select all tasks": "Tout sélectionner",
+      "Select all cards": "Sélectionner toutes les cartes",
+      "Edit selected tasks…": "Modifier les tâches sélectionnées…",
+      "Edit selected tasks": "Modifier les tâches sélectionnées",
+      "Push the dates, change the assignee or the colour of everything selected, in one go":
+        "Décaler les dates, changer le responsable ou la couleur de toute la sélection, d'un coup",
+      "Mark selection done": "Terminer la sélection",
+      "Assign selection…": "Affecter la sélection…",
+      "Archive selection": "Archiver la sélection",
+      "tasks selected": "tâches sélectionnées",
+      "cards selected": "cartes sélectionnées",
+      "Shift start dates by": "Décaler les dates de",
+      "automatic": "automatique",
+      "nobody": "personne",
+      "Apply": "Appliquer",
+      "a block moves its own subtasks — a summary has no date of its own":
+        "un bloc décale ses propres sous-tâches — un résumé n'a pas de date propre",
+      "Delete this task?": "Supprimer cette tâche ?",
+      "Delete these tasks?": "Supprimer ces tâches ?",
+      "Delete these cards?": "Supprimer ces cartes ?",
+      "Assign to whom? (empty clears)": "Affecter à qui ? (vide efface)",
+      "extend the selection": "étendre la sélection",
+      "add or remove one task from the selection":
+        "ajouter ou retirer une tâche de la sélection",
+      "add or remove one card from the selection":
+        "ajouter ou retirer une carte de la sélection",
+      "select everything in between": "sélectionner tout ce qui est entre les deux",
+      "select everything in between (same column)":
+        "sélectionner tout entre les deux (même colonne)",
+      "select all — with a filter on, only what it leaves lit":
+        "tout sélectionner — avec un filtre actif, seulement ce qu'il laisse allumé",
+      "edit the whole selection (dates, assignee, colour)":
+        "modifier toute la sélection (dates, responsable, couleur)",
+      "archive the selection": "archiver la sélection",
+      "mark the selection done": "terminer la sélection",
       "File": "Fichier", "Edit": "Édition", "View": "Affichage", "Help": "Aide",
       "Home screen": "Écran d'accueil",
       "New project…": "Nouveau projet…",
@@ -1588,6 +1692,38 @@ window.PerthI18n = (function () {
     },
 
     zh: {
+      // 多选与批量操作（甘特图与看板）
+      "Select all tasks": "选择所有任务",
+      "Select all cards": "选择所有卡片",
+      "Edit selected tasks…": "编辑所选任务…",
+      "Edit selected tasks": "编辑所选任务",
+      "Push the dates, change the assignee or the colour of everything selected, in one go":
+        "一次性调整所选内容的日期、负责人或颜色",
+      "Mark selection done": "将所选标记为完成",
+      "Assign selection…": "指派所选…",
+      "Archive selection": "归档所选",
+      "tasks selected": "项任务已选",
+      "cards selected": "张卡片已选",
+      "Shift start dates by": "开始日期顺延",
+      "automatic": "自动",
+      "nobody": "无人",
+      "Apply": "应用",
+      "a block moves its own subtasks — a summary has no date of its own":
+        "移动一个阶段就是移动它的子任务 — 汇总本身没有日期",
+      "Delete this task?": "删除这个任务？",
+      "Delete these tasks?": "删除这些任务？",
+      "Delete these cards?": "删除这些卡片？",
+      "Assign to whom? (empty clears)": "指派给谁？（留空则清除）",
+      "extend the selection": "扩展选择",
+      "add or remove one task from the selection": "从选择中添加或移除一个任务",
+      "add or remove one card from the selection": "从选择中添加或移除一张卡片",
+      "select everything in between": "选中两者之间的全部",
+      "select everything in between (same column)": "选中两者之间的全部（同一列）",
+      "select all — with a filter on, only what it leaves lit":
+        "全选 — 启用筛选时，只选中未被淡出的部分",
+      "edit the whole selection (dates, assignee, colour)": "编辑整个选择（日期、负责人、颜色）",
+      "archive the selection": "归档所选",
+      "mark the selection done": "将所选标记为完成",
       "File": "文件", "Edit": "编辑", "View": "视图", "Help": "帮助",
       "Home screen": "主屏幕",
       "New project…": "新建项目…",

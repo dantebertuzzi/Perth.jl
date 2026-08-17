@@ -351,7 +351,9 @@ it, rename the file and rename it back whenever you want it again; to start a
 | `↑` `↓` | move the selection through the visible rows |
 | `←` `→` | collapse a summary / open it — on a leaf, `←` goes up to the parent |
 | `Home` `End` · `PageUp` `PageDown` | ends of the plan · one screenful |
-| `N` · `Enter` · `Del` · `Ctrl+D` | new · edit · delete · duplicate task |
+| `N` · `Enter` · `Del` · `Ctrl+D` | new · edit · delete · duplicate the selection |
+| `Ctrl+click` · `Shift+click` · `Shift+↑` `↓` | add one to the selection · take the range · extend it |
+| `Ctrl+A` · `Ctrl+E` | select every visible task · edit the selection (dates, assignee, colour) |
 | `Ctrl+Z` · `Ctrl+Shift+Z` | undo · redo |
 | `S` · `C` · `R` | auto-schedule · critical path · resource load |
 | `1` `2` `3` `4` · `Ctrl+wheel` | zoom day / week / month / fit · zoom under the pointer |

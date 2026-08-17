@@ -354,7 +354,9 @@ tablero **aparte** sin tocar este, apunta el servidor a otra carpeta:
 | `↑` `↓` | mueve la selección por las filas visibles |
 | `←` `→` | pliega un resumen / lo abre — en una hoja, `←` sube al padre |
 | `Home` `End` · `PageUp` `PageDown` | extremos del plan · una pantalla |
-| `N` · `Enter` · `Del` · `Ctrl+D` | nueva · editar · borrar · duplicar tarea |
+| `N` · `Enter` · `Del` · `Ctrl+D` | nueva · editar · borrar · duplicar la selección |
+| `Ctrl+clic` · `Shift+clic` · `Shift+↑` `↓` | sumar una a la selección · tomar el rango · extenderlo |
+| `Ctrl+A` · `Ctrl+E` | seleccionar todas las visibles · editar la selección (fechas, responsable, color) |
 | `Ctrl+Z` · `Ctrl+Shift+Z` | deshacer · rehacer |
 | `S` · `C` · `R` | programar automáticamente · ruta crítica · recursos |
 | `1` `2` `3` `4` · `Ctrl+rueda` | zoom día / semana / mes / ajustar · zoom bajo el puntero |

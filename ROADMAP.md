@@ -11,18 +11,6 @@ piece of code it should lean on.
 
 ## Next up
 
-### Multi-select and bulk actions
-
-Everything is one task at a time. With collaborators and lanes in place,
-"push these six by three days" and "hand these four to Bruno" became obvious
-operations that do not exist. Shift-click a range, Ctrl-click to add; then
-move, recolour, reassign, delete.
-
-*Lean on:* `state.selected` becomes a set (careful: `selectTask` toggles, and
-several places read `state.selected` as an id — `revealTask`, the modal, the
-chart's `bar-sel`). `pushUndo()` already snapshots the whole project, so a bulk
-edit is one undo entry for free.
-
 ### Capacity per person
 
 "Overallocated" means *two tasks on the same day*, which is crude: two one-hour
@@ -118,6 +106,13 @@ snapshot needs a source, not a new picture.
 
 ### Smaller things
 
+- **Reordering a selection by hand** — the multi-select moves dates, colours,
+  assignees and whole blocks, but dragging a *row* (which is about order and
+  parenthood, not time) still moves the one row under the cursor and collapses
+  the selection to it. "Put these six under that phase" is the same gesture
+  asked of the other axis, and the delicate part is what it means when the six
+  come from four different parents (`aplicaArrasto` + `reorderSiblings` in
+  `frontend/app.js`).
 - **Duplicate a project** — `duplicate_task!` copies a subtree; a whole plan as
   a template has no equivalent.
 - **"My tasks"** — with the collaborator registry, saying who you are and

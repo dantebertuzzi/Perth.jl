@@ -907,6 +907,7 @@ console.log("gantt · a caixa de caminho é só do host");
 console.log("gantt · transmitir (share)");
 {
   const { runIn, simulate, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   runIn(`${fakeShareServer(true, true)} showShare(); return null;`);
   await tick();
@@ -1392,6 +1393,7 @@ console.log("gantt · fundo da UI");
 console.log("gantt · prazo e data fixa");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
   // deixa o init() assíncrono assentar antes de qualquer close(): fechar a
   // janela com ele ainda pendente deixa um init órfão que acorda contra um
   // document já destruído e derruba o processo inteiro — com o stack
@@ -1910,8 +1912,8 @@ console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
              duasTeclas: linhas.find((l) => l.textContent.includes("Ctrl+Y"))
                                .querySelectorAll("kbd").length,
              fechar: document.querySelector("#perth-overlay .modal-actions button").textContent };`);
-  check(r.titulo === "Atalhos de teclado" && r.linhas === 18,
-        "gantt: Atalhos abre um overlay com as 18 teclas");
+  check(r.titulo === "Atalhos de teclado" && r.linhas === 23,
+        "gantt: Atalhos abre um overlay com as 23 teclas");
   check(r.primeira === "N" && r.descricao === "nova tarefa",
         "gantt: tecla de um lado, descrição traduzida do outro");
   check(r.duasTeclas === 2, "gantt: \"Ctrl+Shift+Z / Ctrl+Y\" vira dois <kbd>, não um");
@@ -1944,7 +1946,7 @@ console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
              menu: document.querySelector('[data-menu="help"] .menu-title').textContent,
              entrada: document.querySelector('[data-menu="help"] .menu-drop button')
                         .textContent.trim() };`);
-  check(r.linhas === 9, "kanban: o mesmo componente lista as 9 teclas dele");
+  check(r.linhas === 14, "kanban: o mesmo componente lista as 14 teclas dele");
   check(r.barra === "filtrar cards",
         "kanban: inclusive a \"/\", que só existia escondida no placeholder do filtro");
   check(r.menu === "Ajuda" && r.entrada === "Atalhos de teclado",
@@ -2560,6 +2562,7 @@ console.log("gantt · busca de tarefa");
 console.log("gantt · cadastro de colaboradores");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   // gravar() salva e recarrega do servidor; aqui não há rede, então os dois
   // viram no-op e o teste guarda o que TERIA sido salvo
@@ -2678,6 +2681,7 @@ console.log("gantt · cadastro de colaboradores");
 console.log("gantt · zoom que faz o projeto caber");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   // jsdom não tem layout: clientWidth é 0 e o "caber" não teria como medir
   // nada. O teste dá a largura, que é justamente a entrada da conta.
@@ -2747,6 +2751,7 @@ console.log("gantt · zoom que faz o projeto caber");
 console.log("gantt · ligar tarefas arrastando");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   // Estrutura(resumo) > Fundação, Alvenaria ; e três tarefas soltas
   const seed = `
@@ -2776,7 +2781,7 @@ console.log("gantt · ligar tarefas arrastando");
   const arrastar = (deId, paraId, lado = "right") => `
     { // selectTask alterna; aqui o teste quer POR a seleção onde ela deve
       // estar, não brincar de liga-desliga
-      state.selected = ${JSON.stringify(deId)};
+      selectOnly(${JSON.stringify(deId)});
       renderTable(); renderChart();
       document.elementsFromPoint = () => [
         document.querySelector(\`#chart [data-id="${paraId}"]\`)];
@@ -2855,6 +2860,7 @@ console.log("gantt · ligar tarefas arrastando");
 console.log("gantt · arrastar a divisa da tabela");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   // MouseEvent no lugar de PointerEvent: o handler só lê clientX, e assim o
   // teste não depende de o jsdom implementar PointerEvent
@@ -3095,6 +3101,7 @@ console.log("gantt · o que está dobrado é lembrado");
 console.log("gantt · recolher um resumo de WBS");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   // avó → mãe → filha, para provar que recolher pega a subárvore inteira e
   // não só os filhos diretos
@@ -3165,6 +3172,7 @@ console.log("gantt · recolher um resumo de WBS");
 console.log("gantt · raias por responsável");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   const seed = `
     const mk = (id, name, start, dur, assignee, extra = {}) => ({
@@ -3293,6 +3301,7 @@ console.log("gantt · raias por responsável");
 console.log("gantt · faixas do calendário");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   const seed = `
     window.__salvos = [];
@@ -3386,6 +3395,7 @@ console.log("gantt · faixas do calendário");
 console.log("gantt · dias marcados");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   const seed = `
     window.__salvos = [];
@@ -3483,6 +3493,7 @@ console.log("gantt · dias marcados");
 console.log("gantt · painel de estatísticas");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   // a conta é do servidor (mesmo motor da curva-S); aqui o teste dá a
   // resposta pronta e olha o que a tela faz com ela
@@ -3560,6 +3571,7 @@ console.log("gantt · geometria de quem não pode se sobrepor");
   // sem navegador. A conferência do resultado na tela de verdade (com fonte,
   // medida e todos os elementos juntos) está em test/browser/run.js.
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   const seg = (js) => runIn(`return JSON.stringify(${js});`);
 
@@ -3621,6 +3633,7 @@ console.log("gantt · geometria de quem não pode se sobrepor");
 console.log("gantt · painel de recursos");
 {
   const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
 
   // Payload como o /api/projects/{id}/workload devolve: janela contígua de
   // dias + um vetor de carga por pessoa. O teste alimenta o render direto,
@@ -3708,6 +3721,561 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("kanban · selecionar vários e agir em lote");
+{
+  const { runIn, close } = loadKanbanApp();
+
+  // Duas colunas com quatro e dois cards: dá para medir intervalo dentro de
+  // uma coluna, o que acontece quando a âncora está na outra, e o que sai do
+  // arrasto em lote entre elas.
+  const seed = `
+    const card = (id, extra) => Object.assign({ id, text: id.toUpperCase(), done: false }, extra || {});
+    state.board = { columns: [
+      { id: "c1", name: "fazendo", cards: [card("a"), card("b"), card("c"), card("d")] },
+      { id: "c2", name: "feito", cards: [card("x"), card("y")] } ],
+      archive: [], aliases: {}, permissions: {} };
+    state.me = { id: "m", ip: "127.0.0.1", name: "eu", host: true };
+    clearCardSelection();
+    setFilter("");     // o filtro é do state e sobrevive entre runIn
+    undoStack.length = 0; redoStack.length = 0;
+    window.__enviadas = [];
+    sendOp = (op) => { window.__enviadas.push(op); };
+    render();`;
+
+  const clicar = (id, mods = {}) => `document.querySelector('.card[data-card="${id}"]')
+    .dispatchEvent(new MouseEvent("click", Object.assign(
+      { bubbles: true, cancelable: true }, ${JSON.stringify(mods)})));`;
+  // ordem do quadro, que é a que toda ação em lote usa (ver selectedCards)
+  const sel = `selectedCards().map((f) => f.card.id)`;
+  const quadro = `Object.fromEntries(cols().map((c) => [c.id, c.cards.map((x) => x.id)]))`;
+
+  // ---------------------------------------------------------------- o clique
+  let r = runIn(`${seed} ${clicar("b")} ${clicar("d", { ctrlKey: true })}
+    return { sel: ${sel}, ancora: state.selected,
+             acesos: [...document.querySelectorAll(".card.selected")].map((c) => c.dataset.card) };`);
+  check(r.sel.join() === "b,d" && r.ancora === "d",
+        "kanban: Ctrl+clique soma um segundo card");
+  check(r.acesos.join() === "b,d", "kanban: e os dois ficam acesos depois do render");
+
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { shiftKey: true })} return ${sel};`);
+  check(r.join() === "a,b,c", "kanban: Shift+clique pega o intervalo dentro da coluna");
+
+  // atravessar colunas não tem "entre os dois": o Shift vira o Ctrl
+  r = runIn(`${seed} ${clicar("a")} ${clicar("y", { shiftKey: true })} return ${sel};`);
+  check(r.join() === "y",
+        "kanban: Shift+clique com a âncora em outra coluna não inventa um intervalo");
+
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { shiftKey: true })}
+    ${clicar("b", { shiftKey: true })} return ${sel};`);
+  check(r.join() === "a,b", "kanban: um segundo Shift+clique encolhe o intervalo");
+
+  // no body, não no document: o handler do kanban pergunta se o alvo é um
+  // campo de texto (e.target.matches), e num navegador de verdade a tecla
+  // sempre chega num elemento
+  const tecla = (k, mods = {}) => `document.body.dispatchEvent(new KeyboardEvent("keydown",
+    Object.assign({ key: "${k}", bubbles: true, cancelable: true }, ${JSON.stringify(mods)})));`;
+
+  r = runIn(`${seed} ${tecla("a", { ctrlKey: true })} return ${sel};`);
+  check(r.join() === "a,b,c,d,x,y", "kanban: Ctrl+A seleciona o quadro inteiro");
+
+  // com o filtro ligado, "tudo" é o que casa: o resto está esmaecido porque
+  // não é o assunto (mesma regra do Ctrl+A do gantt com destaque)
+  r = runIn(`${seed} setFilter("y"); ${tecla("a", { ctrlKey: true })} return ${sel};`);
+  console.error("DBG filtro:", JSON.stringify(r));
+  check(r.join() === "y", "kanban: com filtro ligado, Ctrl+A pega só os que casam");
+
+  r = runIn(`${seed} ${tecla("a", { ctrlKey: true })} ${tecla("Escape")} return ${sel};`);
+  check(r.length === 0, "kanban: Esc solta a seleção");
+
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { shiftKey: true })}
+    return document.getElementById("st-board").textContent;`);
+  check(/· 3 cards selected/.test(r), "kanban: a barra de status diz quantos estão selecionados");
+
+  // ------------------------------------------------- um lote, um desfazer
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { ctrlKey: true })}
+    doAction("archive-selected");
+    return { quadro: ${quadro}, arquivo: state.board.archive.map((c) => c.id),
+             pilha: undoStack.length, enviadas: window.__enviadas.length };`);
+  check(r.quadro.c1.join() === "b,d" && r.arquivo.join() === "a,c",
+        "kanban: arquivar em lote leva os dois cards de uma vez");
+  check(r.enviadas === 2 && r.pilha === 1,
+        "kanban: duas ops para o servidor, UMA entrada de desfazer");
+
+  // restoreCard devolve o card ao PÉ da coluna (sempre foi assim), então o
+  // que o lote tem de garantir é a ORDEM RELATIVA entre os dois — e é por
+  // isso que inversa que apenda é aplicada na ordem direta (ver replayEntry)
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { ctrlKey: true })}
+    doAction("archive-selected"); undo();
+    return { quadro: ${quadro}, arquivo: state.board.archive.length };`);
+  check(r.quadro.c1.join() === "b,d,a,c" && r.arquivo === 0,
+        "kanban: um Ctrl+Z devolve os dois, na ordem em que estavam");
+
+  // apagar em lote: as inversas voltam de trás para frente, e os índices
+  // guardados recolocam cada card onde estava
+  r = runIn(`${seed}
+    window.confirm = () => true;
+    ${clicar("b")} ${clicar("c", { ctrlKey: true })}
+    doAction("delete-card");
+    const depois = ${quadro};
+    undo();
+    return { depois, devolvido: ${quadro}, sel: ${sel} };`);
+  check(r.depois.c1.join() === "a,d", "kanban: apagar em lote leva os dois");
+  check(r.devolvido.c1.join() === "a,b,c,d",
+        "kanban: e o desfazer recoloca os dois NA ORDEM em que estavam");
+  check(r.sel.length === 0, "kanban: depois de apagar, a seleção fica vazia");
+
+  // concluir em lote: com estados diferentes, liga todos (não alterna cada um)
+  r = runIn(`${seed}
+    state.board.columns[0].cards[0].done = true;
+    render();
+    ${clicar("a")} ${clicar("b", { ctrlKey: true })} ${clicar("c", { ctrlKey: true })}
+    doAction("done-selected");
+    return state.board.columns[0].cards.map((c) => !!c.done);`);
+  check(r.join() === "true,true,true,false",
+        "kanban: com a seleção em estados diferentes, concluir liga todos");
+
+  r = runIn(`${seed}
+    for (const c of state.board.columns[0].cards) c.done = true;
+    render();
+    ${clicar("a")} ${clicar("d", { shiftKey: true })} doAction("done-selected");
+    return cols()[0].cards.map((c) => !!c.done);`);
+  check(r.join() === "false,false,false,false",
+        "kanban: já todos concluídos, a mesma ação desliga");
+
+  // um card só continua alternando, como o ✓ do próprio card
+  r = runIn(`${seed} ${clicar("a")} doAction("done-selected");
+    const ligado = !!cols()[0].cards[0].done;
+    doAction("done-selected");
+    return { ligado, desligado: !!cols()[0].cards[0].done };`);
+  check(r.ligado === true && r.desligado === false,
+        "kanban: com um só selecionado, a ação alterna");
+
+  r = runIn(`${seed}
+    window.prompt = () => "  Bruno ";
+    ${clicar("a")} ${clicar("x", { ctrlKey: true })}
+    doAction("assign-selected");
+    return { a: cols()[0].cards[0].assignee, x: cols()[1].cards[0].assignee,
+             b: cols()[0].cards[1].assignee || "", pilha: undoStack.length };`);
+  check(r.a === "Bruno" && r.x === "Bruno" && r.b === "",
+        "kanban: atribuir em lote atravessa colunas e não toca em quem está fora");
+  check(r.pilha === 1, "kanban: num desfazer só");
+
+  r = runIn(`${seed}
+    window.prompt = () => null;
+    ${clicar("a")} doAction("assign-selected");
+    return { enviadas: window.__enviadas.length, pilha: undoStack.length };`);
+  check(r.enviadas === 0 && r.pilha === 0,
+        "kanban: cancelar o prompt não é uma edição");
+
+  // ------------------------------------------------------ arrastar em lote
+  // moveOpsFor é o que o arrasto usa: simula remove-depois-insere op por op,
+  // porque cada uma muda os índices da seguinte
+  r = runIn(`${seed} return moveOpsFor(["a", "c"], "c2", "y").map((o) => o.id + "@" + o.toIndex);`);
+  check(r.join() === "a@1,c@2",
+        "kanban: mover dois para antes do 'y' dá índices que abrem lugar um para o outro");
+
+  r = runIn(`${seed}
+    commitMany(moveOpsFor(["a", "c"], "c2", "y"));
+    return ${quadro};`);
+  check(r.c1.join() === "b,d" && r.c2.join() === "x,a,c,y",
+        "kanban: e o resultado é a seleção inteira, na ordem do quadro, antes do 'y'");
+
+  r = runIn(`${seed}
+    commitMany(moveOpsFor(["a", "c"], "c2", null));
+    return ${quadro};`);
+  check(r.c2.join() === "x,y,a,c", "kanban: sem vizinho, o lote vai para o fim da coluna");
+
+  // reordenar DENTRO da própria coluna: o índice de cada op é outro
+  r = runIn(`${seed}
+    commitMany(moveOpsFor(["a", "b"], "c1", null));
+    return ${quadro};`);
+  check(r.c1.join() === "c,d,a,b",
+        "kanban: mover dois para o fim da própria coluna não os embaralha");
+
+  // op que não muda nada não entra no lote (arrasto que desiste no meio)
+  r = runIn(`${seed} return { parado: moveOpsFor(["a", "b"], "c1", "c").length,
+                             mexeu: moveOpsFor(["a", "b"], "c1", null).length };`);
+  check(r.parado === 0 && r.mexeu === 2,
+        "kanban: soltar o lote onde ele já estava não gera op nenhuma");
+
+  // o clone do arrasto diz quantos são
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { ctrlKey: true })}
+    const el = document.querySelector('.card[data-card="a"]');
+    document.elementFromPoint = () => null;   // jsdom não tem layout
+    startDrag(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }),
+              findCard("a").col.cards[0], el);
+    const out = { conta: document.querySelector(".drag-clone .drag-count")?.textContent,
+                  fantasmas: [...document.querySelectorAll(".card.ghost")].map((c) => c.dataset.card),
+                  lote: state.drag.lote };
+    state.drag.target = null; endDrag();
+    return out;`);
+  check(r.conta === "2" && r.lote.join() === "a,c",
+        "kanban: o clone do arrasto em lote mostra a contagem");
+  check(r.fantasmas.join() === "a,c",
+        "kanban: e os dois cards saem do lugar de origem, não só o de baixo do cursor");
+
+  close();
+}
+
+console.log("gantt · selecionar várias e agir em lote");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 50));
+
+  // Cinco linhas soltas + uma fase com dois filhos: dá para medir intervalo,
+  // dá para medir o que acontece quando um resumo entra na seleção, e dá
+  // para recolher a fase e ver o que sobra selecionado.
+  const seed = `
+    const mk = (id, name, start, extra) => Object.assign({
+      id, name, start, duration: 3, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false }, extra || {});
+    state.current = { id: "ps", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "A", "2026-03-02"),
+      mk("b", "B", "2026-03-05"),
+      mk("c", "C", "2026-03-09"),
+      mk("f", "Fase", "2026-03-12"),
+      mk("f1", "Filha 1", "2026-03-12", { parent: "f" }),
+      mk("f2", "Filha 2", "2026-03-16", { parent: "f" }),
+      mk("d", "D", "2026-03-20") ] };
+    state.cpm = { cycle: false, finish: "2026-03-23", calendar: "", pert: null, byId: new Map() };
+    clearSelection();
+    // o que está dobrado (e o destaque, e a busca) sobrevive entre runIn — é
+    // do state, não do projeto. Sem limpar, um teste que recolhe a fase
+    // esconde duas linhas do seguinte, e um que acende a Ana apaga o resto.
+    state.wbsClosed.clear(); state.lanesClosed.clear();
+    state.highlight = null; state.search = "";
+    state.undoStack = []; state.redoStack = [];
+    window.__salvo = 0;
+    markDirty = () => { window.__salvo++; };
+    renderAll();`;
+
+  // clique numa linha, com ou sem modificador
+  const clicar = (id, mods = {}) => `document.querySelector('.tt-row[data-id="${id}"]')
+    .dispatchEvent(new MouseEvent("click", Object.assign(
+      { bubbles: true, cancelable: true }, ${JSON.stringify(mods)})));`;
+  const sel = `selectedTasks().map((t) => t.id)`;
+  const acesas = `[...document.querySelectorAll(".tt-row.selected")].map((r) => r.dataset.id)`;
+
+  // ---------------------------------------------------------------- o clique
+  let r = runIn(`${seed} ${clicar("b")} return { sel: ${sel}, ancora: state.selected };`);
+  check(r.sel.join() === "b" && r.ancora === "b",
+        "gantt: clique simples seleciona uma, e ela é a âncora");
+
+  r = runIn(`${seed} ${clicar("b")} ${clicar("b")} return ${sel};`);
+  check(r.length === 0, "gantt: clique de novo na única selecionada deseleciona");
+
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { ctrlKey: true })}
+    return { sel: ${sel}, ancora: state.selected, acesas: ${acesas} };`);
+  check(r.sel.join() === "a,c" && r.ancora === "c",
+        "gantt: Ctrl+clique soma sem tirar a anterior");
+  check(r.acesas.join() === "a,c", "gantt: e as duas linhas ficam acesas");
+
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { ctrlKey: true })}
+    ${clicar("c", { ctrlKey: true })} return { sel: ${sel}, ancora: state.selected };`);
+  check(r.sel.join() === "a" && r.ancora === "a",
+        "gantt: Ctrl+clique de novo tira, e a âncora volta para a que sobrou");
+
+  // com várias selecionadas, o clique simples colapsa na clicada
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { ctrlKey: true })} ${clicar("d")}
+    return ${sel};`);
+  check(r.join() === "d", "gantt: clique simples com várias selecionadas colapsa na clicada");
+
+  // ------------------------------------------------------------- o intervalo
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { shiftKey: true })} return ${sel};`);
+  check(r.join() === "a,b,c", "gantt: Shift+clique pega o intervalo na ordem da tela");
+
+  // o intervalo é RECALCULADO da âncora: encolher é o mesmo gesto
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { shiftKey: true })}
+    ${clicar("b", { shiftKey: true })} return { sel: ${sel}, ancora: state.selected };`);
+  check(r.sel.join() === "a,b" && r.ancora === "a",
+        "gantt: um segundo Shift+clique encolhe o intervalo, sem mover a âncora");
+
+  // de baixo para cima dá o mesmo conjunto
+  r = runIn(`${seed} ${clicar("c")} ${clicar("a", { shiftKey: true })} return ${sel};`);
+  check(r.join() === "a,b,c", "gantt: Shift+clique para cima dá o mesmo intervalo");
+
+  // Ctrl+Shift soma um segundo intervalo ao que já havia
+  r = runIn(`${seed} ${clicar("a")} ${clicar("b", { shiftKey: true })}
+    ${clicar("d", { ctrlKey: true })} ${clicar("f1", { shiftKey: true, ctrlKey: true })}
+    return ${sel};`);
+  check(r.join() === "a,b,f1,f2,d",
+        "gantt: Ctrl+Shift+clique soma um segundo intervalo ao que já havia");
+
+  // o intervalo salta o que está escondido: a fase recolhida é UMA linha
+  r = runIn(`${seed} toggleSummary("f"); ${clicar("c")} ${clicar("d", { shiftKey: true })}
+    return ${sel};`);
+  check(r.join() === "c,f,d",
+        "gantt: numa fase recolhida o intervalo pega a fase, não as filhas");
+
+  // --------------------------------------------------------------- o teclado
+  const tecla = (k, mods = {}) => `document.dispatchEvent(new KeyboardEvent("keydown",
+    Object.assign({ key: "${k}", bubbles: true, cancelable: true }, ${JSON.stringify(mods)})));`;
+
+  r = runIn(`${seed} ${clicar("a")} ${tecla("ArrowDown", { shiftKey: true })}
+    ${tecla("ArrowDown", { shiftKey: true })} return { sel: ${sel}, ancora: state.selected };`);
+  check(r.sel.join() === "a,b,c" && r.ancora === "a",
+        "gantt: Shift+↓ estende a seleção sem mover a âncora");
+
+  r = runIn(`${seed} ${clicar("a")} ${tecla("ArrowDown", { shiftKey: true })}
+    ${tecla("ArrowDown", { shiftKey: true })} ${tecla("ArrowUp", { shiftKey: true })}
+    return ${sel};`);
+  check(r.join() === "a,b", "gantt: Shift+↑ depois de dois ↓ ENCOLHE (não deixa três acesas)");
+
+  // sem Shift, a seta continua andando a partir de onde o olho parou
+  r = runIn(`${seed} ${clicar("a")} ${tecla("ArrowDown", { shiftKey: true })}
+    ${tecla("ArrowDown")} return { sel: ${sel}, ancora: state.selected };`);
+  check(r.sel.join() === "c" && r.ancora === "c",
+        "gantt: ↓ sem Shift continua da ponta do intervalo e volta a uma só");
+
+  r = runIn(`${seed} ${clicar("a")} ${tecla("a", { ctrlKey: true })} return ${sel};`);
+  check(r.join() === "a,b,c,f,f1,f2,d", "gantt: Ctrl+A seleciona todas as linhas visíveis");
+
+  r = runIn(`${seed} toggleSummary("f"); ${tecla("a", { ctrlKey: true })} return ${sel};`);
+  check(r.join() === "a,b,c,f,d", "gantt: Ctrl+A não pega o que está dentro de uma fase fechada");
+
+  // com um destaque ligado, "tudo" é o que está ACESO: as apagadas não são o
+  // assunto, e o próximo gesto é uma ação em lote sobre o que se está olhando
+  r = runIn(`${seed}
+    state.current.tasks.find((t) => t.id === "a").assignee = "Ana";
+    state.current.tasks.find((t) => t.id === "c").assignee = "Ana";
+    state.highlight = { kind: "assignee", value: "Ana" };
+    renderAll();
+    ${tecla("a", { ctrlKey: true })} return ${sel};`);
+  check(r.join() === "a,c", "gantt: com destaque ligado, Ctrl+A pega só as acesas");
+
+  // o intervalo do Shift é o contrário, de propósito: quem aponta as pontas é
+  // o dedo, e o que está entre elas vai junto
+  r = runIn(`${seed}
+    state.current.tasks.find((t) => t.id === "a").assignee = "Ana";
+    state.current.tasks.find((t) => t.id === "c").assignee = "Ana";
+    state.highlight = { kind: "assignee", value: "Ana" };
+    renderAll();
+    ${clicar("a")} ${clicar("c", { shiftKey: true })} return ${sel};`);
+  check(r.join() === "a,b,c",
+        "gantt: mas o intervalo do Shift leva o que está apagado no meio");
+
+  r = runIn(`${seed} ${tecla("a", { ctrlKey: true })} ${tecla("Escape")} return ${sel};`);
+  check(r.length === 0, "gantt: Esc solta a seleção inteira");
+
+  // -------------------------------------------------- a contagem na status
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { shiftKey: true })}
+    return el.statusLeft.textContent;`);
+  check(/· 3 tasks selected/.test(r),
+        "gantt: a barra de status diz quantas estão selecionadas");
+  r = runIn(`${seed} ${clicar("a")} return el.statusLeft.textContent;`);
+  check(!/selected/.test(r), "gantt: com uma só, não diz nada (é o estado normal)");
+
+  // ----------------------------------------------- a linha que sai da tela
+  r = runIn(`${seed} ${clicar("f1")} ${clicar("f2", { ctrlKey: true })}
+    ${clicar("a", { ctrlKey: true })} toggleSummary("f");
+    return { sel: ${sel}, ancora: state.selected };`);
+  check(r.sel.join() === "a" && r.ancora === "a",
+        "gantt: recolher a fase tira da seleção as filhas que saíram da tela");
+
+  // ---------------------------------------------------- os pontos de ligar
+  r = runIn(`${seed} ${clicar("a")}
+    const uma = document.querySelectorAll("#chart .link-dot").length;
+    ${clicar("b", { ctrlKey: true })}
+    return { uma, duas: document.querySelectorAll("#chart .link-dot").length };`);
+  check(r.uma === 2 && r.duas === 0,
+        "gantt: os pontos de ligar só existem com UMA selecionada");
+
+  // ------------------------------------------------------ arrastar em lote
+  const arrastar = (id, dias) => `{
+    const bar = document.querySelector('#chart [data-id="${id}"].bar');
+    bar.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: 100 + ${dias} * PPD[state.zoom], clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+  }`;
+  const datas = `Object.fromEntries(state.current.tasks.map((t) => [t.id, t.start]))`;
+
+  r = runIn(`${seed} ${clicar("a")} ${clicar("b", { ctrlKey: true })} ${arrastar("a", 3)}
+    return { datas: ${datas}, undo: state.undoStack.length };`);
+  check(r.datas.a === "2026-03-05" && r.datas.b === "2026-03-08" && r.datas.c === "2026-03-09",
+        "gantt: arrastar uma da seleção empurra todas as selecionadas, e só elas");
+  check(r.undo === 1, "gantt: e o lote inteiro é UM desfazer");
+
+  r = runIn(`${seed} ${clicar("a")} ${clicar("b", { ctrlKey: true })} ${arrastar("a", 3)}
+    undo(); return ${datas};`);
+  check(r.a === "2026-03-02" && r.b === "2026-03-05",
+        "gantt: um Ctrl+Z devolve as duas");
+
+  // barra de fora da seleção: o gesto é sobre ela só — a barra sob o cursor
+  // não pode mentir sobre o que vai se mover
+  r = runIn(`${seed} ${clicar("a")} ${clicar("b", { ctrlKey: true })} ${arrastar("c", 3)}
+    return ${datas};`);
+  check(r.c === "2026-03-12" && r.a === "2026-03-02",
+        "gantt: arrastar uma barra de fora da seleção move só ela");
+
+  // esticar não desce até as folhas: dar dois dias a cada uma das duas filhas
+  // não dá dois dias ao bloco, então o resumo simplesmente fica de fora
+  const esticar = (id, dias) => `{
+    const p = document.querySelector('#chart [data-id="${id}"].bar-handle');
+    p.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: 100 + ${dias} * PPD[state.zoom], clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+  }`;
+  r = runIn(`${seed} ${clicar("a")} ${clicar("f", { ctrlKey: true })} ${esticar("a", 2)}
+    return Object.fromEntries(state.current.tasks.map((t) => [t.id, t.duration]));`);
+  check(r.a === 5 && r.f1 === 3 && r.f2 === 3,
+        "gantt: esticar estica as selecionadas, e o resumo não repassa às filhas");
+
+  // e esticar duas folhas de fato estica as duas
+  r = runIn(`${seed} ${clicar("a")} ${clicar("b", { ctrlKey: true })} ${esticar("a", 2)}
+    return Object.fromEntries(state.current.tasks.map((t) => [t.id, t.duration]));`);
+  check(r.a === 5 && r.b === 5 && r.c === 3,
+        "gantt: esticar uma da seleção estica todas as selecionadas");
+
+  // resumo na seleção: quem anda são as folhas dele (a data do resumo é
+  // recalculada de baixo para cima a cada render)
+  r = runIn(`${seed} ${clicar("a")} ${clicar("f", { ctrlKey: true })} ${arrastar("a", 2)}
+    return ${datas};`);
+  check(r.f1 === "2026-03-14" && r.f2 === "2026-03-18" && r.f === "2026-03-14",
+        "gantt: com um resumo selecionado, as filhas dele é que andam");
+
+  // ------------------------------------------------------- apagar em lote
+  r = runIn(`${seed}
+    window.confirm = () => true;
+    state.current.tasks.find((t) => t.id === "d").dependencies = ["a+3", "SS:b"];
+    ${clicar("a")} ${clicar("b", { shiftKey: true })}
+    ACTIONS["delete-task"]();
+    return { ids: state.current.tasks.map((t) => t.id),
+             deps: state.current.tasks.find((t) => t.id === "d").dependencies,
+             sel: ${sel}, undo: state.undoStack.length };`);
+  check(r.ids.join() === "c,f,f1,f2,d", "gantt: apagar em lote leva as três de uma vez");
+  check(r.deps.length === 0,
+        "gantt: e limpa as dependências que apontavam para elas, com lag e tipo");
+  check(r.undo === 1 && r.sel.length === 0, "gantt: um desfazer, e a seleção fica vazia");
+
+  // fase + filha selecionadas: a filha não é um alvo separado
+  r = runIn(`${seed}
+    window.confirm = () => true;
+    ${clicar("f")} ${clicar("f1", { ctrlKey: true })}
+    ACTIONS["delete-task"]();
+    return state.current.tasks.map((t) => t.id);`);
+  check(r.join() === "a,b,c,d",
+        "gantt: apagar uma fase leva a subárvore, e a filha selecionada não é apagada duas vezes");
+
+  // ----------------------------------------------------- duplicar em lote
+  r = runIn(`${seed} ${clicar("a")} ${clicar("b", { ctrlKey: true })}
+    ACTIONS["duplicate-task"]();
+    return { nomes: state.current.tasks.map((t) => t.name),
+             sel: state.selection.size, undo: state.undoStack.length };`);
+  check(r.nomes.filter((n) => n.endsWith("(copy)")).length === 2,
+        "gantt: duplicar em lote copia as duas");
+  check(r.sel === 2, "gantt: e deixa as CÓPIAS selecionadas (prontas para serem empurradas)");
+  check(r.undo === 1, "gantt: num desfazer só");
+
+  r = runIn(`${seed} ${clicar("f")} ${clicar("f1", { ctrlKey: true })}
+    ACTIONS["duplicate-task"]();
+    return state.current.tasks.filter((t) => t.name.endsWith("(copy)")).length;`);
+  check(r === 1,
+        "gantt: fase + filha duplica só a fase (a subárvore vem junto, sem cópia solta)");
+
+  // ------------------------------------------------------- editar em lote
+  const abrir = `${clicar("a")} ${clicar("c", { shiftKey: true })} ACTIONS["bulk-edit"]();`;
+  const campos = `(() => {
+    const linhas = [...document.querySelectorAll("#perth-overlay .bulk-row")];
+    return {
+      chk: linhas.map((l) => l.querySelector('input[type="checkbox"]')),
+      dias: linhas[0].querySelector(".bulk-num"),
+      quem: linhas[1].querySelector('input[type="text"]'),
+      cor: linhas[2].querySelector('input[type="color"]'),
+      auto: linhas[2].querySelectorAll('input[type="checkbox"]')[1],
+      aplicar: document.querySelector("#perth-overlay .bulk-actions button") };
+  })()`;
+
+  r = runIn(`${seed} ${abrir}
+    return { titulo: document.querySelector("#perth-overlay h2").textContent,
+             linhas: document.querySelectorAll("#perth-overlay .bulk-row").length,
+             nota: !!document.querySelector("#perth-overlay .bulk-note") };`);
+  check(/3$/.test(r.titulo) && r.linhas === 3,
+        "gantt: a caixa em lote diz quantas são e traz três campos");
+  check(r.nota === false, "gantt: sem resumo na seleção, nenhum aviso no pé");
+
+  // resumo na seleção: a data dele não é dele, e a caixa avisa
+  r = runIn(`${seed} ${clicar("f")} ${clicar("d", { ctrlKey: true })} ACTIONS["bulk-edit"]();
+    return document.querySelector("#perth-overlay .bulk-note").textContent;`);
+  check(/subtasks/.test(r) || /subtarefas/.test(r),
+        "gantt: com um resumo dentro, a caixa avisa que quem anda são as folhas");
+
+  // nada armado: Aplicar não mexe em nada nem grava
+  r = runIn(`${seed} ${abrir} const f = ${campos}; f.aplicar.click();
+    return { datas: ${datas}, salvo: window.__salvo, undo: state.undoStack.length };`);
+  check(r.datas.a === "2026-03-02" && r.undo === 0 && r.salvo === 0,
+        "gantt: Aplicar sem nada marcado não é uma edição");
+
+  // os três de uma vez, num desfazer
+  r = runIn(`${seed} ${abrir}
+    const f = ${campos};
+    f.dias.value = "4"; f.chk[0].checked = true;
+    f.quem.value = "Bruno"; f.chk[1].checked = true;
+    f.cor.value = "#123456"; f.chk[2].checked = true;
+    f.aplicar.click();
+    const t = Object.fromEntries(state.current.tasks.map((x) => [x.id, x]));
+    return { datas: ${datas}, quem: t.a.assignee, cor: t.b.color,
+             intocada: t.d.assignee, undo: state.undoStack.length,
+             aberto: !!document.getElementById("perth-overlay") };`);
+  check(r.datas.a === "2026-03-06" && r.datas.b === "2026-03-09" && r.datas.c === "2026-03-13",
+        "gantt: empurrar as datas em lote soma os dias em todas");
+  check(r.quem === "Bruno" && r.cor === "#123456" && r.intocada === "",
+        "gantt: responsável e cor vão junto, e quem está fora não é tocado");
+  check(r.undo === 1 && r.aberto === false,
+        "gantt: um desfazer para os três campos, e a caixa fecha");
+
+  // campo em branco COM a caixinha marcada apaga — é a diferença entre
+  // "não mexa" e "limpe"
+  r = runIn(`${seed}
+    for (const t of state.current.tasks) t.assignee = "Ana";
+    ${abrir}
+    const f = ${campos};
+    f.quem.value = ""; f.chk[1].checked = true;
+    f.aplicar.click();
+    return state.current.tasks.map((t) => t.assignee);`);
+  check(r.join() === ",,,Ana,Ana,Ana,Ana",
+        "gantt: com a caixinha marcada, campo vazio LIMPA o responsável das selecionadas");
+
+  // "automática" devolve a cor da rotação
+  r = runIn(`${seed}
+    for (const t of state.current.tasks) t.color = "#ff0000";
+    ${abrir}
+    const f = ${campos};
+    f.auto.checked = true; f.auto.dispatchEvent(new Event("input", { bubbles: true }));
+    f.aplicar.click();
+    return state.current.tasks.map((t) => t.color);`);
+  check(r.slice(0, 3).join() === ",," && r[6] === "#ff0000",
+        "gantt: 'automática' apaga a cor fixa das selecionadas");
+
+  // mexer no campo arma a linha sozinho
+  r = runIn(`${seed} ${abrir}
+    const f = ${campos};
+    f.dias.value = "2";
+    f.dias.dispatchEvent(new Event("input", { bubbles: true }));
+    return f.chk[0].checked;`);
+  check(r === true, "gantt: mexer no campo liga a caixinha da linha");
+
+  // ---------------------------------------- o modal continua sendo de UMA
+  r = runIn(`${seed} ${clicar("a")} ${clicar("c", { shiftKey: true })} openModal("b");
+    return { sel: ${sel}, ancora: state.selected };`);
+  check(r.sel.join() === "a,b,c" && r.ancora === "b",
+        "gantt: abrir o modal numa das selecionadas mantém a seleção e vira âncora");
+
+  r = runIn(`${seed}
+    window.confirm = () => true;
+    ${clicar("a")} ${clicar("c", { shiftKey: true })} openModal("b");
+    document.getElementById("modal-delete").click();
+    return state.current.tasks.map((t) => t.id);`);
+  check(r.join() === "a,c,f,f1,f2,d",
+        "gantt: excluir de dentro do modal apaga só a tarefa dele, não a seleção");
+
+  close();
+}
+
 console.log("gantt · modo leitura não deixa separador órfão");
 {
   // Esconder os itens de escrita deixava os <hr> para trás: o Edit ficava
@@ -3715,13 +4283,17 @@ console.log("gantt · modo leitura não deixa separador órfão");
   // um vão no fim da caixa que parecia menu quebrado. Um separador só se
   // justifica ENTRE dois itens visíveis.
   const { w, runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
   const visiveis = (menu) => `
     return [...document.querySelector('[data-menu="${menu}"] .menu-drop').children]
       .filter((c) => !c.hidden).map((c) => c.tagName);`;
 
+  // Somente-leitura sobram dois itens que são leitura: ver a tarefa e
+  // selecionar todas (escolher não é editar — as ações em lote, que são,
+  // saem junto com o resto). Um traço entre eles é um traço legítimo.
   let itens = runIn("applyReadOnly(true);" + visiveis("edit"));
-  check(itens.join(",") === "BUTTON",
-        "Edit somente-leitura fica com o item e nenhum traço");
+  check(itens.join(",") === "BUTTON,HR,BUTTON",
+        "Edit somente-leitura fica com os itens de leitura e nenhum traço órfão");
 
   itens = runIn(visiveis("file"));
   check(itens.at(-1) === "BUTTON",
@@ -3731,8 +4303,8 @@ console.log("gantt · modo leitura não deixa separador órfão");
 
   // voltar a poder editar devolve os separadores todos
   const cheio = runIn("applyReadOnly(false);" + visiveis("edit"));
-  check(cheio.filter((t) => t === "HR").length === 3,
-        "sair do modo leitura devolve os três traços do Edit");
+  check(cheio.filter((t) => t === "HR").length === 4,
+        "sair do modo leitura devolve os quatro traços do Edit");
   check(w.document.querySelector('[data-menu="edit"]').hidden === false,
         "e o menu Edit volta a aparecer");
   close();
