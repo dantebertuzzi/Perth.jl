@@ -1326,6 +1326,33 @@ body.readonly .c-seq { cursor: default; }
 }
 .people-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
 .people-form input { width: 100%; }
+/* Edição em lote (Ctrl+E): três linhas "caixinha · rótulo · campo".
+   A caixinha na frente é o que separa "não mexa neste campo" de "apague o
+   que está neste campo" — ver showBulkEdit. */
+.bulk-box { min-width: 340px; }
+.bulk-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 2px;
+  cursor: pointer;
+}
+.bulk-row + .bulk-row { border-top: 1px solid var(--line-soft); }
+.bulk-label { flex: 0 0 auto; width: 152px; font-size: 12px; color: var(--muted); }
+.bulk-row input[type="text"] { flex: 1 1 auto; min-width: 0; }
+.bulk-num { flex: 0 0 auto; width: 76px; }
+.bulk-suffix { flex: 0 0 auto; font-size: 11.5px; color: var(--muted); }
+.bulk-color { display: flex; align-items: center; gap: 8px; }
+.bulk-auto { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
+.bulk-note {
+  margin: 2px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.bulk-actions { display: flex; justify-content: flex-end; }
+
 .people-loose:empty { display: none; }
 .people-loose {
   display: flex;

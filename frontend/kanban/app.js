@@ -76,7 +76,9 @@ const state = {
   rev: 0,
   me: null,                 // {id, ip, name, color}
   peers: new Map(),         // id -> {id, ip, name, color, presence}
-  selected: null,           // id do card selecionado
+  selected: null,           // âncora da seleção (ver selectCard)
+  selection: new Set(),     // a seleção inteira — um id só no caso comum
+  selEdge: null,            // ponta longe do intervalo com Shift
   editing: null,            // {cardId | null, colId, draft, isNew}
   drag: null,               // estado do arrasto local
   pendingBoard: null,       // board recebido durante um arrasto
@@ -521,44 +523,97 @@ function concurrentEditToast(action) {
 // servidor é sempre a autoridade final (ver _kanban_permitted em kanban.jl);
 // isto só evita o round-trip óbvio e dá o motivo na hora.
 function commit(op) {
-  if (!canDo(op.type)) {
-    deniedToast(op.type);
-    return;
+  commitMany([op]);
+}
+
+/* Um lote de ops como UMA entrada de desfazer.
+ *
+ * Ação em lote (arquivar seis cards, mover seis de coluna) é um gesto só, e
+ * desfazer tem que ser um Ctrl+Z só — não seis. Do lado do servidor cada op
+ * continua sendo uma op independente: é ele que resolve conflito, WIP e
+ * permissão card por card, e um "op composta" nova no protocolo obrigaria a
+ * ensinar tudo isso de novo do outro lado.
+ *
+ * As inversas são calculadas ANTES de qualquer mutação, na ordem original; em
+ * que ordem elas são APLICADAS depende do que elas fazem (ver replayEntry).
+ *
+ * Uma op sem permissão não derruba o lote: as outras seguem, e o toast diz
+ * qual ficou de fora (é o servidor que decide de verdade, isto só evita o
+ * round-trip óbvio).
+ */
+function commitMany(ops) {
+  const feitas = [], inversas = [];
+  let negada = null;
+  for (const op of ops) {
+    if (!canDo(op.type)) { negada = negada || op.type; continue; }
+    const inv = inverseOf(op);            // antes da mutação: lê o estado atual
+    feitas.push(structuredClone(op));
+    inversas.push(inv);
+    applyLocal(op);
+    sendOp(op);
   }
-  const inv = inverseOf(op);
-  if (inv) {
-    undoStack.push({ do: structuredClone(op), undo: inv });
+  if (negada) deniedToast(negada);
+  if (!feitas.length) return;
+  if (inversas.some(Boolean)) {
+    undoStack.push({ do: feitas, undo: inversas });
     undoStack.length > UNDO_LIMIT && undoStack.shift();
     redoStack.length = 0;
   }
-  commitRaw(op);
+  render();
 }
 
-function commitRaw(op) {
-  applyLocal(op);
-  render();
-  sendOp(op);
+/* Ops cuja aplicação carrega uma POSIÇÃO. Um lote delas tem de ser aplicado
+ * de trás para frente: cada inserção desloca os índices das seguintes, e na
+ * ordem direta o segundo card cairia no lugar que o primeiro acabou de
+ * ocupar.
+ *
+ * As outras vão na ordem direta. restoreCard devolve o card ao PÉ da coluna
+ * (sempre foi assim), e de trás para frente seis cards arquivados voltariam
+ * empilhados na ordem trocada; archiveCard, delCard, setDone e setAssignee
+ * trabalham por id, e para elas a ordem não muda nada. */
+const POSITIONAL_OPS = new Set(["addCard", "moveCard", "addCol", "moveCol"]);
+
+/* Aplica um lado da entrada, na ordem que as ops pedem (ver POSITIONAL_OPS).
+ *
+ * `referencia` são as ops opostas, alinhadas por índice: a guarda de conflito
+ * pergunta se o campo ainda está com o valor que a op OPOSTA escreveu (é ela
+ * a última a ter tocado nele), e não com o valor que estamos a ponto de
+ * escrever. Ops de campo que um colega mexeu no meio são puladas uma a uma,
+ * com aviso — o resto do lote vai.
+ */
+function replayEntry(aplicar, referencia) {
+  const indices = aplicar.map((_, i) => i);
+  if (aplicar.some((o) => o && POSITIONAL_OPS.has(o.type))) indices.reverse();
+  let pulou = null, fez = false;
+  for (const i of indices) {
+    const op = aplicar[i], ref = referencia[i];
+    if (!op) continue;
+    if (ref && FIELD_OPS.has(ref.type) && !fieldUnchangedSince(ref)) {
+      pulou = pulou || ref.type;
+      continue;
+    }
+    applyLocal(op);
+    sendOp(op);
+    fez = true;
+  }
+  if (pulou) concurrentEditToast(pulou);
+  if (fez) render();
+  return fez;
 }
 
 function undo() {
   const e = undoStack.pop();
   if (!e) return;
-  if (FIELD_OPS.has(e.do.type) && !fieldUnchangedSince(e.do)) {
-    concurrentEditToast(e.do.type);
-    return;   // descarta esta entrada: já não reflete o estado atual
-  }
-  commitRaw(e.undo);
+  // nada aplicável (tudo pulado por conflito): a entrada é descartada, não
+  // vai para a pilha de refazer — ela já não descreve o estado atual
+  if (!replayEntry(e.undo, e.do)) return;
   redoStack.push(e);
 }
 
 function redo() {
   const e = redoStack.pop();
   if (!e) return;
-  if (FIELD_OPS.has(e.undo.type) && !fieldUnchangedSince(e.undo)) {
-    concurrentEditToast(e.undo.type);
-    return;
-  }
-  commitRaw(e.do);
+  if (!replayEntry(e.do, e.undo)) return;
   undoStack.push(e);
 }
 
@@ -737,6 +792,7 @@ function render() {
   // apenas re-agenda — senão o board seria montado em cima de si mesmo
   if (_rendering) { _renderQueued = true; return; }
   _rendering = true;
+  pruneMissingSelection();
   // FLIP: posições antes do re-render, para animar cards que mudaram de lugar
   const before = new Map();
   for (const el of $$(".card", boardEl))
@@ -982,15 +1038,19 @@ function cardEl(card) {
   applyRestriction(done, "setDone");
   el.append(done);
 
-  if (state.selected === card.id) el.classList.add("selected");
+  if (state.selection.has(card.id)) el.classList.add("selected");
   el.addEventListener("pointerdown", (e) => maybeDrag(e, card));
-  el.addEventListener("click", () => {
+  el.addEventListener("click", (e) => {
     if (Date.now() - justDragged < 300) return;   // clique fantasma pós-arrasto
     if (lastPointerType === "touch" && state.selected === card.id)
       return openEditor(card.id);                 // 2º toque = editar
-    state.selected = card.id;
+    // Ctrl/Shift mexem em vários cards de uma vez: aí não dá para repintar
+    // só este nó, e o render() inteiro é o caminho. O clique simples segue
+    // pelo atalho de sempre — é o que acontece o tempo todo.
+    if (selectCard(card.id, e)) return render();
     $$(".card.selected", boardEl).forEach((c) => c.classList.remove("selected"));
     el.classList.add("selected");
+    renderStatus();
   });
   el.addEventListener("dblclick", () => openEditor(card.id));
   return el;
@@ -1285,7 +1345,7 @@ function commitEditor() {
                checklist: ed.checks.length ? ed.checks : undefined,
                by: state.me?.ip,
                at: localStamp() });
-      state.selected = id;
+      selectOnlyCard(id);
     } else render();
   } else {
     const f = findCard(ed.cardId);
@@ -1305,6 +1365,109 @@ function commitEditor() {
 function cancelEditor() {
   state.editing = null;
   sendPresenceNow({});
+  render();
+}
+
+/* ============================================== seleção (uma ou várias) */
+
+/* Mesmo modelo do gantt: `selection` é o conjunto e `selected` é a âncora —
+ * o card que o Enter edita e de onde o Shift mede o intervalo. Ver o
+ * comentário de selectTask em app.js; o que é do kanban está aqui.
+ *
+ * A ordem em que a seleção é lida é a ORDEM DO QUADRO (coluna por coluna, de
+ * cima para baixo), não a de clique: mover seis cards para outra coluna tem
+ * que empilhá-los lá na ordem em que estavam, senão o lote embaralha o que
+ * alguém arrumou à mão.
+ */
+function selectedCards() {
+  const out = [];
+  for (const c of cols())
+    for (const card of c.cards)
+      if (state.selection.has(card.id)) out.push({ card, col: c });
+  return out;
+}
+
+const selCount = () => state.selection.size;
+
+function clearCardSelection() {
+  state.selection.clear();
+  state.selected = null;
+  state.selEdge = null;
+}
+
+function selectOnlyCard(id) {
+  state.selection = new Set(id ? [id] : []);
+  state.selected = id || null;
+  state.selEdge = null;
+}
+
+/* Intervalo do Shift: só DENTRO de uma coluna.
+ *
+ * Num quadro não existe "o que está entre os dois" atravessando colunas — a
+ * ordem entre a terceira de "Fazendo" e a primeira de "Feito" é uma invenção
+ * da tela, e o intervalo apanharia cards que ninguém aponta. Com a âncora em
+ * outra coluna o Shift vira o Ctrl: soma só o card clicado.
+ */
+function extendCardSelection(id) {
+  const a = findCard(state.selected), b = findCard(id);
+  if (!a || !b || a.col.id !== b.col.id) return false;
+  const ids = a.col.cards.slice(Math.min(a.index, b.index),
+                               Math.max(a.index, b.index) + 1).map((c) => c.id);
+  state.selection = new Set(ids);
+  state.selEdge = id;
+  return true;
+}
+
+/* O clique num card. Sem modificador é o que sempre foi; Ctrl/⌘ soma ou
+ * tira; Shift pega o intervalo na coluna. Devolve true se a seleção passou a
+ * ser múltipla — o chamador usa isso para decidir entre repintar as classes
+ * na mão (caminho rápido de sempre) e um render() inteiro. */
+function selectCard(id, ev) {
+  const add = ev && (ev.ctrlKey || ev.metaKey);
+  if (ev && ev.shiftKey && state.selected && !add && extendCardSelection(id)) return true;
+  if (add) {
+    state.selEdge = null;
+    if (state.selection.delete(id)) {
+      if (state.selected === id)
+        state.selected = state.selection.size === 1 ? [...state.selection][0] : null;
+    } else {
+      state.selection.add(id);
+      state.selected = id;
+    }
+    return true;
+  }
+  selectOnlyCard(id);
+  return false;
+}
+
+/* Card que saiu do quadro sai da seleção: quem apagou ou arquivou pode ter
+ * sido um colega, e a contagem na barra de status promete quantos a próxima
+ * ação em lote vai atingir. Roda a cada render — é o único ponto por onde
+ * todo board novo passa. */
+function pruneMissingSelection() {
+  if (!state.selection.size) return;
+  const vivos = new Set();
+  for (const c of cols()) for (const card of c.cards) vivos.add(card.id);
+  for (const id of [...state.selection]) if (!vivos.has(id)) state.selection.delete(id);
+  if (state.selEdge && !state.selection.has(state.selEdge)) state.selEdge = null;
+  if (state.selected && !state.selection.has(state.selected)) {
+    state.selected = state.selection.size === 1 ? [...state.selection][0] : null;
+  }
+}
+
+/* Ctrl+A pega o quadro inteiro — menos o que o filtro apagou. Com "#obra"
+ * digitado, os outros cards estão esmaecidos justamente porque não são o
+ * assunto, e "selecionar tudo" seguido de "arquivar" tem que valer sobre o
+ * que se está olhando. Mesma regra do Ctrl+A do gantt com um destaque ligado.
+ *
+ * O intervalo do Shift é o contrário e de propósito: ele promete "daqui até
+ * ali na coluna", e o que está entre as duas pontas vai junto. */
+function selectAllCards() {
+  const ids = [];
+  for (const c of cols()) for (const card of c.cards) if (matchesFilter(card)) ids.push(card.id);
+  state.selection = new Set(ids);
+  state.selEdge = null;
+  if (!state.selection.has(state.selected)) state.selected = null;
   render();
 }
 
@@ -1383,6 +1546,18 @@ function startDrag(e, card, el) {
   clone.classList.add("drag-clone");
   clone.classList.remove("selected");
   clone.style.width = rect.width + "px";
+
+  // Arrastar um da seleção arrasta a seleção inteira. O card sob o cursor é
+  // o que voa; os outros saem do lugar de origem junto com ele (.ghost), e o
+  // clone diz quantos são — senão o gesto move seis cards mostrando um.
+  const lote = state.selection.has(card.id) && selCount() > 1
+    ? selectedCards().map((f) => f.card.id) : [card.id];
+  if (lote.length > 1) {
+    const n = document.createElement("span");
+    n.className = "drag-count";
+    n.textContent = lote.length;
+    clone.append(n);
+  }
   document.body.append(clone);
 
   const slot = document.createElement("div");
@@ -1390,14 +1565,18 @@ function startDrag(e, card, el) {
 
   state.drag = {
     card,
+    lote,                  // ids na ordem do quadro (ver selectedCards)
     el,
     clone,
     slot,
     dx: e.clientX - rect.left,
     dy: e.clientY - rect.top,
-    target: null,          // {colId, index}
+    target: null,          // {colId, beforeId}
   };
-  el.classList.add("ghost");
+  for (const id of lote) {
+    const n = $(`.card[data-card="${id}"]`, boardEl);
+    if (n) n.classList.add("ghost");
+  }
   document.body.style.cursor = "grabbing";
   sendPresenceNow({ dragging: card.id });
   positionClone(e);
@@ -1436,8 +1615,10 @@ function updateDropTarget(e) {
     return;
   }
   const cardsEl = $(".cards", colEl);
+  // fora os que estão voando (todos os do lote, não só o de baixo do cursor):
+  // o vão vai abrir onde eles NÃO estão mais
   const others = $$(".card", cardsEl).filter(
-    (c) => c !== d.el && !c.classList.contains("drag-clone"));
+    (c) => !c.classList.contains("ghost") && !c.classList.contains("drag-clone"));
   let index = others.length;
   for (let i = 0; i < others.length; i++) {
     const r = others[i].getBoundingClientRect();
@@ -1445,7 +1626,47 @@ function updateDropTarget(e) {
   }
   const ref = others[index] ?? null;
   cardsEl.insertBefore(d.slot, ref);
-  d.target = { colId: colEl.dataset.col, index };
+  // Guarda o VIZINHO, não o índice: com seis cards saindo de lugares
+  // diferentes, "índice 3" quer dizer coisas diferentes a cada op aplicada,
+  // enquanto "antes deste card aqui" continua querendo dizer a mesma coisa.
+  d.target = { colId: colEl.dataset.col, beforeId: ref?.dataset.card ?? null };
+}
+
+/* Índices para mover um lote: o mesmo remove-depois-insere que applyLocal (e
+ * o servidor, em _kanban_apply!) faz, simulado sobre uma lista de ids.
+ *
+ * Precisa simular porque as ops são aplicadas uma a uma, em ordem, e cada
+ * uma muda os índices da seguinte: mover A e C de [A,B,C,D] para o fim de
+ * [X] são os índices 1 e 2, mas mover os dois DENTRO da própria coluna são
+ * outros dois números. Calcular "antes do vizinho" na hora, por op, é o
+ * único jeito de o resultado ser o que o vão na tela prometeu.
+ *
+ * Arrasto que devolve o lote exatamente ao lugar onde estava não é uma
+ * edição: sai lista vazia, e nenhum desfazer é queimado. A comparação é do
+ * QUADRO INTEIRO no fim, não op por op — no meio do caminho cada card passa
+ * por um índice que não é o dele (mover "a" e "b" para antes de "c" tira o
+ * "a" da frente do "b" antes de recolocá-lo), e olhar só uma op de cada vez
+ * diria que houve mudança quando não houve.
+ */
+function moveOpsFor(ids, toColId, beforeId) {
+  const sim = new Map(cols().map((c) => [c.id, c.cards.map((x) => x.id)]));
+  const antes = JSON.stringify([...sim]);
+  if (!sim.has(toColId)) return [];
+  const ops = [];
+  for (const id of ids) {
+    let deOnde = null;
+    for (const [colId, lista] of sim) {
+      const i = lista.indexOf(id);
+      if (i >= 0) { deOnde = colId; lista.splice(i, 1); break; }
+    }
+    if (deOnde === null) continue;              // card sumiu (colega apagou)
+    const dest = sim.get(toColId);
+    let at = beforeId ? dest.indexOf(beforeId) : -1;
+    if (at < 0) at = dest.length;
+    dest.splice(at, 0, id);
+    ops.push({ type: "moveCard", id, toCol: toColId, toIndex: at });
+  }
+  return JSON.stringify([...sim]) === antes ? [] : ops;
 }
 
 let justDragged = 0;
@@ -1460,15 +1681,12 @@ function endDrag() {
   document.body.style.cursor = "";
   d.clone.remove();
   d.slot.remove();
-  d.el.classList.remove("ghost");
+  for (const n of $$(".card.ghost", boardEl)) n.classList.remove("ghost");
   sendPresenceNow({});
 
   if (d.target) {
-    const f = findCard(d.card.id);
-    const same = f && f.col.id === d.target.colId && f.index === d.target.index;
-    if (!same)
-      commit({ type: "moveCard", id: d.card.id,
-               toCol: d.target.colId, toIndex: d.target.index });
+    const ops = moveOpsFor(d.lote, d.target.colId, d.target.beforeId);
+    if (ops.length) commitMany(ops);
   }
   if (state.pendingBoard) {          // mudanças que chegaram durante o gesto
     const b = state.pendingBoard;
@@ -1775,6 +1993,8 @@ function renderStatus() {
       (n, c) => n + c.cards.filter(matchesFilter).length, 0);
     txt += ` · ${nmatch} match`;
   }
+  // o número que toda ação em lote vai usar, visível antes de a ação rodar
+  if (selCount() > 1) txt += ` · ${selCount()} ${T("cards selected")}`;
   $("#st-board").textContent = txt;
   $("#st-me").textContent = state.me
     ? `you: ${peerLabel(state.me)} (${state.me.ip})` : "";
@@ -2794,12 +3014,55 @@ function doAction(action) {
     case "new-col":
       newColumn();
       break;
-    case "delete-card":
-      if (state.selected && findCard(state.selected)) {
-        commit({ type: "delCard", id: state.selected });
-        state.selected = null;
-      }
+    case "select-all":
+      selectAllCards();
       break;
+    /* Os quatro em lote abaixo. Um confirm só e um desfazer só, porque o
+       gesto foi um — ver commitMany. Cada um continua valendo para um card
+       (a seleção de um é uma seleção), então não há dois caminhos para a
+       mesma coisa: o item do menu é o mesmo, some a contagem. */
+    case "delete-card": {
+      const alvos = selectedCards();
+      if (!alvos.length) break;
+      if (alvos.length > 1 &&
+          !confirm(`${T("Delete these cards?")} (${alvos.length})`)) break;
+      commitMany(alvos.map((f) => ({ type: "delCard", id: f.card.id })));
+      clearCardSelection();
+      render();
+      break;
+    }
+    case "archive-selected": {
+      const alvos = selectedCards();
+      if (!alvos.length) break;
+      commitMany(alvos.map((f) => ({ type: "archiveCard", id: f.card.id })));
+      clearCardSelection();
+      render();
+      break;
+    }
+    case "done-selected": {
+      const alvos = selectedCards();
+      if (!alvos.length) break;
+      // Um alvo: alterna, como o ✓ do card. Vários: liga todos — com seis
+      // cards em estados diferentes, "alternar" deixaria metade de cada
+      // lado, que não é o que ninguém pediu. Já todos concluídos, desliga.
+      const querDone = alvos.length === 1
+        ? !alvos[0].card.done : !alvos.every((f) => f.card.done);
+      commitMany(alvos.filter((f) => !!f.card.done !== querDone)
+        .map((f) => ({ type: "setDone", id: f.card.id, done: querDone })));
+      break;
+    }
+    case "assign-selected": {
+      const alvos = selectedCards();
+      if (!alvos.length) break;
+      const donos = new Set(alvos.map((f) => (f.card.assignee || "").trim()));
+      const atual = donos.size === 1 ? [...donos][0] : "";
+      const v = prompt(T("Assign to whom? (empty clears)"), atual);
+      if (v === null) break;
+      const nome = v.trim();
+      commitMany(alvos.filter((f) => (f.card.assignee || "") !== nome)
+        .map((f) => ({ type: "setAssignee", id: f.card.id, name: nome })));
+      break;
+    }
     case "toggle-theme": {
       const root = document.documentElement;
       root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
@@ -2856,7 +3119,12 @@ function doAction(action) {
       showModal(T("Keyboard shortcuts"), PerthShortcuts.list([
         ["N", "new card"],
         ["Enter", "edit selected card"],
+        ["Ctrl+click", "add or remove one card from the selection"],
+        ["Shift+click", "select everything in between (same column)"],
+        ["Ctrl+A", "select all — with a filter on, only what it leaves lit"],
         ["Del", "delete selected card"],
+        ["A", "archive the selection"],
+        ["Space", "mark the selection done"],
         ["/", "filter cards"],
         ["Ctrl+Z", "undo"],
         ["Ctrl+Shift+Z / Ctrl+Y", "redo"],
@@ -2902,15 +3170,26 @@ document.addEventListener("keydown", (e) => {
     $("#search").focus();
     return;
   }
+  if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+    e.preventDefault();     // senão o navegador seleciona o texto da página
+    selectAllCards();
+    return;
+  }
   if (e.key === "n" || e.key === "N") doAction("new-card");
+  else if (e.key === "a" || e.key === "A") doAction("archive-selected");
+  else if (e.key === " " && state.selection.size) {
+    e.preventDefault();          // com nada selecionado, Espaço segue sendo do navegador
+    doAction("done-selected");
+  }
   else if (e.key === "d" || e.key === "D") doAction("toggle-theme");
   else if (e.key === "p" || e.key === "P") doAction("presentation");
   else if (e.key === "Delete") doAction("delete-card");
   else if (e.key === "Enter" && state.selected) openEditor(state.selected);
   else if (e.key === "Escape") {
     if (state.presenting) { exitPresentation(); return; }
-    state.selected = null;
+    clearCardSelection();
     $$(".card.selected", boardEl).forEach((c) => c.classList.remove("selected"));
+    renderStatus();
     closeMenus();
     closeModal();
     if (state.chatOpen) closeChat();

@@ -354,7 +354,9 @@ começar um quadro **separado** sem mexer neste, aponte o servidor para outra pa
 | `↑` `↓` | move a seleção pelas linhas visíveis |
 | `←` `→` | recolhe um resumo / abre — numa folha, `←` sobe para o pai |
 | `Home` `End` · `PageUp` `PageDown` | pontas do plano · uma tela |
-| `N` · `Enter` · `Del` · `Ctrl+D` | nova · editar · excluir · duplicar tarefa |
+| `N` · `Enter` · `Del` · `Ctrl+D` | nova · editar · excluir · duplicar a seleção |
+| `Ctrl+clique` · `Shift+clique` · `Shift+↑` `↓` | somar uma à seleção · pegar o intervalo · estendê-lo |
+| `Ctrl+A` · `Ctrl+E` | selecionar todas as visíveis · editar a seleção (datas, responsável, cor) |
 | `Ctrl+Z` · `Ctrl+Shift+Z` | desfazer · refazer |
 | `S` · `C` · `R` | programar automaticamente · caminho crítico · recursos |
 | `1` `2` `3` `4` · `Ctrl+roda` | zoom dia / semana / mês / caber · zoom sob o ponteiro |
