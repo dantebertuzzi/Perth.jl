@@ -195,6 +195,8 @@ const el = {
   wContinue: $("#w-continue"),
   statusLeft: $("#status-left"),
   statusSave: $("#status-save"),
+  versionTag: $("#version-tag"),
+  versionNum: $("#version-num"),
   progressFill: $("#progress-fill"),
   progressPct: $("#progress-pct"),
   progressWrap: $("#progress-wrap"),
@@ -5492,6 +5494,23 @@ async function bootData() {
   localStorage.setItem("perth-welcome-seen", "1");
 }
 
+/* Etiqueta de versão da barra de status. O servidor é quem sabe qual Perth
+ * está rodando (o navegador só tem arquivos estáticos, que um cache pode
+ * servir de uma versão anterior), então a resposta vem de /api/apps — a mesma
+ * que o botão de troca gantt<->kanban já consulta. Perguntada uma vez, no
+ * boot: a versão não muda com o servidor de pé. Falhou, a etiqueta continua
+ * escondida: dizer a versão errada é pior do que não dizer nenhuma. */
+async function showVersion() {
+  try {
+    const { version } = await api("/api/apps");
+    if (!version) return;
+    el.versionNum.textContent = version;
+    el.versionTag.hidden = false;
+  } catch {
+    /* sem versão na barra; nada mais depende disso */
+  }
+}
+
 function bootFailed(err) {
   console.error(err);
   const net = err instanceof TypeError && /fetch/i.test(err.message);
@@ -5523,6 +5542,7 @@ function bootFailed(err) {
   renderAtMidnight();  // a linha de hoje não pode envelhecer sozinha
   refreshShareBtn();   // estado inicial do botão de transmitir da menubar
   refreshBackground(); // fundo da UI, se o REPL tiver apontado uma imagem
+  showVersion();       // etiqueta de versão no canto da barra de status
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("/sw.js").catch(() => null);

@@ -595,6 +595,33 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
   .icon-btn.broadcasting svg { animation: none; }
 }
 
+/* ---------- etiqueta de versão (ponta direita da barra de status) ---------- */
+
+/* Qual Perth está rodando é a pergunta que aparece quando alguma coisa está
+   diferente do esperado — e a resposta morava só no banner do REPL, que a
+   pessoa que abriu o link nunca viu. Fica no fim da barra de status porque é
+   informação de rodapé: verdadeira o tempo todo, urgente nunca. Esmaecida como
+   o resto da barra, acende no hover; o ícone herda a cor por currentColor, de
+   modo que tema claro e escuro não precisam de regra própria. */
+.version-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.65;
+  cursor: default;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+.version-tag:hover { opacity: 1; }
+.version-tag svg { display: block; flex: none; width: 13px; height: 13px; }
+/* display:inline-flex vence o [hidden] da folha do navegador: enquanto o
+   servidor não disse a versão, a etiqueta não pode aparecer vazia */
+.version-tag[hidden] { display: none; }
+
 /* ---------- fundo da UI (Perth.background!) ---------- */
 
 /* Camada fixa atrás do conteúdo. A cor do papel continua pintada no body,

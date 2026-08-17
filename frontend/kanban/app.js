@@ -3030,9 +3030,27 @@ hideBgToggle.addEventListener("click", () => {
   applyBackground();          // sem argumento: só redesenha com o que já se sabe
 });
 
+/* Etiqueta de versão da barra de status. Quem sabe qual Perth está rodando é
+ * o servidor — o navegador só tem arquivos estáticos, que um cache pode servir
+ * de uma versão anterior —, e /api/apps já é a resposta que descreve este
+ * processo. Perguntada uma vez, no boot: a versão não muda com o servidor de
+ * pé. Falhou, a etiqueta continua escondida: dizer a versão errada é pior do
+ * que não dizer nenhuma. */
+function showVersion() {
+  fetch(`/api/apps${keyQS()}`)
+    .then((r) => r.json())
+    .then(({ version }) => {
+      if (!version) return;
+      $("#version-num").textContent = version;
+      $("#version-tag").hidden = false;
+    })
+    .catch(() => {});
+}
+
 /* ==================================================== boot */
 
 refreshBackground();
+showVersion();
 connect();
 render();
 renderAtMidnight();

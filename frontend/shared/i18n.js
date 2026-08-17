@@ -555,6 +555,8 @@ window.PerthI18n = (function () {
       "check/uncheck this machine": "marcar/desmarcar esta máquina",
       "Unchecked = blocked on that machine. The host machine is always allowed here, no matter this matrix.":
         "Desmarcado = bloqueado naquela máquina. A máquina do host sempre tem permissão aqui, independente desta matriz.",
+      // etiqueta de versão (barra de status dos dois apps)
+      "Perth version": "Versão do Perth",
     },
 
     es: {
@@ -1067,6 +1069,8 @@ window.PerthI18n = (function () {
       "check/uncheck this machine": "marcar/desmarcar esta máquina",
       "Unchecked = blocked on that machine. The host machine is always allowed here, no matter this matrix.":
         "Sin marcar = bloqueado en esa máquina. La máquina del host siempre tiene permiso aquí, sin importar esta matriz.",
+      // etiqueta de versão (barra de status dos dois apps)
+      "Perth version": "Versión de Perth",
     },
 
     fr: {
@@ -1579,6 +1583,8 @@ window.PerthI18n = (function () {
       "check/uncheck this machine": "cocher/décocher cette machine",
       "Unchecked = blocked on that machine. The host machine is always allowed here, no matter this matrix.":
         "Décoché = bloqué sur cette machine. La machine hôte est toujours autorisée ici, quelle que soit cette matrice.",
+      // etiqueta de versão (barra de status dos dois apps)
+      "Perth version": "Version de Perth",
     },
 
     zh: {
@@ -2090,6 +2096,8 @@ window.PerthI18n = (function () {
       "check/uncheck this machine": "勾选/取消此设备",
       "Unchecked = blocked on that machine. The host machine is always allowed here, no matter this matrix.":
         "未勾选 = 在该设备上被阻止。无论此矩阵如何设置，主机设备始终被允许。",
+      // etiqueta de versão (barra de status dos dois apps)
+      "Perth version": "Perth 版本",
     },
   };
 

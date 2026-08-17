@@ -5,6 +5,22 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.2] - 2026-08-17
+
+### Added
+- **The version, on the right end of the status bar.** Which Perth is running
+  was the REPL banner's answer, and whoever opened the link never saw it — yet
+  that is exactly the question that comes up when something is not where it was
+  expected to be ("does this one have marked months yet?"). A tag icon with the
+  number at the end of the footer, in both tools, dimmed like the rest of the
+  bar and lighting up on hover: true all the time, urgent never.
+- The answer comes from the **server**, through `/api/apps` — the route that
+  already describes what is up in this process — and not from the static file:
+  the `app.js` the browser holds may come from a service worker's cache of an
+  earlier version, and a label that lies about the version is worse than no
+  label. Asked once, at boot; if the answer does not arrive, the tag simply
+  does not appear.
+
 ## [0.9.1] - 2026-08-16
 
 ### Fixed

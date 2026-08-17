@@ -263,9 +263,32 @@ console.log("chrome compartilhado");
           p + " aponta o GitHub para o repositório");
     check(s.includes('rel="manifest"'), p + " tem manifest PWA");
   }
+  // etiqueta de versão: mesma marcação, mesmo lugar (fim da barra de status)
+  // e mesmo CSS nas duas ferramentas — e escondida enquanto o servidor não
+  // disse a versão, para nunca aparecer um ícone de etiqueta sem número
+  for (const p of ["frontend/index.html", "frontend/kanban/index.html"]) {
+    const w = loadPage(p);
+    const tag = w.document.querySelector("#version-tag");
+    check(tag !== null, p + " tem a etiqueta de versão");
+    check(tag.closest("footer.statusbar") !== null,
+          p + ": a etiqueta está na barra de status");
+    check(tag.parentElement.lastElementChild === tag,
+          p + ": e é o último elemento dela (ponta direita)");
+    check(tag.hasAttribute("hidden"), p + ": nasce escondida");
+    check(tag.querySelector("svg") !== null && tag.querySelector("#version-num"),
+          p + ": ícone de etiqueta + número");
+    w.PerthI18n.set("pt");
+    check(tag.getAttribute("title") === "Versão do Perth",
+          p + ": tooltip traduzido");
+  }
+
   const ui = read("frontend/shared/ui.css");
   check((ui.match(/\.menubar \{/g) || []).length === 1,
         "menubar definida uma única vez (fonte de verdade)");
+  check((ui.match(/^\.version-tag \{/gm) || []).length === 1 &&
+        !read("frontend/style.css").includes(".version-tag {") &&
+        !read("frontend/kanban/style.css").includes(".version-tag {"),
+        "version-tag vive só no shared (uma etiqueta, dois apps)");
   check((ui.match(/^\.board-chip \{/gm) || []).length === 1 &&
         !read("frontend/kanban/style.css").includes(".board-chip {"),
         "board-chip vive só no shared (chip unificado)");

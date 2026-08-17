@@ -2679,6 +2679,24 @@ end
         end
     end
 
+    @testset "versão na etiqueta da barra de status (/api/apps)" begin
+        # A etiqueta do rodapé pergunta a versão ao SERVIDOR: o navegador só
+        # tem arquivos estáticos, que um service worker pode servir de uma
+        # versão anterior. As duas pontas respondem pela mesma rota, e cada
+        # uma tem seu próprio despacho — o kanban não passa pelo router do
+        # gantt, então esquecer o campo numa delas não aparece na outra.
+        router = Perth._build_router()
+        gantt = JSON3.read(String(router(HTTP.Request("GET", "/api/apps")).body))
+        @test gantt["app"] == "gantt"
+        @test haskey(gantt, "version")
+        @test gantt["version"] == string(pkgversion(Perth))
+
+        kb = JSON3.read(String(Perth._kanban_static(
+            HTTP.Request("GET", "/api/apps"), "127.0.0.1").body))
+        @test kb["app"] == "kanban"
+        @test kb["version"] == string(pkgversion(Perth))
+    end
+
     @testset "gantt: chat geral" begin
         # unidade: _hub_chat_commit! num hub isolado (não o GANTT_HUB global)
         hub = Perth.PresenceHub()

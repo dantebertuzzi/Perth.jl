@@ -383,8 +383,12 @@ end
 # O frontend monta a URL com o hostname que o navegador já usa, então
 # funciona igualmente em localhost e via IP da rede (share).
 function _get_apps(::HTTP.Request)
+    # `version` viaja aqui, e não numa rota só dela: esta já é a resposta que
+    # diz o que está de pé neste processo, e a etiqueta da barra de status
+    # pergunta uma vez, no boot, junto com o resto.
     _json((; app = "gantt", gantt = PORT[],
-           kanban = KANBAN_SERVER[] === nothing ? nothing : KANBAN_PORT[]))
+           kanban = KANBAN_SERVER[] === nothing ? nothing : KANBAN_PORT[],
+           version = _version()))
 end
 
 # Sobe o kanban a partir do botão da UI, se ainda não estiver rodando.
