@@ -1912,8 +1912,8 @@ console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
              duasTeclas: linhas.find((l) => l.textContent.includes("Ctrl+Y"))
                                .querySelectorAll("kbd").length,
              fechar: document.querySelector("#perth-overlay .modal-actions button").textContent };`);
-  check(r.titulo === "Atalhos de teclado" && r.linhas === 23,
-        "gantt: Atalhos abre um overlay com as 23 teclas");
+  check(r.titulo === "Atalhos de teclado" && r.linhas === 24,
+        "gantt: Atalhos abre um overlay com as 24 teclas");
   check(r.primeira === "N" && r.descricao === "nova tarefa",
         "gantt: tecla de um lado, descrição traduzida do outro");
   check(r.duasTeclas === 2, "gantt: \"Ctrl+Shift+Z / Ctrl+Y\" vira dois <kbd>, não um");
@@ -3727,6 +3727,402 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("gantt · parada e gargalo");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Duas naturezas diferentes: PARADA é declarada (nada no plano revela que o
+  // alvará atrasou) e GARGALO é derivado (o motor já sabe folga e fan-out).
+  const seed = `
+    const mk = (id, nome, extra) => Object.assign({
+      id, name: nome, start: "2026-04-06", duration: 5, progress: 0,
+      dependencies: [], color: "#4063d8", notes: "", milestone: false,
+      parent: "", cost: 0, effort: 0, status: "", assignee: "",
+      baseline_start: null, baseline_duration: 0, deadline: null,
+      pinned: false }, extra || {});
+    state.current = { id: "pst", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "Alvará", { status: "hold" }),
+      mk("b", "Fundação"),
+      mk("c", "Telhado") ] };
+    state.cpm = { cycle: false, finish: "2026-04-20", calendar: "", pert: null,
+                  nonworking: new Set(),
+                  byId: new Map([
+                    ["a", { id: "a", slack_days: 3, critical: false, dependents: 0, bottleneck: false }],
+                    ["b", { id: "b", slack_days: 0, critical: true, dependents: 3, bottleneck: true }],
+                    ["c", { id: "c", slack_days: 0, critical: true, dependents: 1, bottleneck: false }]]) };
+    state.highlight = null; state.search = "";
+    state.wbsClosed.clear(); state.lanesClosed.clear();
+    clearSelection();
+    renderAll();`;
+
+  // ------------------------------------------------------------- parada
+  // a barra MANTÉM a cor: cor é identidade (de quem é a tarefa), estado é
+  // decoração por cima — a mesma gramática do caminho crítico e da data fixa
+  let r = runIn(`${seed}
+    const barra = document.querySelector('#chart .bar[data-id="a"]');
+    const hach = document.querySelector('#chart .bar-hold');
+    return { cor: barra.getAttribute("fill"),
+             hachura: hach ? hach.getAttribute("fill") : null,
+             mesmaGeometria: hach && hach.getAttribute("width") === barra.getAttribute("width") };`);
+  check(r.cor === "#4063d8", "gantt: a tarefa parada mantém a cor dela");
+  check(r.hachura === "url(#hachura-parada)" && r.mesmaGeometria,
+        "gantt: e ganha uma hachura por cima, do tamanho da barra");
+
+  r = runIn(`${seed} return document.querySelectorAll("#chart .bar-hold").length;`);
+  check(r === 1, "gantt: só a parada recebe a hachura");
+
+  // um <defs> por render, não um <pattern> por barra
+  r = runIn(`${seed} return { defs: document.querySelectorAll("#chart defs").length,
+    padroes: document.querySelectorAll("#chart pattern").length };`);
+  check(r.defs === 1 && r.padroes === 1,
+        "gantt: o padrão da hachura é definido uma vez, não por barra");
+
+  // a linha da tabela também marca — resumo e marco não têm barra onde hachurar
+  r = runIn(`${seed} return [...document.querySelectorAll(".tt-row")]
+    .map((x) => x.dataset.id + ":" + (x.querySelector(".hold-mark") ? "‖" : "-"));`);
+  check(r.join("|") === "a:‖|b:-|c:-", "gantt: e a linha da tabela leva a marca");
+
+  // filtrar por parada
+  r = runIn(`${seed} state.highlight = { kind: "status", value: "hold" }; renderAll();
+    return [...document.querySelectorAll(".tt-row")]
+      .map((x) => x.dataset.id + ":" + (x.className.includes("dim") ? "off" : "on"));`);
+  check(r.join("|") === "a:on|b:off|c:off", "gantt: o destaque 'parada' acende só ela");
+
+  // ------------------------------------------------------------ gargalo
+  // vem PRONTO do motor: o cliente não recalcula folga nem fan-out
+  r = runIn(`${seed} state.highlight = { kind: "status", value: "bottleneck" }; renderAll();
+    return [...document.querySelectorAll(".tt-row")]
+      .map((x) => x.dataset.id + ":" + (x.className.includes("dim") ? "off" : "on"));`);
+  check(r.join("|") === "a:off|b:on|c:off",
+        "gantt: o gargalo acende só a que o motor apontou");
+  check(runIn(`${seed} return typeof window.calculaGargalo;`) === "undefined",
+        "gantt: e não há uma segunda conta de gargalo aqui");
+
+  // os dois entram no seletor só quando existem — item que nunca casa é ruído
+  r = runIn(`${seed} return [...document.querySelectorAll("#highlight-select option")]
+    .map((o) => o.value).filter((v) => v === "status:hold" || v === "status:bottleneck");`);
+  check(r.join() === "status:hold,status:bottleneck",
+        "gantt: as duas entram no seletor quando há alguma");
+
+  r = runIn(`${seed}
+    state.current.tasks.forEach((t) => { t.status = ""; });
+    state.cpm.byId.forEach((i) => { i.bottleneck = false; });
+    renderAll();
+    return [...document.querySelectorAll("#highlight-select option")]
+      .map((o) => o.value).filter((v) => v === "status:hold" || v === "status:bottleneck");`);
+  check(r.length === 0, "gantt: e somem do seletor quando não há nenhuma");
+
+  // ------------------------------------------------------------- o modal
+  r = runIn(`${seed} openModal("a");
+    const v = document.getElementById("f-status").value;
+    closeModal(false);
+    return v;`);
+  check(r === "hold", "gantt: o modal abre com a situação atual");
+
+  r = runIn(`${seed} openModal("b");
+    document.getElementById("f-status").value = "hold";
+    submitModal();
+    return taskById("b").status;`);
+  check(r === "hold", "gantt: e salva a que for escolhida");
+
+  r = runIn(`${seed} openModal("a");
+    document.getElementById("f-status").value = "";
+    submitModal();
+    return { status: taskById("a").status,
+             hachuras: document.querySelectorAll("#chart .bar-hold").length };`);
+  check(r.status === "" && r.hachuras === 0,
+        "gantt: voltar para Normal tira a hachura da tela");
+
+  close();
+}
+
+console.log("gantt · progresso sem abrir a tarefa");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // progress é o campo que mais muda — é o que uma reunião semanal É — e era
+  // o único sem gesto: data se arrasta na barra, ordem na linha, ligação no
+  // ponto, e a porcentagem exigia o modal oito vezes seguidas.
+  const seed = `
+    const mk = (id, nome, inicio, extra) => Object.assign({
+      id, name: nome, start: inicio, duration: 10, progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0, effort: 0,
+      assignee: "", baseline_start: null, baseline_duration: 0,
+      deadline: null, pinned: false }, extra || {});
+    state.current = { id: "pp", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "A", "2026-04-06", { progress: 40 }),
+      mk("b", "B", "2026-04-20", { progress: 10 }),
+      mk("f", "Fase", "2026-04-06"),
+      mk("f1", "Filha", "2026-04-06", { parent: "f", progress: 30 }) ] };
+    state.cpm = { cycle: false, finish: "2026-05-01", calendar: "", pert: null,
+                  byId: new Map(), nonworking: new Set() };
+    state.highlight = null; state.search = "";
+    state.wbsClosed.clear(); state.lanesClosed.clear();
+    clearSelection();
+    state.undoStack = []; state.redoStack = [];
+    window.__salvo = 0; markDirty = () => { window.__salvo++; };
+    renderAll();`;
+
+  const punho = (id) => `document.querySelector('#chart .prog-grip[data-id="${id}"]')`;
+
+  // ---------------------------------------------------------- o punho
+  let r = runIn(`${seed} return ${punho("a")} ? 1 : 0;`);
+  check(r === 0, "gantt: sem seleção não há punho de progresso na tela");
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); return ${punho("a")} ? 1 : 0;`);
+  check(r === 1, "gantt: ele aparece na barra selecionada, como os pontos de ligar");
+
+  // resumo não: o progresso dele é a média dos filhos, recalculada a cada render
+  r = runIn(`${seed} selectOnly("f"); renderChart(); return ${punho("f")} ? 1 : 0;`);
+  check(r === 0, "gantt: num resumo ele se recusa a aparecer");
+
+  // ele fica na borda do pedaço cheio
+  r = runIn(`${seed} selectOnly("a"); renderChart();
+    const g = ${punho("a")};
+    const barra = document.querySelector('#chart .bar[data-id="a"]');
+    const x = Number(barra.getAttribute("x")), w = Number(barra.getAttribute("width"));
+    return Math.round(((Number(g.getAttribute("x")) + 3) - x) / w * 100);`);
+  check(r === 40, `gantt: e fica na borda do preenchimento (${r}%)`);
+
+  // nos últimos por cento ele para antes da alça de redimensionar, que mora
+  // nos últimos 8px — cobrir a alça seria trocar um gesto por outro
+  r = runIn(`${seed} taskById("a").progress = 100; selectOnly("a"); renderChart();
+    const g = ${punho("a")};
+    const barra = document.querySelector('#chart .bar[data-id="a"]');
+    const fim = Number(barra.getAttribute("x")) + Number(barra.getAttribute("width"));
+    return fim - (Number(g.getAttribute("x")) + 3);`);
+  check(r === 9, "gantt: a 100% ele encosta a 9px do fim, sem cobrir a alça de esticar");
+
+  // arrastar: pixels viram porcentagem, com passo de 5
+  const arrastar = (id, fracao) => `{
+    const barra = document.querySelector('#chart .bar[data-id="${id}"]');
+    const x = Number(barra.getAttribute("x")), w = Number(barra.getAttribute("width"));
+    const g = ${punho(id)};
+    g.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 0, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: x + w * ${fracao}, clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+  }`;
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", 0.75)}
+    return { pct: taskById("a").progress,
+             undo: state.undoStack.length, salvo: window.__salvo };`);
+  check(r.pct === 75, `gantt: arrastar até três quartos da barra dá 75% (${r.pct})`);
+  check(r.undo === 1 && r.salvo === 1, "gantt: e isso é um desfazer e uma gravação");
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", 0.63)}
+    return taskById("a").progress;`);
+  check(r === 65, `gantt: o passo é de 5 — ninguém relata 63% numa reunião (${r})`);
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", 1.4)}
+    return taskById("a").progress;`);
+  check(r === 100, "gantt: arrastar além da ponta chega a 100, e para lá");
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", -0.3)}
+    return taskById("a").progress;`);
+  check(r === 0, "gantt: e antes do começo, a zero");
+
+  // o arrasto do punho não é o arrasto da barra: a data não pode andar junto
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", 0.75)}
+    return taskById("a").start;`);
+  check(r === "2026-04-06", "gantt: e a data da tarefa não se mexe junto");
+
+  // ---------------------------------------------------------- o teclado
+  const tecla = (code, mods = {}) => `document.dispatchEvent(new KeyboardEvent("keydown",
+    Object.assign({ code: "${code}", key: "x", bubbles: true, cancelable: true }, ${JSON.stringify(mods)})));`;
+
+  r = runIn(`${seed} selectOnly("a"); ${tecla("Digit7", { shiftKey: true })}
+    return taskById("a").progress;`);
+  check(r === 70, "gantt: Shift+7 põe a selecionada em 70%");
+
+  r = runIn(`${seed} selectOnly("a"); ${tecla("Digit0", { shiftKey: true })}
+    return taskById("a").progress;`);
+  check(r === 0, "gantt: e Shift+0 zera");
+
+  // na seleção INTEIRA, num desfazer só
+  r = runIn(`${seed} setSelection(["a", "b"], "a"); ${tecla("Digit5", { shiftKey: true })}
+    const t = Object.fromEntries(state.current.tasks.map((x) => [x.id, x.progress]));
+    return { a: t.a, b: t.b, undo: state.undoStack.length };`);
+  check(r.a === 50 && r.b === 50 && r.undo === 1,
+        "gantt: vale para a seleção inteira, num desfazer só");
+
+  // resumo na seleção não recebe: o valor dele vem dos filhos
+  r = runIn(`${seed} setSelection(["f", "f1"], "f"); ${tecla("Digit9", { shiftKey: true })}
+    const t = Object.fromEntries(state.current.tasks.map((x) => [x.id, x.progress]));
+    return { filha: t.f1, fase: t.f };`);
+  check(r.filha === 90 && r.fase === 90,
+        "gantt: a filha recebe, e o resumo passa a valer a média dela (não o que digitei)");
+
+  // sem Shift, o dígito continua sendo o zoom — 1..4 são o zoom desde sempre
+  r = runIn(`${seed} selectOnly("a");
+    document.dispatchEvent(new KeyboardEvent("keydown",
+      { key: "3", code: "Digit3", bubbles: true, cancelable: true }));
+    return { zoom: state.zoom, pct: taskById("a").progress };`);
+  check(r.zoom === "month" && r.pct === 40,
+        "gantt: sem Shift o dígito segue sendo o zoom, e o progresso não muda");
+
+  // sem seleção não faz nada
+  r = runIn(`${seed} clearSelection(); ${tecla("Digit9", { shiftKey: true })}
+    return { pct: taskById("a").progress, undo: state.undoStack.length };`);
+  check(r.pct === 40 && r.undo === 0, "gantt: sem nada selecionado, Shift+dígito não faz nada");
+
+  close();
+}
+
+console.log("gantt · duas máquinas gravando: mesclar, não descartar");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // O que havia era um DESCARTE: o cliente jogava fora tudo o que você tinha
+  // feito e recarregava. Você mexeu na tarefa A, o colega na B, e a sua
+  // sumia — sem as duas se cruzarem em lugar nenhum.
+  const mk = (id, nome, inicio, extra) => Object.assign({
+    id, name: nome, start: inicio, duration: 3, progress: 0, dependencies: [],
+    color: "", notes: "", milestone: false, parent: "", cost: 0, effort: 0,
+    assignee: "", baseline_start: null, baseline_duration: 0,
+    deadline: null, pinned: false }, extra || {});
+  const base = {
+    id: "pm", name: "Plano", calendar: "", people: [], bands: [], markers: [],
+    month_marks: [], file_path: "", baseline_at: null,
+    updated_at: "2026-04-06T10:00:00",
+    tasks: [mk("a", "A", "2026-04-06"), mk("b", "B", "2026-04-10"),
+            mk("c", "C", "2026-04-14")] };
+
+  const cenario = (meu, deles) => `
+    state.current = ${JSON.stringify(base)};
+    noteBase();                                  // base = carimbo + conteúdo
+    (${meu})(state.current);                     // o que EU faço aqui
+    const doServidor = ${JSON.stringify(base)};
+    doServidor.updated_at = "2026-04-06T10:00:05";
+    (${deles})(doServidor);                      // o que a outra máquina gravou
+    const r = mesclaConcorrente(state.baseSnap, state.current, doServidor);
+    return { tarefas: r.projeto.tasks.map((t) => t.id + ":" + t.name + ":" + t.start),
+             conflitos: r.conflitos, nome: r.projeto.name };`;
+
+  const tocaA = `(p) => { p.tasks[0].start = "2026-04-07"; }`;
+  const tocaB = `(p) => { p.tasks[1].name = "B do colega"; }`;
+  const nada = `(p) => {}`;
+
+  // o caso que doía: tarefas diferentes, ninguém perde nada
+  let r = runIn(cenario(tocaA, tocaB));
+  check(r.tarefas.join("|") === "a:A:2026-04-07|b:B do colega:2026-04-10|c:C:2026-04-14",
+        "gantt: eu mexi em A, o colega em B — as DUAS edições ficam");
+  check(r.conflitos.length === 0, "gantt: e isso não é conflito nenhum");
+
+  // mesma tarefa: fica a dele, e o aviso diz qual
+  r = runIn(cenario(tocaA, `(p) => { p.tasks[0].start = "2026-04-09"; }`));
+  check(r.tarefas[0] === "a:A:2026-04-09",
+        "gantt: na MESMA tarefa fica a versão dele — sobrescrever alheio em silêncio é pior");
+  check(r.conflitos.join() === "A", "gantt: e o aviso nomeia a tarefa que colidiu");
+
+  // tarefa que só eu criei sobrevive
+  r = runIn(cenario(`(p) => { p.tasks.push(${JSON.stringify(mk("d", "Minha nova", "2026-04-20"))}); }`, tocaB));
+  check(/d:Minha nova/.test(r.tarefas.join("|")),
+        "gantt: tarefa que eu acabei de criar não some na mesclagem");
+
+  // tarefa que o colega criou chega
+  r = runIn(cenario(tocaA, `(p) => { p.tasks.push(${JSON.stringify(mk("e", "Dele", "2026-04-22"))}); }`));
+  check(/e:Dele/.test(r.tarefas.join("|")), "gantt: e a que ele criou chega junto");
+
+  // eu apaguei, ele não tocou: some
+  r = runIn(cenario(`(p) => { p.tasks = p.tasks.filter((t) => t.id !== "c"); }`, tocaB));
+  check(!/c:C/.test(r.tarefas.join("|")),
+        "gantt: tarefa que EU apaguei continua apagada depois de mesclar");
+
+  // ele apagou, eu não toquei: some também
+  r = runIn(cenario(nada, `(p) => { p.tasks = p.tasks.filter((t) => t.id !== "c"); }`));
+  check(!/c:C/.test(r.tarefas.join("|")), "gantt: e a que ELE apagou some daqui");
+
+  // campo do projeto (não-tarefa) segue a mesma regra
+  r = runIn(cenario(`(p) => { p.name = "Meu nome"; }`, tocaB));
+  check(r.nome === "Meu nome" && r.conflitos.length === 0,
+        "gantt: o nome do projeto que só eu mudei fica meu");
+  r = runIn(cenario(`(p) => { p.name = "Meu nome"; }`, `(p) => { p.name = "Nome dele"; }`));
+  check(r.nome === "Nome dele" && r.conflitos.join() === "name",
+        "gantt: e se os dois renomearam, fica o dele, nomeado no aviso");
+
+  // ------------------------------------------------- o caminho do 409
+  // sem corpo aproveitável não há três vias: recarregar é o único honesto
+  r = runIn(`
+    state.current = ${JSON.stringify(base)}; noteBase();
+    window.__recarregou = 0;
+    loadProjects = async () => { window.__recarregou++; };
+    resolveConflito(null);
+    return 1;`);
+  await new Promise((r2) => setTimeout(r2, 0));
+  r = runIn(`return window.__recarregou;`);
+  check(r === 1, "gantt: 409 sem corpo cai no recarregar de antes, que é o honesto ali");
+
+  close();
+}
+
+console.log("gantt · a curva-S diz de que régua está falando");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Payload como _scurve devolve: duas séries independentes, cada uma numa
+  // unidade só. A antiga era uma, com peso "custo se houver, senão
+  // pessoa-dias" — e somava R$ 10.000 com 5 pessoa-dias no mesmo número.
+  //
+  // showSCurve é assíncrona e runIn não: abre-se numa chamada, cede-se o
+  // turno, e lê-se o DOM na seguinte (o api stubado já resolve na hora).
+  const abrir = (has_cost) => `
+    state.current = { id: "psc", name: "P", people: [], bands: [], markers: [], tasks: [] };
+    api = async () => ({
+      dates: ["2026-04-06", "2026-04-07", "2026-04-08"],
+      today: "2026-04-07",
+      work: { planned: [16, 32, 48], actual: [4, 8], total: 48,
+              planned_today: 32, earned_today: 8 },
+      cost: { planned: [3333, 6666, 10000], actual: [5000, 10000], total: 10000,
+              planned_today: 6666, earned_today: 10000 },
+      has_cost: ${has_cost} });
+    showSCurve();
+    return 1;`;
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  // com custo informado, as duas réguas são oferecidas — e trabalho é a que
+  // abre, porque existe sempre
+  runIn(abrir(true)); await tick();
+  let r = runIn(`
+    const bs = [...document.querySelectorAll("#perth-overlay [data-unit]")];
+    return { botoes: bs.map((b) => b.dataset.unit),
+             ligado: bs.find((b) => b.classList.contains("on"))?.dataset.unit,
+             legenda: document.querySelector("#perth-overlay .sc-legend").textContent };`);
+  check(r.botoes.join() === "work,cost", "gantt: as duas réguas viram dois botões");
+  check(r.ligado === "work", "gantt: e trabalho é a que abre — ela existe sempre");
+  check(/48\.0/.test(r.legenda) && !/10000/.test(r.legenda),
+        "gantt: os números são os do trabalho, não os do custo");
+  check(/trabalho|work/.test(r.legenda),
+        "gantt: e o total vem com o nome da régua (era 10005 sem dizer de quê)");
+
+  // trocar de régua troca a curva E os números
+  r = runIn(`
+    document.querySelector('#perth-overlay [data-unit="cost"]').click();
+    return { legenda: document.querySelector("#perth-overlay .sc-legend").textContent,
+             ligado: document.querySelector("#perth-overlay [data-unit].on").dataset.unit,
+             pontos: document.querySelector("#perth-overlay .sc-planned")
+                       .getAttribute("points") };`);
+  check(r.ligado === "cost" && /10000\.0/.test(r.legenda),
+        "gantt: clicar em custo mostra os números do custo");
+  check(/custo|cost/.test(r.legenda), "gantt: e o rótulo acompanha");
+  check(r.pontos.split(" ").length === 3, "gantt: a curva redesenha com a série nova");
+
+  // sem custo nenhum, não se oferece uma curva reta no zero
+  runIn(abrir(false)); await tick();
+  r = runIn(`
+    return { botoes: document.querySelectorAll("#perth-overlay [data-unit]").length,
+             legenda: document.querySelector("#perth-overlay .sc-legend").textContent };`);
+  check(r.botoes === 0, "gantt: sem custo informado, o seletor de régua não aparece");
+  check(/48\.0/.test(r.legenda), "gantt: e a curva de trabalho continua lá");
+
+  close();
+}
+
 console.log("gantt · o chip do projeto tem a largura do nome que ele mostra");
 {
   // Um <select> se dimensiona pela opção mais LARGA (a caixa precisa caber a
@@ -3928,7 +4324,7 @@ console.log("gantt · o navegador conhece o calendário de dias úteis");
   // arrastar para um sábado: o motor empurra para segunda ao salvar, então a
   // barra tem de mostrar a segunda desde já
   r = runIn(`${seed("Brazil")} ${arrastar("a", 5, "bar")}
-    return state.current.tasks[0].start;`);
+    return taskById("a").start;`);
   check(r === "2026-03-09",
         `gantt: soltar num sábado encosta na segunda, como o motor fará (${r})`);
 
@@ -3947,7 +4343,7 @@ console.log("gantt · o navegador conhece o calendário de dias úteis");
 
   // sem calendário, o gesto é o de sempre
   r = runIn(`${seed("")} ${arrastar("a", 5, "bar")}
-    return state.current.tasks[0].start;`);
+    return taskById("a").start;`);
   check(r === "2026-03-07", "gantt: sem calendário, solta onde soltou");
 
   r = runIn(`${seed("")} ${arrastar("a", 7, "bar-handle")}

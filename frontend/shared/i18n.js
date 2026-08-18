@@ -38,6 +38,27 @@ window.PerthI18n = (function () {
 
   const STR = {
     pt: {
+      "A task with zero slack that more than one other task is waiting on. The critical path already tells you a task cannot slip; the bottleneck tells you where the chain becomes a funnel, and that is the one worth protecting first. It is derived from the plan, never typed: a hand-set flag would be wrong the moment somebody drags a bar.":
+        "Tarefa com folga zero que mais de uma outra está esperando. O caminho crítico já diz que a tarefa não pode atrasar; o gargalo diz onde a corrente vira funil, e é essa que vale proteger primeiro. É derivado do plano, nunca digitado: uma marca posta à mão ficaria errada no instante em que alguém arrasta uma barra.",
+      "Work stopped and expected to resume — a state nothing in the plan can reveal, so it is the one thing you declare rather than Perth deducing. It changes no arithmetic: the task keeps its dates, its load and its place on the critical path. What it stops is the reader's assumption that a bar on the chart means somebody is on it.":
+        "O trabalho parou e deve voltar — um estado que nada no plano revela, e por isso o único que se declara em vez de o Perth deduzir. Não muda aritmética nenhuma: a tarefa mantém as datas, a carga e o lugar no caminho crítico. O que ele interrompe é a suposição de quem lê de que uma barra no gráfico significa alguém trabalhando nela.",
+      // situação declarada e gargalo derivado
+      "Status": "Situação",
+      "Normal": "Normal",
+      "On hold": "Parada",
+      "Bottleneck": "Gargalo",
+      "A state only you can know: work stopped and expected to resume. It changes nothing in the schedule — the task keeps its dates, its load and its place on the critical path.":
+        "Um estado que só você sabe: o trabalho parou e deve voltar. Não muda nada no cronograma — a tarefa mantém as datas, a carga e o lugar no caminho crítico.",
+      "progress in tenths, on the whole selection (100% by dragging the fill)":
+        "progresso em décimos, na seleção inteira (100% arrastando o preenchimento)",
+      // mesclagem quando duas máquinas gravam o mesmo projeto
+      "Merged with the change from the other machine":
+        "Mesclado com a mudança da outra máquina",
+      "Merged with the other machine — theirs kept in":
+        "Mesclado com a outra máquina — ficou a versão dela em",
+      // curva-S: as duas réguas
+      "work": "trabalho",
+      "cost": "custo",
       // capacidade por pessoa e esforço da tarefa
       "Capacity per day": "Capacidade por dia",
       "Effort": "Esforço",
@@ -610,6 +631,27 @@ window.PerthI18n = (function () {
     },
 
     es: {
+      "A task with zero slack that more than one other task is waiting on. The critical path already tells you a task cannot slip; the bottleneck tells you where the chain becomes a funnel, and that is the one worth protecting first. It is derived from the plan, never typed: a hand-set flag would be wrong the moment somebody drags a bar.":
+        "Tarea con holgura cero que más de una otra está esperando. La ruta crítica ya dice que la tarea no puede atrasarse; el cuello de botella dice dónde la cadena se vuelve embudo, y esa es la que conviene proteger primero. Se deriva del plan, nunca se escribe: una marca puesta a mano quedaría mal en cuanto alguien arrastre una barra.",
+      "Work stopped and expected to resume — a state nothing in the plan can reveal, so it is the one thing you declare rather than Perth deducing. It changes no arithmetic: the task keeps its dates, its load and its place on the critical path. What it stops is the reader's assumption that a bar on the chart means somebody is on it.":
+        "El trabajo se detuvo y se espera que vuelva — un estado que nada en el plan revela, y por eso el único que se declara en vez de deducirlo Perth. No cambia ninguna aritmética: la tarea conserva sus fechas, su carga y su lugar en la ruta crítica. Lo que interrumpe es la suposición de quien lee de que una barra significa alguien trabajando en ella.",
+      // situação declarada e gargalo derivado
+      "Status": "Situación",
+      "Normal": "Normal",
+      "On hold": "En pausa",
+      "Bottleneck": "Cuello de botella",
+      "A state only you can know: work stopped and expected to resume. It changes nothing in the schedule — the task keeps its dates, its load and its place on the critical path.":
+        "Un estado que solo usted conoce: el trabajo se detuvo y se espera que vuelva. No cambia nada del cronograma — la tarea conserva sus fechas, su carga y su lugar en la ruta crítica.",
+      "progress in tenths, on the whole selection (100% by dragging the fill)":
+        "progreso en décimos, en toda la selección (100% arrastrando el relleno)",
+      // mesclagem quando duas máquinas gravam o mesmo projeto
+      "Merged with the change from the other machine":
+        "Fusionado con el cambio de la otra máquina",
+      "Merged with the other machine — theirs kept in":
+        "Fusionado con la otra máquina — se mantuvo la versión de ella en",
+      // curva-S: as duas réguas
+      "work": "trabajo",
+      "cost": "costo",
       // capacidad por persona y esfuerzo de la tarea
       "Capacity per day": "Capacidad por día",
       "Effort": "Esfuerzo",
@@ -1174,6 +1216,27 @@ window.PerthI18n = (function () {
     },
 
     fr: {
+      "A task with zero slack that more than one other task is waiting on. The critical path already tells you a task cannot slip; the bottleneck tells you where the chain becomes a funnel, and that is the one worth protecting first. It is derived from the plan, never typed: a hand-set flag would be wrong the moment somebody drags a bar.":
+        "Tâche à marge nulle que plus d'une autre attend. Le chemin critique dit déjà qu'elle ne peut pas glisser ; le goulot dit où la chaîne devient entonnoir, et c'est celle-là qu'il faut protéger d'abord. C'est dérivé du plan, jamais saisi : un indicateur posé à la main serait faux dès que quelqu'un déplace une barre.",
+      "Work stopped and expected to resume — a state nothing in the plan can reveal, so it is the one thing you declare rather than Perth deducing. It changes no arithmetic: the task keeps its dates, its load and its place on the critical path. What it stops is the reader's assumption that a bar on the chart means somebody is on it.":
+        "Le travail s'est arrêté et doit reprendre — un état que rien dans le plan ne révèle, et donc le seul qui se déclare au lieu que Perth le déduise. Cela ne change aucun calcul : la tâche garde ses dates, sa charge et sa place sur le chemin critique. Ce qu'il interrompt, c'est l'hypothèse du lecteur qu'une barre veut dire quelqu'un dessus.",
+      // situação declarada e gargalo derivado
+      "Status": "Situation",
+      "Normal": "Normal",
+      "On hold": "En pause",
+      "Bottleneck": "Goulot d'étranglement",
+      "A state only you can know: work stopped and expected to resume. It changes nothing in the schedule — the task keeps its dates, its load and its place on the critical path.":
+        "Un état que vous seul connaissez : le travail s'est arrêté et doit reprendre. Cela ne change rien au planning — la tâche garde ses dates, sa charge et sa place sur le chemin critique.",
+      "progress in tenths, on the whole selection (100% by dragging the fill)":
+        "avancement par dixièmes, sur toute la sélection (100% en tirant le remplissage)",
+      // mesclagem quando duas máquinas gravam o mesmo projeto
+      "Merged with the change from the other machine":
+        "Fusionné avec la modification de l'autre machine",
+      "Merged with the other machine — theirs kept in":
+        "Fusionné avec l'autre machine — sa version conservée sur",
+      // curva-S: as duas réguas
+      "work": "travail",
+      "cost": "coût",
       // capacité par personne et charge de la tâche
       "Capacity per day": "Capacité par jour",
       "Effort": "Charge",
@@ -1740,6 +1803,27 @@ window.PerthI18n = (function () {
     },
 
     zh: {
+      "A task with zero slack that more than one other task is waiting on. The critical path already tells you a task cannot slip; the bottleneck tells you where the chain becomes a funnel, and that is the one worth protecting first. It is derived from the plan, never typed: a hand-set flag would be wrong the moment somebody drags a bar.":
+        "一个总时差为零、并且被不止一个其他任务等待的任务。关键路径已经告诉你它不能拖延；瓶颈告诉你链条在哪里变成漏斗，那才是最先值得保护的。它由计划推导而来，从不手工填写：手工标记会在有人拖动一根条形图的瞬间变错。",
+      "Work stopped and expected to resume — a state nothing in the plan can reveal, so it is the one thing you declare rather than Perth deducing. It changes no arithmetic: the task keeps its dates, its load and its place on the critical path. What it stops is the reader's assumption that a bar on the chart means somebody is on it.":
+        "工作停了，预计还会继续 — 这是计划里任何东西都无法揭示的状态，因此也是唯一需要声明而非由 Perth 推导的。它不改变任何计算：任务保留它的日期、负荷和在关键路径上的位置。它打断的是读者的假设：图上有一根条，就有人在做。",
+      // situação declarada e gargalo derivado
+      "Status": "状态",
+      "Normal": "正常",
+      "On hold": "已暂停",
+      "Bottleneck": "瓶颈",
+      "A state only you can know: work stopped and expected to resume. It changes nothing in the schedule — the task keeps its dates, its load and its place on the critical path.":
+        "只有你才知道的状态：工作停了，预计还会继续。它不改变任何排期 — 任务保留它的日期、负荷和在关键路径上的位置。",
+      "progress in tenths, on the whole selection (100% by dragging the fill)":
+        "以十分之一设置进度，作用于整个选择（拖动填充条到头即 100%）",
+      // mesclagem quando duas máquinas gravam o mesmo projeto
+      "Merged with the change from the other machine":
+        "已与另一台机器的改动合并",
+      "Merged with the other machine — theirs kept in":
+        "已与另一台机器合并 — 以下保留了对方的版本",
+      // curva-S: as duas réguas
+      "work": "工作量",
+      "cost": "成本",
       // 每人产能与任务工作量
       "Capacity per day": "每日产能",
       "Effort": "工作量",

@@ -41,6 +41,18 @@ A single task (or milestone) on the Gantt chart.
   It never moves the task — it caps the *late finish* in the CPM
   backward pass, so busting it turns the slack of this task and of
   everything feeding it negative. `nothing` = no commitment.
+- `status::String`: a state only a person can know, from a **closed**
+  vocabulary — `""` (the normal case) or `"hold"`, work stopped and expected
+  to resume. Every other state Perth shows (not started, in progress, done,
+  overdue, slipped, past deadline, pinned, overallocated, bottleneck) is
+  *derived* from dates, progress and the dependency graph, and stays true on
+  its own; this one cannot be derived, because nothing in the plan says the
+  permit is late. Closed on purpose: free text becomes fifteen spellings of
+  "parado" and nothing can filter on it. Unknown values normalise to `""`.
+
+  It does **not** change any arithmetic. A task on hold is still planned work:
+  it keeps its dates, its load, its place in the critical path. What it stops
+  is the reader's assumption that the bar being there means somebody is on it.
 - `pinned::Bool`: the start date is fixed (a contract date, a delivery
   window). [`schedule!`](@ref) leaves it where it is; the engine still
   computes where it *would* go, so a pin the plan can no longer honour
@@ -72,6 +84,7 @@ Base.@kwdef mutable struct GanttTask
     baseline_duration::Int = 0
     deadline::Union{Nothing,Date} = nothing
     pinned::Bool = false
+    status::String = ""           # "" | "hold" — declarado, não derivado
     # Estimativa de três pontos (PERT); os três zerados = sem estimativa
     optimistic::Int = 0
     most_likely::Int = 0
@@ -268,11 +281,23 @@ function span(p::Project)
     (minimum(t.start for t in p.tasks), maximum(end_date(p, t) for t in p.tasks))
 end
 
+# Os estados declaráveis. Cresce com cuidado: cada valor novo é um item de
+# menu, uma entrada no destaque, uma marca no gráfico e uma linha em cinco
+# dicionários — e um vocabulário que cresce sem isso vira texto livre com
+# outro nome.
+const TASK_STATUSES = ("hold",)
+
 # Valida e normaliza uma tarefa antes de persistir (limites de progresso etc.)
 function _normalize!(t::GanttTask)
     t.duration = max(t.duration, 1)
     t.cost = max(t.cost, 0.0)
     t.effort = max(t.effort, 0.0)
+    # Vocabulário fechado: o que não é conhecido vira "" em vez de virar um
+    # estado que só existe naquele arquivo. É o que impede o campo de
+    # degenerar em texto livre — e um filtro só funciona sobre um conjunto
+    # que alguém possa enumerar.
+    t.status = lowercase(strip(t.status)) in TASK_STATUSES ?
+               lowercase(strip(t.status)) : ""
     t.progress = clamp(t.progress, 0, 100)
     t.name = _cap_text(t.name)
     t.assignee = _cap_text(t.assignee)

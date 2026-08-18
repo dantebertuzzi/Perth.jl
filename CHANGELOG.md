@@ -5,119 +5,23 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
-## [0.9.6] - 2026-08-17
+## [0.10.0] - 2026-08-17
 
-### Fixed
-- **The project chip is as wide as the name it shows.** A `<select>` sizes
-  itself to its *widest option* — the closed box has to be able to hold the
-  open list — so a single project with a long name pinned the menubar chip at
-  its 230px ceiling for every other project, leaving a short name floating in
-  two centimetres of empty pill. No CSS reaches this: neither `width: auto`
-  nor `fit-content` looks at the selection. The width is now measured from the
-  selected option, with an invisible ruler that inherits the chip's own font
-  (guessing a character width gets it wrong the moment a name has accents, and
-  these are people's project names). The ceiling and its ellipsis stay for the
-  name that genuinely does not fit.
-
-## [0.9.5] - 2026-08-17
-
-### Fixed
-- **The browser now knows the business-day calendar, and the chart stops
-  lying.** With `set_calendar!` on, `duration` counts *working* days — but the
-  browser added it as *calendar* days. Ten working days from 2 March end on
-  the 13th; the drawing said the 11th. Two days per fortnight, growing with
-  the task. It was wrong in the bar's width, in the project span on the status
-  bar, in the *overdue* highlight, in the slippage against the baseline, in
-  the deadline check, and in the span of a summary — which is why a block read
-  12 days on the server and 10 on screen, until the next save corrected it.
-- What crosses the wire is **one** fact: which days are not worked
-  (`nonworking`, in the CPM payload, empty when there is no calendar). Not the
-  rule duplicated — the data from the side that knows the holidays. The four
-  derivations the browser needs (next working day, end after N working days,
-  working days between two dates, and the width in calendar days) come out of
-  it exactly as they come out of `_workday` in `schedule.jl`. Sending each
-  task's finish already computed was the other option, and it goes stale in
-  the middle of a drag, which is precisely when the geometry has to be right.
-- The old partial fix is gone: the bar used to borrow `early_finish` from the
-  engine, but only when the task sat exactly where the engine would put it —
-  so a pinned task, or one moved by hand, drew with the wrong width anyway.
-- **The baseline was measured with the other ruler.** `baseline_duration` is
-  copied from the task's duration, so it counts working days too — but the
-  browser ended it in calendar days. A task that had not moved at all reported
-  a two-day slip against its own baseline, and the ghost bar was drawn short.
-  Both now use the same walk the server's `_baseline_end` does.
-- **Dragging speaks the same language.** Stretching a bar seven days used to
-  add seven to a *working-day* duration, so the edge landed nine days away
-  from where the pointer let go; now the gesture measures where the end fell
-  and converts back. And dropping a bar on a Saturday shows the Monday the
-  engine will snap it to on save, instead of showing Saturday and jumping
-  after the round-trip.
-
-### Added
-- A round-trip test that walks `fieldnames` instead of the fields somebody
-  remembered. `cost` had been silently dropped by the `.perth.jl` writer for
-  who knows how long, and nothing would have caught the next one; now every
-  new field on `GanttTask`, `Person` or `Project` joins the check by itself.
-  Verified by breaking the writer on purpose — 50 assertions pass, the
-  missing field fails.
-
-## [0.9.4] - 2026-08-17
-
-### Added
-- **Capacity per person, and effort on the task.** "Overallocated" meant *two
-  tasks on the same day*, which is crude — two one-hour tasks are not an
-  overload, and there was no way to say so. Declare what a day holds
-  (`add_person!(p, "Ana"; capacity = 8)`, or the *Capacity per day* field in
-  the collaborator registry) and how much work a task is (`effort`, next to
-  `cost` in the task modal), and overload becomes a comparison instead of a
-  count: more work than the day holds.
-- **The unit is yours, and Perth never has to know which.** `capacity` and
-  `effort` only have to agree with each other — `8` and hours, `1` and
-  person-days, points, whatever the team already says out loud. What the
-  package needs is that the two sides of the comparison use the same ruler,
-  which is a much smaller promise than picking a unit for everybody.
-- **Declaring it is opt-in, one person at a time.** With no capacity the old
-  rule stands, exactly as it was, so no existing plan changes meaning because
-  a field appeared. `effort` follows the same shape: unset, the weight of a
-  task falls back to `cost` and then to the duration in person-days, which is
-  what daily load has always been measured in.
-- **One definition of "overloaded day", for everybody.** It lives in
-  `_over_day` (`src/insights.jl`) and every reading now asks it: the resource
-  panel, the warnings, `people_stats`, `team_stats`, and the pair-by-pair
-  `overallocations`. That last one used to run its own independent
-  date-overlap loop that merely happened to agree; now it derives the pairs
-  from the overloaded days, so it *cannot* disagree.
-- **A warning for the day a single task blows up.** With capacity declared,
-  ten hours of work in an eight-hour day is a real problem with nobody to
-  collide with — and a list of *pairs* structurally cannot report it. New
-  `over capacity` warning, grouped per task (ten blown days of the same task
-  are one problem, not ten). Without capacity it can never fire.
-- The resource panel paints the ratio, not the count: within capacity stays
-  calm, over it warns, and past double it warns harder. The tooltip switches
-  from "2 tasks" to "12 / 8" the moment somebody says how much fits — the
-  count stopped being the answer that day.
-
-### Changed
-- **The browser no longer computes overallocation.** There was a second
-  implementation of the rule in `frontend/app.js` feeding the *overallocated*
-  highlight, the toolbar chip and the status-bar count — and it had already
-  drifted: it added durations in *calendar* days while the engine counts
-  *business* days, so under a business-day calendar the two could disagree
-  about who was overloaded. It now reads the server's answer, like the
-  critical path always has. The warning payload carries `other_id` so the
-  client can still light up both tasks of a pair.
-
-### Fixed
-- **`.perth.jl` was silently dropping `cost`.** The writer emits field by
-  field and `cost` was never in the list, so a project with costs saved to the
-  interchange format — the one meant for humans and for version control — came
-  back zeroed. Found while adding `effort` next to it.
-- `add_person!` converted every keyword value with `String(v)`, which meant
-  `add_person!(p, "Ana"; capacity = 8)` died before reaching the field. It now
-  converts to the field's own type, and says which fields exist when given one
-  that does not.
-
-## [0.9.3] - 2026-08-17
+### Breaking
+- `overallocations` reports pairs that share an **overloaded day**, not pairs
+  whose date ranges merely overlap. With no capacity declared the rule is the
+  old one (two tasks on a day), but `from`/`to` are now the first and last
+  *working* day the two actually share, and a pair that only touches across a
+  weekend is no longer a conflict. With capacity declared, a pair that fits in
+  the day stops being reported at all — which is the entire point of declaring
+  it.
+- The **tasks CSV** gained two columns, `effort` and `status`, between `cost`
+  and `milestone`. Anything reading that export by column position needs
+  updating; reading by header name is unaffected.
+- **`GET /api/projects/{id}/scurve`** returns two series instead of one:
+  `work`, `cost` and `has_cost` replace the flat `planned`/`actual`/`total`.
+  The old shape added money to person-days in a single number, which is what
+  this release exists to stop.
 
 ### Added
 - **Multi-select and bulk actions, in the Gantt and in the kanban.** Everything
@@ -186,11 +90,215 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   when exactly one task is selected — dragging one means "from this to that",
   and there is no "this" when there are six.
 
+- **Capacity per person, and effort on the task.** "Overallocated" meant *two
+  tasks on the same day*, which is crude — two one-hour tasks are not an
+  overload, and there was no way to say so. Declare what a day holds
+  (`add_person!(p, "Ana"; capacity = 8)`, or the *Capacity per day* field in
+  the collaborator registry) and how much work a task is (`effort`, next to
+  `cost` in the task modal), and overload becomes a comparison instead of a
+  count: more work than the day holds.
+- **The unit is yours, and Perth never has to know which.** `capacity` and
+  `effort` only have to agree with each other — `8` and hours, `1` and
+  person-days, points, whatever the team already says out loud. What the
+  package needs is that the two sides of the comparison use the same ruler,
+  which is a much smaller promise than picking a unit for everybody.
+- **Declaring it is opt-in, one person at a time.** With no capacity the old
+  rule stands, exactly as it was, so no existing plan changes meaning because
+  a field appeared. `effort` follows the same shape: unset, the weight of a
+  task falls back to `cost` and then to the duration in person-days, which is
+  what daily load has always been measured in.
+- **One definition of "overloaded day", for everybody.** It lives in
+  `_over_day` (`src/insights.jl`) and every reading now asks it: the resource
+  panel, the warnings, `people_stats`, `team_stats`, and the pair-by-pair
+  `overallocations`. That last one used to run its own independent
+  date-overlap loop that merely happened to agree; now it derives the pairs
+  from the overloaded days, so it *cannot* disagree.
+- **A warning for the day a single task blows up.** With capacity declared,
+  ten hours of work in an eight-hour day is a real problem with nobody to
+  collide with — and a list of *pairs* structurally cannot report it. New
+  `over capacity` warning, grouped per task (ten blown days of the same task
+  are one problem, not ten). Without capacity it can never fire.
+- The resource panel paints the ratio, not the count: within capacity stays
+  calm, over it warns, and past double it warns harder. The tooltip switches
+  from "2 tasks" to "12 / 8" the moment somebody says how much fits — the
+  count stopped being the answer that day.
+
+- A round-trip test that walks `fieldnames` instead of the fields somebody
+  remembered. `cost` had been silently dropped by the `.perth.jl` writer for
+  who knows how long, and nothing would have caught the next one; now every
+  new field on `GanttTask`, `Person` or `Project` joins the check by itself.
+  Verified by breaking the writer on purpose — 50 assertions pass, the
+  missing field fails.
+
+- `team_stats` reports the team's **capacity**: the sum of its members'. Two
+  people at 8 absorb 16 in a day. A member who declared none adds zero, so a
+  team with a missing number reads lower than it is — `members` sits next to it
+  for exactly that reason. Without it, "is this team over capacity?" was a
+  question the release that introduced capacity could not answer.
+
+- **Progress without opening the task.** `progress` is the field that changes
+  most often — it is what a weekly meeting *is* — and it was the only one with
+  no gesture: dates come from dragging the bar, order from dragging the row,
+  links from dragging a dot, and the percentage needed the modal, eight times
+  in a row.
+- A **grip on the edge of the filled part** of the selected bar. Only on the
+  selected one, like the dependency dots: another handle on every bar would
+  fight for the same pixels as the date drag, which is the most-used gesture
+  on the chart. It stops 9px short of the end so it never covers the resize
+  handle that lives in the last 8 — in the final few percent it sits a hair
+  left of the true fill edge, while the drag itself stays exact and is what
+  reaches 100.
+- Dragging snaps to **5%**: nobody reports 37% in a meeting, and a finer step
+  would demand aim the information does not deserve.
+- **`Shift`+`0`…`9`** sets the round tenths on the **whole selection**, in one
+  undo entry. The roadmap asked for bare digits, but `1`–`4` have been the
+  zoom shortcuts from the start, and zooming with a task selected is ordinary
+  use, not an exception — so it takes Shift, read from `ev.code` rather than
+  `ev.key` because Shift+2 is `@` on a US keyboard and something else on
+  ABNT2, while `Digit2` is the same everywhere.
+- A summary refuses both: its progress is the weighted average of its
+  children, recomputed on every render, so writing there would be writing into
+  a field the next render overwrites. Select a summary and a child together
+  and only the child takes the value — the block then reports the average, not
+  what was typed.
+
+- **Bottleneck**, derived — never typed. A task with zero slack that *more than
+  one* other task is waiting on. The critical path already says a task cannot
+  slip; the bottleneck says where the chain becomes a funnel, and that is the
+  one worth protecting first. A critical task with a single dependent is just a
+  link, which `critical` already reported. `slack(p)` now carries `dependents`
+  (the fan-out, counted through lags and `SS:`/`FF:` references) and
+  `bottleneck`, and the browser reads them — a hand-set flag would be wrong the
+  moment somebody drags a bar, and nobody comes back to fix it.
+- **On hold**, declared — the one state nothing in the plan can reveal. Every
+  other state Perth shows (not started, in progress, done, overdue, slipped,
+  past deadline, pinned, overallocated, bottleneck) is deduced from dates,
+  progress and the graph; no arithmetic can tell you the permit is late. New
+  `status` field on the task, from a **closed** vocabulary — `""` or `"hold"`,
+  with unknown values normalising to `""`. Free text would become fifteen
+  spellings of "parado" and nothing could filter on it.
+- It changes **no arithmetic**: a task on hold keeps its dates, its load and
+  its place on the critical path, because it is still planned work. What it
+  stops is the reader's assumption that a bar on the chart means somebody is
+  on it.
+- The bar keeps its **colour** and takes diagonal **hatching** on top. Colour
+  is identity here — the task's own, chosen by whoever planned it — and state
+  has always been a decoration over it: the critical path is an outline, the
+  pinned start is a marker above the bar. Painting state into the colour would
+  cost both readings at once, with "blue" sometimes meaning Ana and sometimes
+  meaning stopped. The table row carries a `‖` for the summaries and
+  milestones that have no bar to hatch.
+- Both join the highlight select, and only when the plan has one — a filter
+  that never matches anything is noise. Both are in the glossary, in all five
+  languages.
+
+### Changed
+- **The browser no longer computes overallocation.** There was a second
+  implementation of the rule in `frontend/app.js` feeding the *overallocated*
+  highlight, the toolbar chip and the status-bar count — and it had already
+  drifted: it added durations in *calendar* days while the engine counts
+  *business* days, so under a business-day calendar the two could disagree
+  about who was overloaded. It now reads the server's answer, like the
+  critical path always has. The warning payload carries `other_id` so the
+  client can still light up both tasks of a pair.
+
 ### Fixed
 - Deleting a task left behind dependencies that pointed at it through a **lag or
   a type** (`"id+3"`, `"SS:id"`): the filter compared the whole reference string
   instead of the id inside it. Found while rewriting that loop to delete a
   selection.
+
+- **`.perth.jl` was silently dropping `cost`.** The writer emits field by
+  field and `cost` was never in the list, so a project with costs saved to the
+  interchange format — the one meant for humans and for version control — came
+  back zeroed. Found while adding `effort` next to it.
+- `add_person!` converted every keyword value with `String(v)`, which meant
+  `add_person!(p, "Ana"; capacity = 8)` died before reaching the field. It now
+  converts to the field's own type, and says which fields exist when given one
+  that does not.
+
+- **The browser now knows the business-day calendar, and the chart stops
+  lying.** With `set_calendar!` on, `duration` counts *working* days — but the
+  browser added it as *calendar* days. Ten working days from 2 March end on
+  the 13th; the drawing said the 11th. Two days per fortnight, growing with
+  the task. It was wrong in the bar's width, in the project span on the status
+  bar, in the *overdue* highlight, in the slippage against the baseline, in
+  the deadline check, and in the span of a summary — which is why a block read
+  12 days on the server and 10 on screen, until the next save corrected it.
+- What crosses the wire is **one** fact: which days are not worked
+  (`nonworking`, in the CPM payload, empty when there is no calendar). Not the
+  rule duplicated — the data from the side that knows the holidays. The four
+  derivations the browser needs (next working day, end after N working days,
+  working days between two dates, and the width in calendar days) come out of
+  it exactly as they come out of `_workday` in `schedule.jl`. Sending each
+  task's finish already computed was the other option, and it goes stale in
+  the middle of a drag, which is precisely when the geometry has to be right.
+- The old partial fix is gone: the bar used to borrow `early_finish` from the
+  engine, but only when the task sat exactly where the engine would put it —
+  so a pinned task, or one moved by hand, drew with the wrong width anyway.
+- **The baseline was measured with the other ruler.** `baseline_duration` is
+  copied from the task's duration, so it counts working days too — but the
+  browser ended it in calendar days. A task that had not moved at all reported
+  a two-day slip against its own baseline, and the ghost bar was drawn short.
+  Both now use the same walk the server's `_baseline_end` does.
+- **Dragging speaks the same language.** Stretching a bar seven days used to
+  add seven to a *working-day* duration, so the edge landed nine days away
+  from where the pointer let go; now the gesture measures where the end fell
+  and converts back. And dropping a bar on a Saturday shows the Monday the
+  engine will snap it to on save, instead of showing Saturday and jumping
+  after the round-trip.
+
+- **The project chip is as wide as the name it shows.** A `<select>` sizes
+  itself to its *widest option* — the closed box has to be able to hold the
+  open list — so a single project with a long name pinned the menubar chip at
+  its 230px ceiling for every other project, leaving a short name floating in
+  two centimetres of empty pill. No CSS reaches this: neither `width: auto`
+  nor `fit-content` looks at the selection. The width is now measured from the
+  selected option, with an invisible ruler that inherits the chip's own font
+  (guessing a character width gets it wrong the moment a name has accents, and
+  these are people's project names). The ceiling and its ellipsis stay for the
+  name that genuinely does not fit.
+
+- **The S-curve no longer adds money to person-days.** It had one series, with
+  the weight "cost when there is one, otherwise duration in person-days" — so a
+  task worth R$ 10,000 next to one worth 5 person-days produced **10005**,
+  which is neither reais nor days and answers no question. While `cost` was the
+  only weight in the package the ambiguity was symmetric and liveable; since
+  `effort` exists, daily load could tell the two apart and the curve could not.
+- There are now **two independent series**, each with a single unit: *work*
+  (`effort` when set, otherwise person-days — the same ruler the resource panel
+  and overallocation use) and *cost* (`cost`, and only that). A task with no
+  cost recorded contributes zero to the cost curve, which is what a cost curve
+  should say about it. `has_cost` tells the browser whether anybody entered
+  one, so it never offers a flat line at zero.
+- The overlay picks which ruler to show, work first because work always exists
+  — every task has a duration even when nobody budgeted anything — and the
+  total now carries the name of what it is counting. `10005` was not wrong for
+  being 10005; it was wrong for not saying of what.
+
+- **Two machines editing a plan no longer costs one of them their work.** When
+  another machine saved first, the browser threw away everything you had just
+  done and reloaded from the server. You moved task A, a colleague renamed task
+  B, and *your* change vanished — even though the two edits never touched the
+  same thing. The kanban had never had this problem; the Gantt, which is the
+  older of the two, had the weaker model.
+- It now does a **three-way merge**, with the same policy `_reconcile` already
+  applies to undo, for the same reason: what only *I* changed is mine, what
+  only *they* changed is theirs, and what we both changed stays theirs —
+  because overwriting someone else's work in silence is worse than losing mine
+  and being told. The difference is that losing mine is now restricted to what
+  genuinely collided, instead of being the default for everything.
+- The toast **names what collided** ("theirs kept in: Foundation, Roof"):
+  "there was a conflict" without saying where helps nobody. When nothing
+  collided it says so and moves on.
+- Tasks you created survive; tasks they created arrive; a task either of you
+  deleted stays deleted. Project-level fields (name, calendar, collaborators,
+  bands, markers) follow the same rule.
+- Three attempts, then it falls back to the old reload and says so — if the
+  server has changed again by the time each merge lands, retrying forever is a
+  loop, not a fix. Same fallback when the 409 carries no usable body: without
+  the server's state there is no third way to merge against, and reloading is
+  the only honest answer left.
 
 ## [0.9.2] - 2026-08-17
 

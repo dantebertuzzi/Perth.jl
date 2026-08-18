@@ -66,21 +66,6 @@ task that is no longer on screen, and a summary whose children all vanished
 
 ## Also worth doing
 
-### Recording progress without opening a task
-
-`progress` is the field that changes most often — it is what a weekly meeting
-*is* — and it is the one field with no gesture. Dates come from dragging the
-bar, order from dragging the row, links from dragging a dot; percentage
-complete needs the modal, eight times in a row. A handle on the filled part of
-the bar, and `0`-`9` on the selected task for the round tenths, would make the
-Monday pass a minute instead of ten.
-
-*Lean on:* the bar's own `pointerdown` machinery already converts pixels to
-days and back; here it converts pixels to a percentage of the bar's width, and
-snaps to 5. Summaries derive their progress from the children (`app.js` around
-the WBS roll-up) — the handle must refuse to appear on them, the way the date
-drag already does.
-
 ### Print / PDF
 
 PNG export exists, but a plan ends up as an attachment in a report and as paper
@@ -106,14 +91,14 @@ what we said. Today the curve says it in a shape, which is honest but has to be
 read; a plan that is 12% behind schedule and 4% under cost deserves the
 sentence, next to the shape.
 
-*Lean on:* `_scurve` returns the whole series, so the tile is derived on the
-client from a payload it already fetches — no new route, no new arithmetic in
-Julia. The unit trap is the one capacity per person already walked into and
-came out of (see `_work_weight` in `src/insights.jl`): "under cost" means
-nothing when `cost` is zero and the weight is person-days, so the tile has to
-say which of the two it is measuring. Daily load solved it by preferring the
-new `effort` field and falling back to `cost` — the S-curve is the other half,
-and wants `cost` to go back to meaning money.
+*Lean on:* `_scurve` already returns both series — work and cost, each in one
+unit, with `has_cost` saying whether the second means anything — so the tile is
+two divisions on a payload the client already fetches. No new route, no new
+arithmetic in Julia. The unit trap that used to block this item is gone: it was
+"under cost means nothing when `cost` is zero and the weight is person-days",
+and there is no longer a series that mixes the two. What is left is the
+sentence itself, and the honesty of saying *ahead of schedule in work* and
+*under budget in money* as two statements rather than one number.
 
 ### The plan as it was last Monday
 

@@ -1698,6 +1698,182 @@ end
         delete_project(p.id)
     end
 
+    @testset "gargalo: onde a corrente vira funil" begin
+        # O caminho crítico já diz que uma tarefa não pode atrasar. O gargalo
+        # diz onde MAIS DE UMA coisa espera pela mesma — que é outra pergunta,
+        # e é a que decide o que proteger primeiro.
+        p = Project(name = "Funil")
+        add_task!(p, "Fundação";   start = Date(2026, 4, 6),  duration = 5, id = "f")
+        add_task!(p, "Alvenaria";  start = Date(2026, 4, 11), duration = 5,
+                  dependencies = ["f"], id = "t1")
+        add_task!(p, "Hidráulica"; start = Date(2026, 4, 11), duration = 5,
+                  dependencies = ["f"], id = "t2")
+        add_task!(p, "Elétrica";   start = Date(2026, 4, 11), duration = 5,
+                  dependencies = ["f"], id = "t3")
+        add_task!(p, "Pintura";    start = Date(2026, 4, 16), duration = 3,
+                  dependencies = ["t1"], id = "pi")
+        add_task!(p, "Limpeza";    start = Date(2026, 4, 19), duration = 2,
+                  dependencies = ["pi"], id = "li")
+        s = Dict(r.id => r for r in slack(p))
+
+        @test s["f"].dependents == 3 && s["f"].critical && s["f"].bottleneck
+        # crítica com UM dependente é elo de corrente, não funil: o caminho
+        # crítico já contava essa história
+        @test s["t1"].critical && s["t1"].dependents == 1 && !s["t1"].bottleneck
+        @test s["li"].critical && s["li"].dependents == 0 && !s["li"].bottleneck
+        # com folga não é gargalo por mais que espere gente
+        @test s["t2"].dependents == 0 && !s["t2"].bottleneck
+
+        # com folga e três dependentes: continua não sendo gargalo, porque
+        # atrasá-la não atrasa nada
+        q = Project(name = "ComFolga")
+        add_task!(q, "Solta"; start = Date(2026, 4, 6), duration = 1, id = "s")
+        for i in 1:3
+            add_task!(q, "D$(i)"; start = Date(2026, 5, 20), duration = 2,
+                      dependencies = ["s"], id = "d$(i)")
+        end
+        add_task!(q, "Longa"; start = Date(2026, 4, 6), duration = 60, id = "L")
+        sq = Dict(r.id => r for r in slack(q))
+        @test sq["s"].dependents == 3 && !sq["s"].critical && !sq["s"].bottleneck
+
+        # a referência pode vir com lag ou tipo: "t+3", "SS:t" contam igual
+        r = Project(name = "ComLag")
+        add_task!(r, "Base"; start = Date(2026, 4, 6), duration = 3, id = "b")
+        add_task!(r, "X"; start = Date(2026, 4, 9), duration = 2,
+                  dependencies = ["b+1"], id = "x")
+        add_task!(r, "Y"; start = Date(2026, 4, 9), duration = 2,
+                  dependencies = ["SS:b"], id = "y")
+        @test Dict(z.id => z for z in slack(r))["b"].dependents == 2
+    end
+
+    @testset "situação declarada: vocabulário fechado" begin
+        # Os nove estados que o Perth já mostra são DERIVADOS. Este é o único
+        # que uma pessoa precisa dizer — nada no plano revela que o alvará
+        # atrasou —, e por isso ele é curto e fechado: texto livre viraria
+        # quinze grafias de "parado" e nada filtraria sobre elas.
+        p = Project(name = "Situacao")
+        t = add_task!(p, "Alvará"; start = Date(2026, 4, 6), duration = 5,
+                      status = "HOLD")
+        @test p.tasks[1].status == "hold"            # normaliza a caixa
+
+        update_task!(p, t.id; status = "parado à toa")
+        @test p.tasks[1].status == ""                # desconhecido vira vazio
+
+        update_task!(p, t.id; status = "  Hold  ")
+        @test p.tasks[1].status == "hold"            # e apara o espaço
+
+        # não muda aritmética nenhuma: continua sendo trabalho planejado
+        add_task!(p, "Outra"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Ana")
+        update_task!(p, t.id; assignee = "Ana")
+        @test count(r -> r.over, workload(p)) == 5   # parada ainda ocupa a Ana
+        @test !isempty(critical_path(p))
+
+        # atravessa o .perth.jl (a varredura de campos pegaria, mas o valor
+        # normalizado merece a conferência explícita)
+        arq = tempname() * ".perth.jl"
+        Perth.save(p, arq)
+        @test Perth.load(arq; register = false).tasks[1].status == "hold"
+        rm(arq; force = true)
+
+        # e a coluna nova do CSV
+        router = Perth._build_router()
+        pc = create_project("CSVSituacao")
+        add_task!(pc, "A"; start = Date(2026, 4, 6), duration = 2, status = "hold")
+        linhas = split(strip(String(router(HTTP.Request(
+            "GET", "/api/projects/$(pc.id)/export.csv")).body)), "\n")
+        cols = split(linhas[1], ",")
+        i = findfirst(==("status"), cols)
+        @test i !== nothing && split(linhas[2], ",")[i] == "hold"
+        delete_project(pc.id)
+    end
+
+    @testset "o 409 devolve o projeto, não só o status" begin
+        # O navegador MESCLA em cima disto: ele precisa do estado do servidor
+        # para fazer as três vias (base, meu, dele). Enquanto ele apenas
+        # recarregava, o corpo era um detalhe; agora é contrato.
+        router = Perth._build_router()
+        p = create_project("Conflito")
+        t = add_task!(p, "A"; start = Date(2026, 4, 6), duration = 3)
+        corpo = String(router(HTTP.Request("GET", "/api/projects/$(p.id)")).body)
+
+        # outra máquina grava primeiro
+        sleep(0.01)
+        update_task!(p, t.id; name = "A do colega")
+
+        # e a minha chega com a base velha
+        resp = router(HTTP.Request("PUT", "/api/projects/$(p.id)",
+            ["Content-Type" => "application/json",
+             "X-Perth-Base" => "2020-01-01T00:00:00"], corpo))
+        @test resp.status == 409
+        devolvido = JSON3.read(String(resp.body))
+        @test devolvido.id == p.id
+        @test length(devolvido.tasks) == 1
+        @test devolvido.tasks[1].name == "A do colega"     # o estado DELE
+        @test haskey(devolvido, :updated_at)               # a base da próxima
+        delete_project(p.id)
+    end
+
+    @testset "a curva-S não soma dinheiro com trabalho" begin
+        # Havia uma série só, com peso "cost se houver, senão pessoa-dias".
+        # Uma tarefa de R$ 10.000 ao lado de uma de 5 pessoa-dias devolvia
+        # 10005 — não é reais, não é dias, e não responde pergunta nenhuma.
+        p = Project(name = "Unidades")
+        add_task!(p, "Comprar laudo"; start = Date(2026, 4, 6), duration = 5,
+                  cost = 10000, effort = 8, progress = 100)
+        add_task!(p, "Redigir"; start = Date(2026, 4, 6), duration = 5,
+                  effort = 40, progress = 0)
+        s = Perth._scurve(p)
+
+        # trabalho: 8 + 40, na mesma régua que a carga diária usa
+        @test s.work.total ≈ 48.0
+        @test s.work.earned_today ≈ 8.0          # só a primeira está pronta
+        # custo: só dinheiro, e a tarefa sem custo contribui zero
+        @test s.cost.total ≈ 10000.0
+        @test s.cost.earned_today ≈ 10000.0
+        @test s.has_cost
+        # e em nenhuma das duas aparece a soma das duas
+        @test s.work.total != 10005.0 && s.cost.total != 10005.0
+
+        # sem custo nenhum: a curva de trabalho continua existindo (toda
+        # tarefa tem duração), a de custo é reta no zero, e has_cost avisa
+        q = Project(name = "SemCusto")
+        add_task!(q, "A"; start = Date(2026, 4, 6), duration = 5, progress = 50)
+        s2 = Perth._scurve(q)
+        @test s2.work.total ≈ 5.0
+        @test s2.cost.total == 0.0
+        @test !s2.has_cost
+
+        # sem effort, o peso de TRABALHO ainda cai em cost — é o que mantém a
+        # resposta dos planos que existiam antes de effort existir
+        r = Project(name = "SoCusto")
+        add_task!(r, "A"; start = Date(2026, 4, 6), duration = 5, cost = 300)
+        @test Perth._scurve(r).work.total ≈ 300.0
+        @test Perth._scurve(r).cost.total ≈ 300.0
+
+        # projeto vazio devolve as duas séries vazias, não um erro
+        vazio = Perth._scurve(Project(name = "Vazio"))
+        @test vazio.work.total == 0.0 && vazio.cost.total == 0.0 && !vazio.has_cost
+    end
+
+    @testset "capacidade do setor é a soma das pessoas" begin
+        p = create_project("SetorCap")
+        add_person!(p, "Ana"; team = "Projeto", capacity = 8)
+        add_person!(p, "Chen"; team = "Projeto", capacity = 4)
+        add_person!(p, "Bruno"; team = "Obra")          # sem capacidade
+        add_task!(p, "A"; start = Date(2026, 4, 6), duration = 2, assignee = "Ana")
+        add_task!(p, "C"; start = Date(2026, 4, 6), duration = 2, assignee = "Chen")
+        add_task!(p, "B"; start = Date(2026, 4, 6), duration = 2, assignee = "Bruno")
+        setores = Dict(r.team => r for r in team_stats(p))
+        @test setores["Projeto"].capacity ≈ 12.0       # 8 + 4, soma e não média
+        @test setores["Projeto"].members == 2
+        # quem não declarou soma zero: a linha lê para baixo, e members é o
+        # que deixa isso visível
+        @test setores["Obra"].capacity == 0.0
+        @test setores["Obra"].members == 1
+        delete_project(p.id)
+    end
+
     @testset "o .perth.jl não pode engolir campo nenhum" begin
         # cost sumia no ida-e-volta havia sabe-se lá quanto tempo, e nenhum
         # teste pegaria o próximo: os que existiam conferiam os campos de que

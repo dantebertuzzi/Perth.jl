@@ -462,6 +462,10 @@ function taskMatchesHighlight(t) {
     if (h.value === "past-deadline") return deadlineSlip(t) > 0;
     if (h.value === "pinned") return !!t.pinned;
     if (h.value === "overallocated") return state.overalloc.ids.has(t.id);
+    if (h.value === "hold") return t.status === "hold";
+    // gargalo é derivado pelo motor (folga zero + dois ou mais dependentes),
+    // e chega junto com o resto do CPM — o cliente não recalcula a regra
+    if (h.value === "bottleneck") return !!state.cpm?.byId.get(t.id)?.bottleneck;
   }
   if (h.kind === "type") return !!t.milestone;
   return true;
@@ -514,6 +518,9 @@ async function api(path, opts = {}) {
     const body = await res.json().catch(() => ({}));
     const err = new Error(body.error || `HTTP ${res.status}`);
     err.status = res.status;
+    // o corpo vem junto: num 409 ele É o projeto como está no servidor, e é
+    // com ele que a mesclagem trabalha (ver mesclaConcorrente)
+    err.body = body;
     throw err;
   }
   return res.json();
@@ -523,8 +530,73 @@ async function fetchRev() {
   return (await api("/api/rev")).rev;
 }
 
+/* A base de comparação: o carimbo E o conteúdo.
+ *
+ * O carimbo sozinho responde "alguém gravou depois de mim?". Só com o
+ * conteúdo dá para responder a pergunta seguinte, que é a que importa: "o que
+ * EU mudei desde então?" — e é ela que separa uma mesclagem de um descarte. */
+const CAMPOS_MESCLAVEIS = ["name", "calendar", "people", "bands", "markers",
+                           "month_marks", "file_path", "baseline_at"];
+
+function baseSnap(p) {
+  if (!p) return null;
+  const out = { tasks: (p.tasks || []).map(_cloneTask) };
+  for (const c of CAMPOS_MESCLAVEIS) out[c] = JSON.stringify(p[c] ?? null);
+  return out;
+}
+
 function noteBase() {
   state.baseUpdatedAt = state.current?.updated_at || "";
+  state.baseSnap = baseSnap(state.current);
+}
+
+/* Mesclagem de três vias quando outra máquina gravou antes.
+ *
+ * O que havia aqui era um descarte: o cliente jogava fora TUDO o que você
+ * tinha acabado de fazer e recarregava o projeto do servidor. Se você mexeu
+ * na tarefa A e o colega na tarefa B, a sua sumia — e as duas edições não se
+ * cruzavam em lugar nenhum.
+ *
+ * A política é a mesma que _reconcile já aplica no desfazer, pela mesma
+ * razão: campo que só EU mexi é meu, campo que só ELE mexeu é dele, e campo
+ * que os dois mexeram fica com o dele, porque sobrescrever trabalho alheio em
+ * silêncio é pior do que perder o meu e ser avisado. A diferença é que agora
+ * o "perder o meu" está restrito ao que de fato colidiu, e não é mais o
+ * padrão para tudo.
+ *
+ * Devolve o projeto mesclado e a lista do que colidiu, para o aviso dizer
+ * QUAIS tarefas — "houve um conflito" sem dizer onde não ajuda ninguém. */
+function mesclaConcorrente(base, meu, deles) {
+  const conflitos = [];
+  const B = _tasksById(base), M = _tasksById(meu), D = _tasksById(deles);
+  const ids = new Set([...B.keys(), ...M.keys(), ...D.keys()]);
+  const tasks = [];
+
+  // Ordem do servidor primeiro, depois o que só existe aqui: quem chegou por
+  // fora define a ordenação, e as minhas tarefas novas entram no fim
+  const ordem = [...D.keys(), ...[...ids].filter((id) => !D.has(id))];
+  for (const id of ordem) {
+    const b = B.get(id), m = M.get(id), d = D.get(id);
+    const mexiEu = !_taskEq(b, m);
+    const mexeuEle = !_taskEq(b, d);
+    if (!mexiEu) { d !== undefined && tasks.push(_cloneTask(d)); continue; }
+    if (!mexeuEle) { m !== undefined && tasks.push(_cloneTask(m)); continue; }
+    // os dois mexeram: fica o dele, e o nome vai no aviso
+    conflitos.push((d ?? m ?? b)?.name || id);
+    d !== undefined && tasks.push(_cloneTask(d));
+  }
+
+  const out = { ...deles, tasks };
+  for (const c of CAMPOS_MESCLAVEIS) {
+    const meuJSON = JSON.stringify(meu[c] ?? null);
+    if (meuJSON === base[c]) continue;                 // não mexi: fica o dele
+    if (JSON.stringify(deles[c] ?? null) === base[c]) { // só eu mexi: é meu
+      out[c] = meu[c];
+      continue;
+    }
+    conflitos.push(c);                                  // os dois: fica o dele
+  }
+  return { projeto: out, conflitos };
 }
 
 async function loadProjects(keepId = null) {
@@ -669,14 +741,7 @@ async function saveNow() {
     return salvo;
   } catch (err) {
     if (err && err.status === 409) {
-      // outra máquina salvou antes: recarrega em vez de sobrescrever
-      setSaveStatus("error",
-        window.PerthI18n
-          ? PerthI18n.t("Project changed on another machine — reloaded")
-          : "Project changed on another machine — reloaded");
-      state.dirty = false;
-      await loadProjects(state.current?.id ?? null);
-      return;
+      return resolveConflito(err.body);
     }
     setSaveStatus("error", `save failed: ${err.message} — retrying…`);
     clearTimeout(saveTimer);
@@ -1121,6 +1186,14 @@ function renderHighlightSelect() {
   if (state.overalloc.pairs.length) {
     gs.appendChild(opt("status:overallocated", "Overallocated"));
   }
+  if (state.current.tasks.some((t) => t.status === "hold")) {
+    gs.appendChild(opt("status:hold", "On hold"));
+  }
+  // o gargalo só entra quando o motor achou algum: um item de menu que
+  // nunca casa com nada é ruído — a mesma regra dos outros daqui
+  if ([...(state.cpm?.byId.values() ?? [])].some((i) => i.bottleneck)) {
+    gs.appendChild(opt("status:bottleneck", "Bottleneck"));
+  }
   sel.appendChild(gs);
   const gt = document.createElement("optgroup");
   gt.label = "Type";
@@ -1557,7 +1630,7 @@ function taskRow(t, seq) {
   row.dataset.id = t.id;
   row.innerHTML = `
     <span class="c-seq" title="id: ${escapeHTML(t.id)}">${seq}</span>
-    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? `<button type="button" class="sum-mark" title="${T(fechado ? "Expand" : "Collapse")}">${fechado ? "▸" : "▾"}</button>` : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
+    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? `<button type="button" class="sum-mark" title="${T(fechado ? "Expand" : "Collapse")}">${fechado ? "▸" : "▾"}</button>` : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${t.status === "hold" ? `<span class="hold-mark" title="${T("On hold")}">‖</span>` : ""}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
     <span class="c-date">${t.start}</span>
     <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
     <span class="c-num">${t.progress}</span>`;
@@ -1989,6 +2062,19 @@ function renderChart() {
 
   const chart = el.chart;
   chart.innerHTML = "";
+
+  /* A hachura das tarefas paradas vive num <defs>, definida uma vez por
+     render e referenciada por url(#…) em cada barra: um <pattern> por barra
+     seria o mesmo desenho repetido N vezes no DOM. `currentColor` para ela
+     acompanhar o tema — no escuro o traço tem de clarear junto com o texto. */
+  const defs = svg("defs", {});
+  const hach = svg("pattern", {
+    id: "hachura-parada", width: 6, height: 6,
+    patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)",
+  });
+  hach.appendChild(svg("rect", { class: "hold-hatch", x: 0, y: 0, width: 2.2, height: 6 }));
+  defs.appendChild(hach);
+  chart.appendChild(defs);
   chart.setAttribute("width", totalW);
   chart.setAttribute("height", totalH);
 
@@ -2222,6 +2308,32 @@ function renderChart() {
       attachDrag(handle, t, "resize");
       chart.appendChild(handle);
 
+      /* Punho do progresso, na borda do pedaço cheio.
+       *
+       * `progress` é o campo que mais muda — é o que uma reunião semanal É —
+       * e era o único sem gesto: data se arrasta na barra, ordem na linha,
+       * ligação no ponto, e a porcentagem exigia abrir o modal oito vezes
+       * seguidas.
+       *
+       * Só na barra SELECIONADA, como os pontos de ligar: um punho a mais em
+       * toda barra disputaria os mesmos pixels do arrasto de data, que é o
+       * gesto mais usado do gráfico.
+       *
+       * Preso a 9px do fim para nunca cobrir a alça de redimensionar, que
+       * mora nos últimos 8. Nos últimos por cento o punho fica um fio à
+       * esquerda da borda real do preenchimento — o arrasto continua exato, e
+       * é ele que chega aos 100. */
+      if (escolhida && !state.readOnly) {
+        const px = Math.min(x + (w * clampPct(t.progress)) / 100, x + w - 9);
+        const pg = svg("rect", {
+          class: "prog-grip" + dim, x: px - 3, y: y + 2, width: 6, height: h - 4,
+          rx: 2, "data-id": t.id,
+        });
+        pg.appendChild(svgTitle(`${T("Progress")} ${t.progress}%`));
+        attachProgressDrag(pg, t, x, w);
+        chart.appendChild(pg);
+      }
+
       if (ui.labels) {
         rotuloDaBarra(chart, t, dim, x + w + 8 + folga, y + h - 5, caixasRotulo, (label) => {
           if (slip <= 0) return;
@@ -2241,6 +2353,23 @@ function renderChart() {
       if (state.showCritical && info?.critical) {
         chart.appendChild(svg("rect", {
           class: "bar-crit", x, y, width: w, height: h,
+        }));
+      }
+
+      /* Parada: hachura por cima, e a barra mantém a COR.
+       *
+       * Cor aqui é identidade — é a da tarefa, escolhida por quem planeja, ou
+       * a da rotação automática. Estado sempre foi decoração por cima
+       * (bar-crit é um contorno, pin-mark é um marcador acima da barra), e
+       * trocar a cor por estado tiraria as duas leituras de uma vez: "azul"
+       * passaria a às vezes significar Ana e às vezes significar parada.
+       *
+       * A hachura diagonal é a convenção para "esta área não está ativa", e
+       * lê bem por cima de qualquer cor, que era o requisito. */
+      if (t.status === "hold") {
+        chart.appendChild(svg("rect", {
+          class: "bar-hold" + dim, x, y, width: w, height: h,
+          fill: "url(#hachura-parada)",
         }));
       }
     }
@@ -3073,6 +3202,74 @@ function attachDrag(node, task, mode) {
   node.addEventListener("dblclick", () => openModal(task.id));
 }
 
+const clampPct = (n) => Math.min(Math.max(Math.round(Number(n) || 0), 0), 100);
+
+/* Arrastar o punho do progresso.
+ *
+ * Mesma máquina do arrasto de data — pointerdown, listeners na window,
+ * pushUndo no primeiro movimento de verdade — trocando "pixels viram dias"
+ * por "pixels viram porcentagem da largura da barra". Passo de 5: ninguém
+ * relata 37% numa reunião, e um passo fino faria o arrasto exigir pontaria
+ * que a informação não merece.
+ *
+ * Resumo não entra: o progresso dele é a média dos filhos, calculada a cada
+ * render — escrever ali é escrever num campo que o próximo render apaga. É a
+ * mesma razão pela qual o punho de data também não aparece num resumo, e por
+ * isso o desenho já o condiciona a `escolhida` numa barra que não é resumo. */
+function attachProgressDrag(node, task, x0, largura) {
+  node.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0 || state.readOnly) return;
+    ev.stopPropagation();          // não é o arrasto da barra que começa aqui
+    const orig = task.progress;
+    let moved = false;
+
+    const pctDe = (mv) => {
+      const cx = mv.clientX - el.chart.getBoundingClientRect().left;
+      return clampPct(Math.round(((cx - x0) / Math.max(largura, 1)) * 100 / 5) * 5);
+    };
+    const onMove = (mv) => {
+      const novo = pctDe(mv);
+      if (novo === task.progress && !moved) return;
+      if (!moved) { pushUndo(); moved = true; }
+      state.dragging = true;
+      task.progress = novo;
+      requestAnimationFrame(() => { renderChart(); renderTable(); });
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      state.dragging = false;
+      if (moved && task.progress !== orig) { renderAll(); markDirty(); }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  });
+}
+
+/* Progresso pelo teclado, na seleção inteira.
+ *
+ * O roadmap pedia `0`-`9` soltos, mas `1`-`4` são o zoom desde sempre — e
+ * zoom com uma tarefa selecionada é uso corrente, não exceção. Vai com Shift,
+ * lido por `ev.code` e não por `ev.key`: Shift+2 é "@" no teclado americano e
+ * outra coisa no ABNT2, enquanto `Digit2` é o mesmo em todos.
+ *
+ * Os cem por cento não têm décimo: chega-se neles arrastando o punho até a
+ * ponta, que é o gesto que já existe para isso. Inventar uma tecla para o
+ * caso que o arrasto cobre seria inventar uma tecla para decorar. */
+function progressoPorTecla(ev) {
+  if (!ev.shiftKey || !/^Digit[0-9]$/.test(ev.code || "")) return false;
+  if (!state.current || !canEdit()) return false;
+  const alvos = selectedTasks().filter((t) => !(state.wbs?.summary.has(t.id) ?? false));
+  if (!alvos.length) return false;
+  const pct = Number(ev.code.slice(5)) * 10;
+  if (alvos.every((t) => t.progress === pct)) return true;   // nada a mudar
+  pushUndo();
+  for (const t of alvos) t.progress = pct;
+  renderAll();
+  markDirty();
+  return true;
+}
+
 /* Sincroniza scroll: cabeçalho segue X, tabela segue Y */
 // Roda do mouse sobre a tabela rola a lista (o scroller real é a timeline,
 // que mantém os dois painéis alinhados). Só o eixo vertical é encaminhado:
@@ -3183,6 +3380,7 @@ function openModal(id) {
   $("#f-milestone").checked = !!t.milestone;
   $("#f-deadline").value = t.deadline || "";
   $("#f-pinned").checked = !!t.pinned;
+  $("#f-status").value = t.status || "";
   $("#f-optimistic").value = t.optimistic || "";
   $("#f-most-likely").value = t.most_likely || "";
   $("#f-pessimistic").value = t.pessimistic || "";
@@ -3449,6 +3647,7 @@ function submitModal() {
   t.color = $("#f-color").value;
   t.cost = Math.max(0, parseFloat($("#f-cost").value) || 0);
   t.effort = Math.max(0, parseFloat($("#f-effort").value) || 0);
+  t.status = $("#f-status").value || "";
   t.dependencies = $$("#f-deps input:checked").map((cb) => {
     const lag = parseInt(cb.parentElement.querySelector(".dep-lag")?.value, 10) || 0;
     const typ = cb.dataset.depType ? cb.dataset.depType + ":" : "";
@@ -4641,6 +4840,21 @@ function showShareOff() {
   showOverlay("Transmission off", body);
 }
 
+/* A curva-S, agora em duas réguas.
+ *
+ * Era uma curva só, com peso "custo se houver, senão pessoa-dias" — e ela
+ * somava dinheiro com trabalho: uma tarefa de R$ 10.000 ao lado de uma de 5
+ * pessoa-dias dava 10005, que não é reais nem dias. O servidor passou a
+ * mandar as duas séries separadas (ver _scurve); aqui se escolhe qual olhar.
+ *
+ * Trabalho é o padrão porque existe sempre — toda tarefa tem duração, mesmo
+ * quando ninguém orçou nada. O botão de custo só aparece quando alguém
+ * informou algum: oferecer uma curva reta no zero seria oferecer uma
+ * pergunta sem resposta.
+ *
+ * O rótulo diz QUAL régua está na tela. Um número solto foi o defeito
+ * anterior — 10005 não estava errado por ser 10005, estava errado por não
+ * dizer de quê. */
 async function showSCurve() {
   if (!state.current) return;
   const body = document.createElement("div");
@@ -4648,28 +4862,45 @@ async function showSCurve() {
     const d = await api(`/api/projects/${state.current.id}/scurve`);
     if (!d.dates || !d.dates.length) {
       body.textContent = "—";
-    } else {
+      showOverlay("S-curve", body);
+      return;
+    }
+    let regua = "work";
+    const desenha = () => {
+      const s = d[regua];
       const W = 560, H = 220, PAD = 8;
       const n = d.dates.length;
-      const max = Math.max(d.total, 1);
+      const max = Math.max(s.total, 1);
       const x = (i) => PAD + (i / Math.max(n - 1, 1)) * (W - 2 * PAD);
       const y = (v) => H - PAD - (v / max) * (H - 2 * PAD);
       const pts = (arr) => arr.map((v, i) => `${x(i)},${y(v)}`).join(" ");
       const ti = d.dates.indexOf(d.today);
+      const nome = T(regua === "work" ? "work" : "cost");
       body.innerHTML =
+        (d.has_cost
+          ? `<div class="sc-units">` +
+            ["work", "cost"].map((k) =>
+              `<button data-unit="${k}"${k === regua ? ' class="on"' : ""}>` +
+              `${T(k)}</button>`).join("") +
+            `</div>`
+          : "") +
         `<svg class="scurve" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">` +
         (ti >= 0 ? `<line x1="${x(ti)}" y1="${PAD}" x2="${x(ti)}" y2="${H - PAD}" class="sc-today"/>` : "") +
-        `<polyline class="sc-planned" points="${pts(d.planned)}"/>` +
-        `<polyline class="sc-actual" points="${pts(d.actual)}"/>` +
+        `<polyline class="sc-planned" points="${pts(s.planned)}"/>` +
+        `<polyline class="sc-actual" points="${pts(s.actual)}"/>` +
         `</svg>` +
         `<div class="sc-legend">` +
         `<span class="sc-key planned">${T("planned")}</span>` +
         `<span class="sc-key actual">${T("actual")}</span>` +
-        `<span>${T("planned to date")}: <b>${d.planned_today.toFixed(1)}</b></span>` +
-        `<span>${T("earned to date")}: <b>${d.earned_today.toFixed(1)}</b></span>` +
-        `<span>${T("total")}: <b>${d.total.toFixed(1)}</b></span>` +
+        `<span>${T("planned to date")}: <b>${s.planned_today.toFixed(1)}</b></span>` +
+        `<span>${T("earned to date")}: <b>${s.earned_today.toFixed(1)}</b></span>` +
+        `<span>${T("total")}: <b>${s.total.toFixed(1)}</b> ${nome}</span>` +
         `</div>`;
-    }
+      for (const b of body.querySelectorAll("[data-unit]")) {
+        b.addEventListener("click", () => { regua = b.dataset.unit; desenha(); });
+      }
+    };
+    desenha();
   } catch (err) {
     body.textContent = err.message;
   }
@@ -4877,6 +5108,7 @@ function newTask() {
     milestone: false,
     cost: 0,
     effort: 0,
+    status: "",
     parent: "",
     baseline_start: null,
     baseline_duration: 0,
@@ -5164,6 +5396,52 @@ async function renameProject() {
   await loadProjects(state.current.id);
 }
 
+/* Outra máquina gravou antes da minha. Antes daqui saía um descarte; agora
+ * sai uma mesclagem.
+ *
+ * Sem o corpo do 409 (servidor antigo, resposta ilegível) não há três vias
+ * possíveis, e aí o comportamento antigo — recarregar — é o único honesto:
+ * melhor perder a edição sabendo do que gravar por cima da do colega.
+ *
+ * O limite de três tentativas é contra o pingue-pongue: se a cada mesclagem o
+ * servidor já mudou de novo, tentar para sempre é um laço. Na terceira, o
+ * caminho antigo assume e diz que assumiu. */
+let tentativasMerge = 0;
+
+async function resolveConflito(deles) {
+  const recarrega = async (chave) => {
+    setSaveStatus("error", T(chave));
+    state.dirty = false;
+    tentativasMerge = 0;
+    await loadProjects(state.current?.id ?? null);
+  };
+  if (!deles || !deles.tasks || !state.baseSnap) {
+    return recarrega("Project changed on another machine — reloaded");
+  }
+  if (++tentativasMerge > 3) {
+    return recarrega("Project changed on another machine — reloaded");
+  }
+
+  const { projeto, conflitos } = mesclaConcorrente(state.baseSnap, state.current, deles);
+  state.current = projeto;
+  // a base passa a ser a DELE: é contra o carimbo do servidor que a próxima
+  // gravação vai ser julgada, e mandar o carimbo antigo garantiria outro 409
+  state.baseUpdatedAt = deles.updated_at || "";
+  state.baseSnap = baseSnap(deles);
+  clearSelection();
+  renderAll();
+
+  PerthToast.info(conflitos.length
+    ? `${T("Merged with the other machine — theirs kept in")}: ` +
+      conflitos.slice(0, 3).join(", ") + (conflitos.length > 3 ? "…" : "")
+    : T("Merged with the change from the other machine"));
+
+  state.dirty = true;              // a mesclagem é o que precisa ser gravado
+  const salvo = await saveNow();
+  if (salvo) tentativasMerge = 0;
+  return salvo;
+}
+
 async function saveNowAfterDirty() {
   state.dirty = true;
   clearTimeout(saveTimer);
@@ -5415,6 +5693,7 @@ function showShortcuts() {
     ["Home / End", "first / last task"],
     ["N", "new task"],
     ["Enter / duplo clique", "edit task"],
+    ["Shift+0…9", "progress in tenths, on the whole selection (100% by dragging the fill)"],
     ["Ctrl+E", "edit the whole selection (dates, assignee, colour)"],
     ["Del", "delete selected task"],
     ["Ctrl+D", "duplicate selected task"],
@@ -5477,6 +5756,8 @@ const GLOSSARY = [
     ["dependency cycle", "A waits for B and B waits for A. Nothing can be scheduled until the loop is cut — this is the one warning that stops the engine."],
     ["past deadline", "The task finishes after the date it had promised."],
     ["overdue", "The day has passed and the task is not at 100%."],
+    ["Bottleneck", "A task with zero slack that more than one other task is waiting on. The critical path already tells you a task cannot slip; the bottleneck tells you where the chain becomes a funnel, and that is the one worth protecting first. It is derived from the plan, never typed: a hand-set flag would be wrong the moment somebody drags a bar."],
+    ["On hold", "Work stopped and expected to resume — a state nothing in the plan can reveal, so it is the one thing you declare rather than Perth deducing. It changes no arithmetic: the task keeps its dates, its load and its place on the critical path. What it stops is the reader's assumption that a bar on the chart means somebody is on it."],
     ["overallocation", "Two tasks of the same person on a day that carries more work than it holds. With a capacity declared for that person, \"more than it holds\" means over the capacity; without one, it falls back to the cruder rule that any two tasks on the same day are too many."],
     ["Capacity per day", "How much work a person absorbs in one working day, in the same unit as a task's effort — 8 for hours, 1 for a full-time person-day, 0.5 for half time. Declaring it is what lets two one-hour tasks stop counting as an overload. Empty means not declared, and the old rule applies."],
     ["Effort", "How much work a task is, in the same unit as a person's capacity. It never moves the task: two hours of work inside a task that spans a week is a statement about load, not about dates. Empty falls back to the cost, and then to the duration in person-days."],
@@ -5751,6 +6032,7 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
   if (typing) return;
+  if (progressoPorTecla(ev)) { ev.preventDefault(); return; }
   if (navegarComTeclado(ev)) { ev.preventDefault(); return; }
   // Undo / Redo globais
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !ev.shiftKey) {
