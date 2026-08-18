@@ -5,6 +5,33 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.7] - 2026-08-17
+
+### Fixed
+- **The S-curve no longer adds money to person-days.** It had one series, with
+  the weight "cost when there is one, otherwise duration in person-days" — so a
+  task worth R$ 10,000 next to one worth 5 person-days produced **10005**,
+  which is neither reais nor days and answers no question. While `cost` was the
+  only weight in the package the ambiguity was symmetric and liveable; since
+  `effort` exists, daily load could tell the two apart and the curve could not.
+- There are now **two independent series**, each with a single unit: *work*
+  (`effort` when set, otherwise person-days — the same ruler the resource panel
+  and overallocation use) and *cost* (`cost`, and only that). A task with no
+  cost recorded contributes zero to the cost curve, which is what a cost curve
+  should say about it. `has_cost` tells the browser whether anybody entered
+  one, so it never offers a flat line at zero.
+- The overlay picks which ruler to show, work first because work always exists
+  — every task has a duration even when nobody budgeted anything — and the
+  total now carries the name of what it is counting. `10005` was not wrong for
+  being 10005; it was wrong for not saying of what.
+
+### Added
+- `team_stats` reports the team's **capacity**: the sum of its members'. Two
+  people at 8 absorb 16 in a day. A member who declared none adds zero, so a
+  team with a missing number reads lower than it is — `members` sits next to it
+  for exactly that reason. Without it, "is this team over capacity?" was a
+  question the release that introduced capacity could not answer.
+
 ## [0.9.6] - 2026-08-17
 
 ### Fixed

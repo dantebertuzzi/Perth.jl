@@ -38,6 +38,9 @@ window.PerthI18n = (function () {
 
   const STR = {
     pt: {
+      // curva-S: as duas réguas
+      "work": "trabalho",
+      "cost": "custo",
       // capacidade por pessoa e esforço da tarefa
       "Capacity per day": "Capacidade por dia",
       "Effort": "Esforço",
@@ -610,6 +613,9 @@ window.PerthI18n = (function () {
     },
 
     es: {
+      // curva-S: as duas réguas
+      "work": "trabajo",
+      "cost": "costo",
       // capacidad por persona y esfuerzo de la tarea
       "Capacity per day": "Capacidad por día",
       "Effort": "Esfuerzo",
@@ -1174,6 +1180,9 @@ window.PerthI18n = (function () {
     },
 
     fr: {
+      // curva-S: as duas réguas
+      "work": "travail",
+      "cost": "coût",
       // capacité par personne et charge de la tâche
       "Capacity per day": "Capacité par jour",
       "Effort": "Charge",
@@ -1740,6 +1749,9 @@ window.PerthI18n = (function () {
     },
 
     zh: {
+      // curva-S: as duas réguas
+      "work": "工作量",
+      "cost": "成本",
       // 每人产能与任务工作量
       "Capacity per day": "每日产能",
       "Effort": "工作量",
