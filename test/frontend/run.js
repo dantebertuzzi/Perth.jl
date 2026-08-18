@@ -3727,6 +3727,69 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("gantt · a curva-S diz de que régua está falando");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Payload como _scurve devolve: duas séries independentes, cada uma numa
+  // unidade só. A antiga era uma, com peso "custo se houver, senão
+  // pessoa-dias" — e somava R$ 10.000 com 5 pessoa-dias no mesmo número.
+  //
+  // showSCurve é assíncrona e runIn não: abre-se numa chamada, cede-se o
+  // turno, e lê-se o DOM na seguinte (o api stubado já resolve na hora).
+  const abrir = (has_cost) => `
+    state.current = { id: "psc", name: "P", people: [], bands: [], markers: [], tasks: [] };
+    api = async () => ({
+      dates: ["2026-04-06", "2026-04-07", "2026-04-08"],
+      today: "2026-04-07",
+      work: { planned: [16, 32, 48], actual: [4, 8], total: 48,
+              planned_today: 32, earned_today: 8 },
+      cost: { planned: [3333, 6666, 10000], actual: [5000, 10000], total: 10000,
+              planned_today: 6666, earned_today: 10000 },
+      has_cost: ${has_cost} });
+    showSCurve();
+    return 1;`;
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  // com custo informado, as duas réguas são oferecidas — e trabalho é a que
+  // abre, porque existe sempre
+  runIn(abrir(true)); await tick();
+  let r = runIn(`
+    const bs = [...document.querySelectorAll("#perth-overlay [data-unit]")];
+    return { botoes: bs.map((b) => b.dataset.unit),
+             ligado: bs.find((b) => b.classList.contains("on"))?.dataset.unit,
+             legenda: document.querySelector("#perth-overlay .sc-legend").textContent };`);
+  check(r.botoes.join() === "work,cost", "gantt: as duas réguas viram dois botões");
+  check(r.ligado === "work", "gantt: e trabalho é a que abre — ela existe sempre");
+  check(/48\.0/.test(r.legenda) && !/10000/.test(r.legenda),
+        "gantt: os números são os do trabalho, não os do custo");
+  check(/trabalho|work/.test(r.legenda),
+        "gantt: e o total vem com o nome da régua (era 10005 sem dizer de quê)");
+
+  // trocar de régua troca a curva E os números
+  r = runIn(`
+    document.querySelector('#perth-overlay [data-unit="cost"]').click();
+    return { legenda: document.querySelector("#perth-overlay .sc-legend").textContent,
+             ligado: document.querySelector("#perth-overlay [data-unit].on").dataset.unit,
+             pontos: document.querySelector("#perth-overlay .sc-planned")
+                       .getAttribute("points") };`);
+  check(r.ligado === "cost" && /10000\.0/.test(r.legenda),
+        "gantt: clicar em custo mostra os números do custo");
+  check(/custo|cost/.test(r.legenda), "gantt: e o rótulo acompanha");
+  check(r.pontos.split(" ").length === 3, "gantt: a curva redesenha com a série nova");
+
+  // sem custo nenhum, não se oferece uma curva reta no zero
+  runIn(abrir(false)); await tick();
+  r = runIn(`
+    return { botoes: document.querySelectorAll("#perth-overlay [data-unit]").length,
+             legenda: document.querySelector("#perth-overlay .sc-legend").textContent };`);
+  check(r.botoes === 0, "gantt: sem custo informado, o seletor de régua não aparece");
+  check(/48\.0/.test(r.legenda), "gantt: e a curva de trabalho continua lá");
+
+  close();
+}
+
 console.log("gantt · o chip do projeto tem a largura do nome que ele mostra");
 {
   // Um <select> se dimensiona pela opção mais LARGA (a caixa precisa caber a

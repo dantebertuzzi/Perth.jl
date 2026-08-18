@@ -4641,6 +4641,21 @@ function showShareOff() {
   showOverlay("Transmission off", body);
 }
 
+/* A curva-S, agora em duas réguas.
+ *
+ * Era uma curva só, com peso "custo se houver, senão pessoa-dias" — e ela
+ * somava dinheiro com trabalho: uma tarefa de R$ 10.000 ao lado de uma de 5
+ * pessoa-dias dava 10005, que não é reais nem dias. O servidor passou a
+ * mandar as duas séries separadas (ver _scurve); aqui se escolhe qual olhar.
+ *
+ * Trabalho é o padrão porque existe sempre — toda tarefa tem duração, mesmo
+ * quando ninguém orçou nada. O botão de custo só aparece quando alguém
+ * informou algum: oferecer uma curva reta no zero seria oferecer uma
+ * pergunta sem resposta.
+ *
+ * O rótulo diz QUAL régua está na tela. Um número solto foi o defeito
+ * anterior — 10005 não estava errado por ser 10005, estava errado por não
+ * dizer de quê. */
 async function showSCurve() {
   if (!state.current) return;
   const body = document.createElement("div");
@@ -4648,28 +4663,45 @@ async function showSCurve() {
     const d = await api(`/api/projects/${state.current.id}/scurve`);
     if (!d.dates || !d.dates.length) {
       body.textContent = "—";
-    } else {
+      showOverlay("S-curve", body);
+      return;
+    }
+    let regua = "work";
+    const desenha = () => {
+      const s = d[regua];
       const W = 560, H = 220, PAD = 8;
       const n = d.dates.length;
-      const max = Math.max(d.total, 1);
+      const max = Math.max(s.total, 1);
       const x = (i) => PAD + (i / Math.max(n - 1, 1)) * (W - 2 * PAD);
       const y = (v) => H - PAD - (v / max) * (H - 2 * PAD);
       const pts = (arr) => arr.map((v, i) => `${x(i)},${y(v)}`).join(" ");
       const ti = d.dates.indexOf(d.today);
+      const nome = T(regua === "work" ? "work" : "cost");
       body.innerHTML =
+        (d.has_cost
+          ? `<div class="sc-units">` +
+            ["work", "cost"].map((k) =>
+              `<button data-unit="${k}"${k === regua ? ' class="on"' : ""}>` +
+              `${T(k)}</button>`).join("") +
+            `</div>`
+          : "") +
         `<svg class="scurve" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">` +
         (ti >= 0 ? `<line x1="${x(ti)}" y1="${PAD}" x2="${x(ti)}" y2="${H - PAD}" class="sc-today"/>` : "") +
-        `<polyline class="sc-planned" points="${pts(d.planned)}"/>` +
-        `<polyline class="sc-actual" points="${pts(d.actual)}"/>` +
+        `<polyline class="sc-planned" points="${pts(s.planned)}"/>` +
+        `<polyline class="sc-actual" points="${pts(s.actual)}"/>` +
         `</svg>` +
         `<div class="sc-legend">` +
         `<span class="sc-key planned">${T("planned")}</span>` +
         `<span class="sc-key actual">${T("actual")}</span>` +
-        `<span>${T("planned to date")}: <b>${d.planned_today.toFixed(1)}</b></span>` +
-        `<span>${T("earned to date")}: <b>${d.earned_today.toFixed(1)}</b></span>` +
-        `<span>${T("total")}: <b>${d.total.toFixed(1)}</b></span>` +
+        `<span>${T("planned to date")}: <b>${s.planned_today.toFixed(1)}</b></span>` +
+        `<span>${T("earned to date")}: <b>${s.earned_today.toFixed(1)}</b></span>` +
+        `<span>${T("total")}: <b>${s.total.toFixed(1)}</b> ${nome}</span>` +
         `</div>`;
-    }
+      for (const b of body.querySelectorAll("[data-unit]")) {
+        b.addEventListener("click", () => { regua = b.dataset.unit; desenha(); });
+      }
+    };
+    desenha();
   } catch (err) {
     body.textContent = err.message;
   }

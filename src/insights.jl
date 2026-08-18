@@ -431,19 +431,41 @@ function _workload_payload(p::Project)
 end
 
 # ---------------------------------------------------------------------------
-# Curva S: custo/trabalho planejado acumulado ao longo do tempo.
-# Peso de cada tarefa = cost (se > 0) ou duração em dias (pessoa-dias).
+# Curva S: o acumulado ao longo do tempo, em DUAS séries independentes.
+#
+# Havia uma só, com peso "cost se houver, senão pessoa-dias" — e ela somava
+# dinheiro com trabalho no mesmo número. Uma tarefa de R$ 10.000 ao lado de
+# uma de 5 pessoa-dias devolvia 10005, que não é reais nem dias e não
+# responde a pergunta nenhuma. Enquanto `cost` era o único peso existente a
+# ambiguidade era simétrica e dava para conviver; desde que `effort` existe,
+# a carga diária já sabe distinguir as duas coisas e a curva não sabia.
+#
+# Agora são duas, e cada uma tem uma unidade só:
+#
+#   · trabalho — `effort` quando dito, senão a duração em pessoa-dias. Existe
+#     sempre, porque toda tarefa tem duração. É a mesma régua de _work_weight,
+#     logo a mesma que o painel de recursos e a sobrecarga usam.
+#   · custo — `cost`, e só. Tarefa sem custo informado contribui zero, o que é
+#     a verdade de uma curva de CUSTO: o que não foi orçado não custa nada
+#     registrado. `has_cost` diz se alguém informou algum, para o navegador
+#     não oferecer uma curva reta no zero.
+#
 # "planned" usa o baseline quando existe (senão o plano atual), distribuído
 # uniformemente pela duração; "actual" acumula o valor agregado (peso ×
-# progresso) distribuído pelo trecho já decorrido de cada tarefa.
+# progresso) espalhado pelo trecho já decorrido de cada tarefa.
 # ---------------------------------------------------------------------------
+
+# O peso de custo: dinheiro, e nada mais. Fora daqui, `cost` ainda serve de
+# esforço quando ninguém informou `effort` (ver _work_weight) — é o que
+# mantém os planos antigos com a mesma resposta de sempre.
+_cost_weight(t::GanttTask) = t.cost
 
 function _scurve(p::Project)
     leaves = [t for t in _leaf_view(p).tasks if !t.milestone]
-    isempty(leaves) && return (; dates = String[], planned = Float64[],
-                                actual = Float64[], today = string(Dates.today()),
-                                total = 0.0, planned_today = 0.0, earned_today = 0.0)
-    w(t) = t.cost > 0 ? t.cost : Float64(_effdur(t))
+    vazia = (; planned = Float64[], actual = Float64[], total = 0.0,
+              planned_today = 0.0, earned_today = 0.0)
+    isempty(leaves) && return (; dates = String[], today = string(Dates.today()),
+                                work = vazia, cost = vazia, has_cost = false)
     pstart(t) = t.baseline_start === nothing ? t.start : t.baseline_start
     pdur(t) = t.baseline_start === nothing ? _effdur(t) : max(t.baseline_duration, 1)
     today = Dates.today()
@@ -452,35 +474,46 @@ function _scurve(p::Project)
              maximum(end_date(p, t) for t in leaves), today)
     ndays = Dates.value(d1 - d0) + 1
     ndays > 3660 && return (; error = "span too large")   # sanidade: 10 anos
-    planned = zeros(Float64, ndays)
-    actual = zeros(Float64, ndays)
     at(d) = Dates.value(d - d0) + 1
-    for t in leaves
-        # planejado: peso uniforme por dia da janela do baseline/plano
-        per = w(t) / pdur(t)
-        for k in 0:(pdur(t) - 1)
-            planned[clamp(at(pstart(t)) + k, 1, ndays)] += per
-        end
-        # realizado: valor agregado espalhado pelos dias já decorridos
-        earned = w(t) * clamp(t.progress, 0, 100) / 100
-        first_d = at(t.start)
-        last_d = min(at(min(end_date(p, t), today)), ndays)
-        span_d = max(last_d - first_d + 1, 1)
-        if earned > 0 && first_d <= ndays
-            per = earned / span_d
-            for k in 0:(span_d - 1)
-                idx = first_d + k
-                1 <= idx <= ndays && (actual[idx] += per)
+    ti = clamp(at(today), 1, ndays)
+
+    # A mesma conta, parametrizada pelo peso: as duas séries diferem SÓ na
+    # régua, e ter uma função só garante que elas nunca divirjam em nada além
+    # dela — foi a régua misturada que criou o problema, não a matemática.
+    function serie(peso)
+        planned = zeros(Float64, ndays)
+        actual = zeros(Float64, ndays)
+        for t in leaves
+            pt = peso(t)
+            pt == 0 && continue
+            # planejado: peso uniforme por dia da janela do baseline/plano
+            per = pt / pdur(t)
+            for k in 0:(pdur(t) - 1)
+                planned[clamp(at(pstart(t)) + k, 1, ndays)] += per
+            end
+            # realizado: valor agregado espalhado pelos dias já decorridos
+            earned = pt * clamp(t.progress, 0, 100) / 100
+            first_d = at(t.start)
+            last_d = min(at(min(end_date(p, t), today)), ndays)
+            span_d = max(last_d - first_d + 1, 1)
+            if earned > 0 && first_d <= ndays
+                per = earned / span_d
+                for k in 0:(span_d - 1)
+                    idx = first_d + k
+                    1 <= idx <= ndays && (actual[idx] += per)
+                end
             end
         end
+        cumsum!(planned, planned)
+        cumsum!(actual, actual)
+        return (; planned, actual = actual[1:ti], total = planned[end],
+                planned_today = planned[ti], earned_today = actual[ti])
     end
-    cumsum!(planned, planned)
-    cumsum!(actual, actual)
-    ti = clamp(at(today), 1, ndays)
+
     return (; dates = [string(d0 + Dates.Day(k)) for k in 0:(ndays - 1)],
-            planned, actual = actual[1:ti],
-            today = string(today), total = planned[end],
-            planned_today = planned[ti], earned_today = actual[ti])
+            today = string(today),
+            work = serie(_work_weight), cost = serie(_cost_weight),
+            has_cost = any(t -> t.cost > 0, leaves))
 end
 
 # ---------------------------------------------------------------------------
@@ -596,6 +629,11 @@ registration at all — land in the row with the empty team name.
 occupancy of the calendar, not the sum of the members' days. `over_days` is
 the sum of the members' overloaded days: two people from the same team
 working the same day is normal, and only an individual can be double-booked.
+
+`capacity` is the **sum** of the members' declared capacities — two people at
+8 absorb 16 in a day. A member who declared none adds zero, so a team where
+somebody is missing a number reads lower than it is; `members` sits next to it
+for exactly that reason.
 """
 function team_stats(p::Project)
     g = _stats_group(p, t -> _team_of(p, t.assignee))
@@ -607,8 +645,14 @@ function team_stats(p::Project)
         ds = sort!(collect(g.dias[time]))
         nomes = sort!(unique!([String(strip(t.assignee)) for t in ts if !isempty(strip(t.assignee))]);
                       by = lowercase)
+        # A capacidade do setor é a soma das dos membros: dois de 8 aguentam
+        # 16 num dia. Membro sem capacidade declarada soma zero, e por isso a
+        # linha do setor só tem sentido quando TODOS declararam — `capacity`
+        # aqui é uma soma, não uma média, e uma soma com buraco mente para
+        # baixo. Quem lê tem `members` ao lado para desconfiar.
         push!(out, (team = time,
                     members = length(nomes), people = nomes,
+                    capacity = sum(n -> _capacity_of(p, n), nomes; init = 0.0),
                     tasks = length(ts),
                     milestones = count(t -> t.milestone, ts),
                     effort = esforco,

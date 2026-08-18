@@ -1698,6 +1698,66 @@ end
         delete_project(p.id)
     end
 
+    @testset "a curva-S não soma dinheiro com trabalho" begin
+        # Havia uma série só, com peso "cost se houver, senão pessoa-dias".
+        # Uma tarefa de R$ 10.000 ao lado de uma de 5 pessoa-dias devolvia
+        # 10005 — não é reais, não é dias, e não responde pergunta nenhuma.
+        p = Project(name = "Unidades")
+        add_task!(p, "Comprar laudo"; start = Date(2026, 4, 6), duration = 5,
+                  cost = 10000, effort = 8, progress = 100)
+        add_task!(p, "Redigir"; start = Date(2026, 4, 6), duration = 5,
+                  effort = 40, progress = 0)
+        s = Perth._scurve(p)
+
+        # trabalho: 8 + 40, na mesma régua que a carga diária usa
+        @test s.work.total ≈ 48.0
+        @test s.work.earned_today ≈ 8.0          # só a primeira está pronta
+        # custo: só dinheiro, e a tarefa sem custo contribui zero
+        @test s.cost.total ≈ 10000.0
+        @test s.cost.earned_today ≈ 10000.0
+        @test s.has_cost
+        # e em nenhuma das duas aparece a soma das duas
+        @test s.work.total != 10005.0 && s.cost.total != 10005.0
+
+        # sem custo nenhum: a curva de trabalho continua existindo (toda
+        # tarefa tem duração), a de custo é reta no zero, e has_cost avisa
+        q = Project(name = "SemCusto")
+        add_task!(q, "A"; start = Date(2026, 4, 6), duration = 5, progress = 50)
+        s2 = Perth._scurve(q)
+        @test s2.work.total ≈ 5.0
+        @test s2.cost.total == 0.0
+        @test !s2.has_cost
+
+        # sem effort, o peso de TRABALHO ainda cai em cost — é o que mantém a
+        # resposta dos planos que existiam antes de effort existir
+        r = Project(name = "SoCusto")
+        add_task!(r, "A"; start = Date(2026, 4, 6), duration = 5, cost = 300)
+        @test Perth._scurve(r).work.total ≈ 300.0
+        @test Perth._scurve(r).cost.total ≈ 300.0
+
+        # projeto vazio devolve as duas séries vazias, não um erro
+        vazio = Perth._scurve(Project(name = "Vazio"))
+        @test vazio.work.total == 0.0 && vazio.cost.total == 0.0 && !vazio.has_cost
+    end
+
+    @testset "capacidade do setor é a soma das pessoas" begin
+        p = create_project("SetorCap")
+        add_person!(p, "Ana"; team = "Projeto", capacity = 8)
+        add_person!(p, "Chen"; team = "Projeto", capacity = 4)
+        add_person!(p, "Bruno"; team = "Obra")          # sem capacidade
+        add_task!(p, "A"; start = Date(2026, 4, 6), duration = 2, assignee = "Ana")
+        add_task!(p, "C"; start = Date(2026, 4, 6), duration = 2, assignee = "Chen")
+        add_task!(p, "B"; start = Date(2026, 4, 6), duration = 2, assignee = "Bruno")
+        setores = Dict(r.team => r for r in team_stats(p))
+        @test setores["Projeto"].capacity ≈ 12.0       # 8 + 4, soma e não média
+        @test setores["Projeto"].members == 2
+        # quem não declarou soma zero: a linha lê para baixo, e members é o
+        # que deixa isso visível
+        @test setores["Obra"].capacity == 0.0
+        @test setores["Obra"].members == 1
+        delete_project(p.id)
+    end
+
     @testset "o .perth.jl não pode engolir campo nenhum" begin
         # cost sumia no ida-e-volta havia sabe-se lá quanto tempo, e nenhum
         # teste pegaria o próximo: os que existiam conferiam os campos de que
