@@ -113,6 +113,7 @@ function _to_julia_source(p::Project)
         t.deadline === nothing ||
             println(io, "            deadline = Date(", repr(string(t.deadline)), "),")
         t.pinned && println(io, "            pinned = true,")
+        isempty(t.status) || println(io, "            status = ", repr(t.status), ",")
         if has_estimate(t)   # os três juntos ou nenhum: meia estimativa não diz nada
             println(io, "            optimistic = ", t.optimistic, ",")
             println(io, "            most_likely = ", t.most_likely, ",")

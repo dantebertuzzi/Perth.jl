@@ -3727,6 +3727,116 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("gantt · parada e gargalo");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Duas naturezas diferentes: PARADA é declarada (nada no plano revela que o
+  // alvará atrasou) e GARGALO é derivado (o motor já sabe folga e fan-out).
+  const seed = `
+    const mk = (id, nome, extra) => Object.assign({
+      id, name: nome, start: "2026-04-06", duration: 5, progress: 0,
+      dependencies: [], color: "#4063d8", notes: "", milestone: false,
+      parent: "", cost: 0, effort: 0, status: "", assignee: "",
+      baseline_start: null, baseline_duration: 0, deadline: null,
+      pinned: false }, extra || {});
+    state.current = { id: "pst", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "Alvará", { status: "hold" }),
+      mk("b", "Fundação"),
+      mk("c", "Telhado") ] };
+    state.cpm = { cycle: false, finish: "2026-04-20", calendar: "", pert: null,
+                  nonworking: new Set(),
+                  byId: new Map([
+                    ["a", { id: "a", slack_days: 3, critical: false, dependents: 0, bottleneck: false }],
+                    ["b", { id: "b", slack_days: 0, critical: true, dependents: 3, bottleneck: true }],
+                    ["c", { id: "c", slack_days: 0, critical: true, dependents: 1, bottleneck: false }]]) };
+    state.highlight = null; state.search = "";
+    state.wbsClosed.clear(); state.lanesClosed.clear();
+    clearSelection();
+    renderAll();`;
+
+  // ------------------------------------------------------------- parada
+  // a barra MANTÉM a cor: cor é identidade (de quem é a tarefa), estado é
+  // decoração por cima — a mesma gramática do caminho crítico e da data fixa
+  let r = runIn(`${seed}
+    const barra = document.querySelector('#chart .bar[data-id="a"]');
+    const hach = document.querySelector('#chart .bar-hold');
+    return { cor: barra.getAttribute("fill"),
+             hachura: hach ? hach.getAttribute("fill") : null,
+             mesmaGeometria: hach && hach.getAttribute("width") === barra.getAttribute("width") };`);
+  check(r.cor === "#4063d8", "gantt: a tarefa parada mantém a cor dela");
+  check(r.hachura === "url(#hachura-parada)" && r.mesmaGeometria,
+        "gantt: e ganha uma hachura por cima, do tamanho da barra");
+
+  r = runIn(`${seed} return document.querySelectorAll("#chart .bar-hold").length;`);
+  check(r === 1, "gantt: só a parada recebe a hachura");
+
+  // um <defs> por render, não um <pattern> por barra
+  r = runIn(`${seed} return { defs: document.querySelectorAll("#chart defs").length,
+    padroes: document.querySelectorAll("#chart pattern").length };`);
+  check(r.defs === 1 && r.padroes === 1,
+        "gantt: o padrão da hachura é definido uma vez, não por barra");
+
+  // a linha da tabela também marca — resumo e marco não têm barra onde hachurar
+  r = runIn(`${seed} return [...document.querySelectorAll(".tt-row")]
+    .map((x) => x.dataset.id + ":" + (x.querySelector(".hold-mark") ? "‖" : "-"));`);
+  check(r.join("|") === "a:‖|b:-|c:-", "gantt: e a linha da tabela leva a marca");
+
+  // filtrar por parada
+  r = runIn(`${seed} state.highlight = { kind: "status", value: "hold" }; renderAll();
+    return [...document.querySelectorAll(".tt-row")]
+      .map((x) => x.dataset.id + ":" + (x.className.includes("dim") ? "off" : "on"));`);
+  check(r.join("|") === "a:on|b:off|c:off", "gantt: o destaque 'parada' acende só ela");
+
+  // ------------------------------------------------------------ gargalo
+  // vem PRONTO do motor: o cliente não recalcula folga nem fan-out
+  r = runIn(`${seed} state.highlight = { kind: "status", value: "bottleneck" }; renderAll();
+    return [...document.querySelectorAll(".tt-row")]
+      .map((x) => x.dataset.id + ":" + (x.className.includes("dim") ? "off" : "on"));`);
+  check(r.join("|") === "a:off|b:on|c:off",
+        "gantt: o gargalo acende só a que o motor apontou");
+  check(runIn(`${seed} return typeof window.calculaGargalo;`) === "undefined",
+        "gantt: e não há uma segunda conta de gargalo aqui");
+
+  // os dois entram no seletor só quando existem — item que nunca casa é ruído
+  r = runIn(`${seed} return [...document.querySelectorAll("#highlight-select option")]
+    .map((o) => o.value).filter((v) => v === "status:hold" || v === "status:bottleneck");`);
+  check(r.join() === "status:hold,status:bottleneck",
+        "gantt: as duas entram no seletor quando há alguma");
+
+  r = runIn(`${seed}
+    state.current.tasks.forEach((t) => { t.status = ""; });
+    state.cpm.byId.forEach((i) => { i.bottleneck = false; });
+    renderAll();
+    return [...document.querySelectorAll("#highlight-select option")]
+      .map((o) => o.value).filter((v) => v === "status:hold" || v === "status:bottleneck");`);
+  check(r.length === 0, "gantt: e somem do seletor quando não há nenhuma");
+
+  // ------------------------------------------------------------- o modal
+  r = runIn(`${seed} openModal("a");
+    const v = document.getElementById("f-status").value;
+    closeModal(false);
+    return v;`);
+  check(r === "hold", "gantt: o modal abre com a situação atual");
+
+  r = runIn(`${seed} openModal("b");
+    document.getElementById("f-status").value = "hold";
+    submitModal();
+    return taskById("b").status;`);
+  check(r === "hold", "gantt: e salva a que for escolhida");
+
+  r = runIn(`${seed} openModal("a");
+    document.getElementById("f-status").value = "";
+    submitModal();
+    return { status: taskById("a").status,
+             hachuras: document.querySelectorAll("#chart .bar-hold").length };`);
+  check(r.status === "" && r.hachuras === 0,
+        "gantt: voltar para Normal tira a hachura da tela");
+
+  close();
+}
+
 console.log("gantt · progresso sem abrir a tarefa");
 {
   const { runIn, close } = loadGanttApp();

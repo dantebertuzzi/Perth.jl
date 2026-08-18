@@ -428,12 +428,12 @@ function _export_csv(req::HTTP.Request)
     # numa planilha precisa do número que a carga usa. Coluna nova no fim do
     # grupo de números, antes das estruturais — quem lê por nome não se mexe.
     println(io, "id,name,start,duration,deadline,pinned,progress,assignee,cost," *
-                "effort,milestone,parent,dependencies,notes")
+                "effort,status,milestone,parent,dependencies,notes")
     for t in p.tasks
         println(io, join(esc.([t.id, t.name, t.start, t.duration,
                                something(t.deadline, ""), t.pinned, t.progress,
-                               t.assignee, t.cost, t.effort, t.milestone, t.parent,
-                               join(t.dependencies, " "), t.notes]), ","))
+                               t.assignee, t.cost, t.effort, t.status, t.milestone,
+                               t.parent, join(t.dependencies, " "), t.notes]), ","))
     end
     fname = replace(p.name, r"[^\w-]" => "_") * ".csv"
     return HTTP.Response(200, ["Content-Type" => "text/csv; charset=utf-8",
