@@ -38,6 +38,8 @@ window.PerthI18n = (function () {
 
   const STR = {
     pt: {
+      "progress in tenths, on the whole selection (100% by dragging the fill)":
+        "progresso em décimos, na seleção inteira (100% arrastando o preenchimento)",
       // mesclagem quando duas máquinas gravam o mesmo projeto
       "Merged with the change from the other machine":
         "Mesclado com a mudança da outra máquina",
@@ -618,6 +620,8 @@ window.PerthI18n = (function () {
     },
 
     es: {
+      "progress in tenths, on the whole selection (100% by dragging the fill)":
+        "progreso en décimos, en toda la selección (100% arrastrando el relleno)",
       // mesclagem quando duas máquinas gravam o mesmo projeto
       "Merged with the change from the other machine":
         "Fusionado con el cambio de la otra máquina",
@@ -1190,6 +1194,8 @@ window.PerthI18n = (function () {
     },
 
     fr: {
+      "progress in tenths, on the whole selection (100% by dragging the fill)":
+        "avancement par dixièmes, sur toute la sélection (100% en tirant le remplissage)",
       // mesclagem quando duas máquinas gravam o mesmo projeto
       "Merged with the change from the other machine":
         "Fusionné avec la modification de l'autre machine",
@@ -1764,6 +1770,8 @@ window.PerthI18n = (function () {
     },
 
     zh: {
+      "progress in tenths, on the whole selection (100% by dragging the fill)":
+        "以十分之一设置进度，作用于整个选择（拖动填充条到头即 100%）",
       // mesclagem quando duas máquinas gravam o mesmo projeto
       "Merged with the change from the other machine":
         "已与另一台机器的改动合并",

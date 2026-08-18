@@ -688,6 +688,18 @@ body.row-dragging { cursor: grabbing; user-select: none; }
 }
 .bar-handle { fill: transparent; cursor: ew-resize; }
 .bar-sel { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 4 3; rx: 5; }
+/* Punho do progresso: só na barra selecionada, na borda do pedaço cheio.
+   Discreto em repouso e sólido sob o cursor — ele divide a barra com o
+   arrasto de data, e um punho gritando competiria com o gesto mais usado. */
+.prog-grip {
+  fill: var(--bg);
+  stroke: var(--ink);
+  stroke-width: 1.3;
+  cursor: ew-resize;
+  opacity: 0.75;
+}
+.prog-grip:hover { opacity: 1; fill: var(--ink); }
+.prog-grip.dim { opacity: 0.25; }
 .dep { fill: none; stroke: var(--muted); stroke-width: 1.3; }
 .dep-head { fill: var(--muted); }
 .milestone { cursor: grab; }

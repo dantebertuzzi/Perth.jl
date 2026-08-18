@@ -5,6 +5,35 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.9] - 2026-08-17
+
+### Added
+- **Progress without opening the task.** `progress` is the field that changes
+  most often — it is what a weekly meeting *is* — and it was the only one with
+  no gesture: dates come from dragging the bar, order from dragging the row,
+  links from dragging a dot, and the percentage needed the modal, eight times
+  in a row.
+- A **grip on the edge of the filled part** of the selected bar. Only on the
+  selected one, like the dependency dots: another handle on every bar would
+  fight for the same pixels as the date drag, which is the most-used gesture
+  on the chart. It stops 9px short of the end so it never covers the resize
+  handle that lives in the last 8 — in the final few percent it sits a hair
+  left of the true fill edge, while the drag itself stays exact and is what
+  reaches 100.
+- Dragging snaps to **5%**: nobody reports 37% in a meeting, and a finer step
+  would demand aim the information does not deserve.
+- **`Shift`+`0`…`9`** sets the round tenths on the **whole selection**, in one
+  undo entry. The roadmap asked for bare digits, but `1`–`4` have been the
+  zoom shortcuts from the start, and zooming with a task selected is ordinary
+  use, not an exception — so it takes Shift, read from `ev.code` rather than
+  `ev.key` because Shift+2 is `@` on a US keyboard and something else on
+  ABNT2, while `Digit2` is the same everywhere.
+- A summary refuses both: its progress is the weighted average of its
+  children, recomputed on every render, so writing there would be writing into
+  a field the next render overwrites. Select a summary and a child together
+  and only the child takes the value — the block then reports the average, not
+  what was typed.
+
 ## [0.9.8] - 2026-08-17
 
 ### Fixed

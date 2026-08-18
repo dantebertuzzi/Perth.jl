@@ -1912,8 +1912,8 @@ console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
              duasTeclas: linhas.find((l) => l.textContent.includes("Ctrl+Y"))
                                .querySelectorAll("kbd").length,
              fechar: document.querySelector("#perth-overlay .modal-actions button").textContent };`);
-  check(r.titulo === "Atalhos de teclado" && r.linhas === 23,
-        "gantt: Atalhos abre um overlay com as 23 teclas");
+  check(r.titulo === "Atalhos de teclado" && r.linhas === 24,
+        "gantt: Atalhos abre um overlay com as 24 teclas");
   check(r.primeira === "N" && r.descricao === "nova tarefa",
         "gantt: tecla de um lado, descrição traduzida do outro");
   check(r.duasTeclas === 2, "gantt: \"Ctrl+Shift+Z / Ctrl+Y\" vira dois <kbd>, não um");
@@ -3727,6 +3727,141 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("gantt · progresso sem abrir a tarefa");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // progress é o campo que mais muda — é o que uma reunião semanal É — e era
+  // o único sem gesto: data se arrasta na barra, ordem na linha, ligação no
+  // ponto, e a porcentagem exigia o modal oito vezes seguidas.
+  const seed = `
+    const mk = (id, nome, inicio, extra) => Object.assign({
+      id, name: nome, start: inicio, duration: 10, progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0, effort: 0,
+      assignee: "", baseline_start: null, baseline_duration: 0,
+      deadline: null, pinned: false }, extra || {});
+    state.current = { id: "pp", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "A", "2026-04-06", { progress: 40 }),
+      mk("b", "B", "2026-04-20", { progress: 10 }),
+      mk("f", "Fase", "2026-04-06"),
+      mk("f1", "Filha", "2026-04-06", { parent: "f", progress: 30 }) ] };
+    state.cpm = { cycle: false, finish: "2026-05-01", calendar: "", pert: null,
+                  byId: new Map(), nonworking: new Set() };
+    state.highlight = null; state.search = "";
+    state.wbsClosed.clear(); state.lanesClosed.clear();
+    clearSelection();
+    state.undoStack = []; state.redoStack = [];
+    window.__salvo = 0; markDirty = () => { window.__salvo++; };
+    renderAll();`;
+
+  const punho = (id) => `document.querySelector('#chart .prog-grip[data-id="${id}"]')`;
+
+  // ---------------------------------------------------------- o punho
+  let r = runIn(`${seed} return ${punho("a")} ? 1 : 0;`);
+  check(r === 0, "gantt: sem seleção não há punho de progresso na tela");
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); return ${punho("a")} ? 1 : 0;`);
+  check(r === 1, "gantt: ele aparece na barra selecionada, como os pontos de ligar");
+
+  // resumo não: o progresso dele é a média dos filhos, recalculada a cada render
+  r = runIn(`${seed} selectOnly("f"); renderChart(); return ${punho("f")} ? 1 : 0;`);
+  check(r === 0, "gantt: num resumo ele se recusa a aparecer");
+
+  // ele fica na borda do pedaço cheio
+  r = runIn(`${seed} selectOnly("a"); renderChart();
+    const g = ${punho("a")};
+    const barra = document.querySelector('#chart .bar[data-id="a"]');
+    const x = Number(barra.getAttribute("x")), w = Number(barra.getAttribute("width"));
+    return Math.round(((Number(g.getAttribute("x")) + 3) - x) / w * 100);`);
+  check(r === 40, `gantt: e fica na borda do preenchimento (${r}%)`);
+
+  // nos últimos por cento ele para antes da alça de redimensionar, que mora
+  // nos últimos 8px — cobrir a alça seria trocar um gesto por outro
+  r = runIn(`${seed} taskById("a").progress = 100; selectOnly("a"); renderChart();
+    const g = ${punho("a")};
+    const barra = document.querySelector('#chart .bar[data-id="a"]');
+    const fim = Number(barra.getAttribute("x")) + Number(barra.getAttribute("width"));
+    return fim - (Number(g.getAttribute("x")) + 3);`);
+  check(r === 9, "gantt: a 100% ele encosta a 9px do fim, sem cobrir a alça de esticar");
+
+  // arrastar: pixels viram porcentagem, com passo de 5
+  const arrastar = (id, fracao) => `{
+    const barra = document.querySelector('#chart .bar[data-id="${id}"]');
+    const x = Number(barra.getAttribute("x")), w = Number(barra.getAttribute("width"));
+    const g = ${punho(id)};
+    g.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 0, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: x + w * ${fracao}, clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+  }`;
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", 0.75)}
+    return { pct: taskById("a").progress,
+             undo: state.undoStack.length, salvo: window.__salvo };`);
+  check(r.pct === 75, `gantt: arrastar até três quartos da barra dá 75% (${r.pct})`);
+  check(r.undo === 1 && r.salvo === 1, "gantt: e isso é um desfazer e uma gravação");
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", 0.63)}
+    return taskById("a").progress;`);
+  check(r === 65, `gantt: o passo é de 5 — ninguém relata 63% numa reunião (${r})`);
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", 1.4)}
+    return taskById("a").progress;`);
+  check(r === 100, "gantt: arrastar além da ponta chega a 100, e para lá");
+
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", -0.3)}
+    return taskById("a").progress;`);
+  check(r === 0, "gantt: e antes do começo, a zero");
+
+  // o arrasto do punho não é o arrasto da barra: a data não pode andar junto
+  r = runIn(`${seed} selectOnly("a"); renderChart(); ${arrastar("a", 0.75)}
+    return taskById("a").start;`);
+  check(r === "2026-04-06", "gantt: e a data da tarefa não se mexe junto");
+
+  // ---------------------------------------------------------- o teclado
+  const tecla = (code, mods = {}) => `document.dispatchEvent(new KeyboardEvent("keydown",
+    Object.assign({ code: "${code}", key: "x", bubbles: true, cancelable: true }, ${JSON.stringify(mods)})));`;
+
+  r = runIn(`${seed} selectOnly("a"); ${tecla("Digit7", { shiftKey: true })}
+    return taskById("a").progress;`);
+  check(r === 70, "gantt: Shift+7 põe a selecionada em 70%");
+
+  r = runIn(`${seed} selectOnly("a"); ${tecla("Digit0", { shiftKey: true })}
+    return taskById("a").progress;`);
+  check(r === 0, "gantt: e Shift+0 zera");
+
+  // na seleção INTEIRA, num desfazer só
+  r = runIn(`${seed} setSelection(["a", "b"], "a"); ${tecla("Digit5", { shiftKey: true })}
+    const t = Object.fromEntries(state.current.tasks.map((x) => [x.id, x.progress]));
+    return { a: t.a, b: t.b, undo: state.undoStack.length };`);
+  check(r.a === 50 && r.b === 50 && r.undo === 1,
+        "gantt: vale para a seleção inteira, num desfazer só");
+
+  // resumo na seleção não recebe: o valor dele vem dos filhos
+  r = runIn(`${seed} setSelection(["f", "f1"], "f"); ${tecla("Digit9", { shiftKey: true })}
+    const t = Object.fromEntries(state.current.tasks.map((x) => [x.id, x.progress]));
+    return { filha: t.f1, fase: t.f };`);
+  check(r.filha === 90 && r.fase === 90,
+        "gantt: a filha recebe, e o resumo passa a valer a média dela (não o que digitei)");
+
+  // sem Shift, o dígito continua sendo o zoom — 1..4 são o zoom desde sempre
+  r = runIn(`${seed} selectOnly("a");
+    document.dispatchEvent(new KeyboardEvent("keydown",
+      { key: "3", code: "Digit3", bubbles: true, cancelable: true }));
+    return { zoom: state.zoom, pct: taskById("a").progress };`);
+  check(r.zoom === "month" && r.pct === 40,
+        "gantt: sem Shift o dígito segue sendo o zoom, e o progresso não muda");
+
+  // sem seleção não faz nada
+  r = runIn(`${seed} clearSelection(); ${tecla("Digit9", { shiftKey: true })}
+    return { pct: taskById("a").progress, undo: state.undoStack.length };`);
+  check(r.pct === 40 && r.undo === 0, "gantt: sem nada selecionado, Shift+dígito não faz nada");
+
+  close();
+}
+
 console.log("gantt · duas máquinas gravando: mesclar, não descartar");
 {
   const { runIn, close } = loadGanttApp();
@@ -4079,7 +4214,7 @@ console.log("gantt · o navegador conhece o calendário de dias úteis");
   // arrastar para um sábado: o motor empurra para segunda ao salvar, então a
   // barra tem de mostrar a segunda desde já
   r = runIn(`${seed("Brazil")} ${arrastar("a", 5, "bar")}
-    return state.current.tasks[0].start;`);
+    return taskById("a").start;`);
   check(r === "2026-03-09",
         `gantt: soltar num sábado encosta na segunda, como o motor fará (${r})`);
 
@@ -4098,7 +4233,7 @@ console.log("gantt · o navegador conhece o calendário de dias úteis");
 
   // sem calendário, o gesto é o de sempre
   r = runIn(`${seed("")} ${arrastar("a", 5, "bar")}
-    return state.current.tasks[0].start;`);
+    return taskById("a").start;`);
   check(r === "2026-03-07", "gantt: sem calendário, solta onde soltou");
 
   r = runIn(`${seed("")} ${arrastar("a", 7, "bar-handle")}
