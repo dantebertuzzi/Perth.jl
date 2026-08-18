@@ -5,6 +5,33 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.8] - 2026-08-17
+
+### Fixed
+- **Two machines editing a plan no longer costs one of them their work.** When
+  another machine saved first, the browser threw away everything you had just
+  done and reloaded from the server. You moved task A, a colleague renamed task
+  B, and *your* change vanished — even though the two edits never touched the
+  same thing. The kanban had never had this problem; the Gantt, which is the
+  older of the two, had the weaker model.
+- It now does a **three-way merge**, with the same policy `_reconcile` already
+  applies to undo, for the same reason: what only *I* changed is mine, what
+  only *they* changed is theirs, and what we both changed stays theirs —
+  because overwriting someone else's work in silence is worse than losing mine
+  and being told. The difference is that losing mine is now restricted to what
+  genuinely collided, instead of being the default for everything.
+- The toast **names what collided** ("theirs kept in: Foundation, Roof"):
+  "there was a conflict" without saying where helps nobody. When nothing
+  collided it says so and moves on.
+- Tasks you created survive; tasks they created arrive; a task either of you
+  deleted stays deleted. Project-level fields (name, calendar, collaborators,
+  bands, markers) follow the same rule.
+- Three attempts, then it falls back to the old reload and says so — if the
+  server has changed again by the time each merge lands, retrying forever is a
+  loop, not a fix. Same fallback when the 409 carries no usable body: without
+  the server's state there is no third way to merge against, and reloading is
+  the only honest answer left.
+
 ## [0.9.7] - 2026-08-17
 
 ### Fixed
