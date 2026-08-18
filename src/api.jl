@@ -337,8 +337,16 @@ function _get_cpm(req::HTTP.Request)
                             calendar = p.calendar, tasks = NamedTuple[]))
         try
             c = _cpm(_leaf_view(p))
+            # Os dias não úteis da janela do projeto, com folga dos dois lados
+            # para o arrasto não sair da tabela. É com isto que o navegador
+            # calcula onde uma tarefa termina — antes ele somava dias
+            # CORRIDOS e desenhava uma barra curta demais em todo plano com
+            # calendário de dias úteis.
+            d0, d1 = span(p)
+            folga = Dates.Day(90)
             _json((; cycle = false, finish = c.finish, calendar = p.calendar,
-                     tasks = slack(p), pert = _pert_payload(p)))
+                     tasks = slack(p), pert = _pert_payload(p),
+                     nonworking = _nonworking_days(p, d0 - folga, d1 + folga)))
         catch err
             # Calendário de dias úteis sem BusinessDays carregado no servidor
             err isa ErrorException && return _error(err.msg; status = 409)

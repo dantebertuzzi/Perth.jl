@@ -329,13 +329,93 @@ const MONTHS = new Proxy([], {   // meses no idioma da interface
 });
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
-function taskEnd(t) {
-  const start = parseDate(t.start);
-  return t.milestone ? start : addDays(start, Math.max(t.duration, 1) - 1);
+/* O calendário de dias úteis, do lado do navegador.
+ *
+ * `duration` conta dias ÚTEIS quando o projeto tem calendário — mas aqui ela
+ * era somada como dias corridos, e a barra saía curta: dez dias úteis a
+ * partir de 02/03 terminam em 13/03, e o desenho dizia 11/03. Dois dias por
+ * quinzena, crescendo. Com isso erravam a largura da barra, o vão do projeto
+ * na barra de status, o destaque de "vencida", a derrapagem contra o
+ * baseline, o prazo estourado e a extensão dos resumos — que por isso
+ * discordava da do servidor (12 lá, 10 aqui).
+ *
+ * O que chega do servidor é UM dado: quais dias não se trabalha (`nonworking`
+ * no payload do CPM). Não é a regra duplicada — é o dado de quem conhece os
+ * feriados, e as quatro derivações abaixo saem dele exatamente como saem de
+ * `_workday` em schedule.jl. Mandar o fim de cada tarefa já calculado seria o
+ * contrário: ficaria velho no meio de um arrasto, que é justamente quando a
+ * geometria precisa estar certa.
+ *
+ * Dia fora da janela recebida conta como útil. A janela é o projeto com 90
+ * dias de folga de cada lado, então só um arrasto muito longo sai dela — e a
+ * gravação seguinte devolve a verdade. */
+const temCalendario = () => !!state.cpm?.nonworking?.size;
+const diaUtil = (d) => !state.cpm?.nonworking?.has(fmtISO(d));
+
+// Próximo dia útil a partir de `d` (o `_snap` do motor). Teto de 3660 dias
+// pela mesma razão que lá: um calendário mal formado não trava a tela.
+function snapDiaUtil(d) {
+  if (!temCalendario()) return d;
+  for (let i = 0; i < 3660 && !diaUtil(d); i++) d = addDays(d, 1);
+  return d;
 }
 
+// `n` dias úteis a partir de `s` (inclusive) — o `_end_of` do motor.
+function fimEmDiasUteis(s, n) {
+  if (!temCalendario()) return addDays(s, Math.max(n, 1) - 1);
+  let d = snapDiaUtil(s);
+  for (let resta = Math.max(n, 1) - 1, i = 0; resta > 0 && i < 3660; i++) {
+    d = addDays(d, 1);
+    if (diaUtil(d)) resta--;
+  }
+  return d;
+}
+
+// Quantos dias úteis de `s` até `e`, inclusive — o `_dur_between` do motor, e
+// a inversa de fimEmDiasUteis. É o que traduz um arrasto (que se mede em
+// pixels, logo em dias corridos) para a duração que a tarefa guarda.
+function duracaoEmDiasUteis(s, e) {
+  if (!temCalendario()) return Math.max(diffDays(s, e) + 1, 1);
+  let d = snapDiaUtil(s);
+  if (e <= d) return 1;
+  let n = 1;
+  for (let i = 0; d < e && i < 3660; i++) {
+    d = addDays(d, 1);
+    if (diaUtil(d)) n++;
+  }
+  return n;
+}
+
+const effDur = (t) => (t.milestone ? 1 : Math.max(t.duration, 1));
+
+// Largura da barra em pixels: dias CORRIDOS ocupados (é isso que a linha do
+// tempo desenha), que sob um calendário é maior que a duração em dias úteis.
+const larguraDe = (t, ppd) =>
+  (diffDays(parseDate(t.start), taskEnd(t)) + 1) * ppd;
+
+// Fim de uma FOLHA: a duração dela conta dias úteis.
+const fimDaFolha = (t) =>
+  t.milestone ? parseDate(t.start) : fimEmDiasUteis(parseDate(t.start), effDur(t));
+
+/* Fim de qualquer tarefa.
+ *
+ * Resumo é o caso à parte: a duração dele já É a extensão em dias corridos
+ * (o roll-up a define assim, aqui e em _rollup_summaries!), então contá-la em
+ * dias úteis esticaria o bloco uma segunda vez. */
+function taskEnd(t) {
+  return state.wbs?.summary.has(t.id)
+    ? addDays(parseDate(t.start), Math.max(t.duration, 1) - 1)
+    : fimDaFolha(t);
+}
+
+// baseline_duration foi tirada da duração da tarefa (set_baseline!), então
+// ela conta dias úteis pelo mesmo motivo — e o fim dela se calcula do mesmo
+// jeito, com o mesmo _snap na frente que _baseline_end faz em insights.jl.
+// Deixá-la em dias corridos enquanto taskEnd conta dias úteis faria a
+// derrapagem contra o baseline mentir para os dois lados.
 function baselineEnd(t) {
-  return addDays(parseDate(t.baseline_start), Math.max(t.baseline_duration, 1) - 1);
+  return fimEmDiasUteis(snapDiaUtil(parseDate(t.baseline_start)),
+                        Math.max(t.baseline_duration, 1));
 }
 
 /* Dias de derrapagem vs. baseline (positivo = termina depois do planejado) */
@@ -494,6 +574,9 @@ async function fetchCPM() {
       calendar: r.calendar || "",
       // término probabilístico; null quando ninguém estimou nada
       pert: r.pert || null,
+      // Set de strings ISO: a pergunta é sempre "este dia é útil?", e um Set
+      // responde em O(1) — o gráfico faz isso milhares de vezes por render
+      nonworking: new Set(r.nonworking || []),
       byId: new Map((r.tasks || []).map((t) => [t.id, t])),
     };
   } catch {
@@ -1124,7 +1207,10 @@ function sortTasks() {
     if (!cs) {
       const w = t.milestone ? 1 : Math.max(t.duration, 1);
       const prog = t.milestone ? (t.progress >= 100 ? 100 : 0) : t.progress;
-      return [parseDate(t.start), taskEnd(t), prog, w];
+      // fimDaFolha e não taskEnd: é este laço que MONTA state.wbs, e taskEnd
+      // consulta state.wbs para saber se a tarefa é resumo — perguntar aqui
+      // leria a resposta do render anterior
+      return [parseDate(t.start), fimDaFolha(t), prog, w];
     }
     let s = null, e = null, wsum = 0, psum = 0;
     for (const c of cs) {
@@ -1968,7 +2054,8 @@ function renderChart() {
      */
     if (ui.baseline && t.baseline_start && !isSum && !t.milestone) {
       const bx = xOf(parseDate(t.baseline_start));
-      const bw = Math.max(t.baseline_duration, 1) * ppd;
+      // largura do fantasma: dias CORRIDOS que o plano original ocupava
+      const bw = (diffDays(parseDate(t.baseline_start), baselineEnd(t)) + 1) * ppd;
       const gy = i * ROW_H + ROW_H - 9;
       caixasForma.push({ x0: bx, x1: bx + bw, y0: gy, y1: gy + 4 });
       chart.appendChild(svg("rect", {
@@ -2001,7 +2088,10 @@ function renderChart() {
          trabalho. Agora o traço é neutro e fino — e o pedaço cheio é o
          progresso que já sobe dos filhos, que estava sendo jogado fora: o
          resumo tem esse número e não o mostrava em lugar nenhum do gráfico. */
-      const w = Math.max(t.duration, 1) * ppd;
+      // larguraDe também aqui: num resumo a duração já É a extensão em dias
+      // corridos, então dá no mesmo — mas ter UMA função de largura é o que
+      // impede a próxima barra de ser desenhada com outra régua.
+      const w = larguraDe(t, ppd);
       const alt = 6;
       const sy = i * ROW_H + ROW_H / 2 - alt / 2 - 2;
       caixasForma.push({ x0: x, x1: x + w, y0: sy - 4, y1: sy + alt + 4 });
@@ -2058,12 +2148,12 @@ function renderChart() {
       if (ui.labels) rotuloDaBarra(chart, t, dim, x + r + 6 + folga, cy + 4, caixasRotulo);
     } else {
       const info = state.cpm?.byId.get(t.id);
-      let w = Math.max(t.duration, 1) * ppd;
-      if (state.cpm?.calendar && info && info.early_finish >= t.start &&
-          info.early_start === t.start) {
-        // dias úteis: fim real vem do motor (pula fins de semana/feriados)
-        w = (diffDays(parseDate(t.start), parseDate(info.early_finish)) + 1) * ppd;
-      }
+      // A largura sai do MESMO taskEnd que a tabela, os avisos e o roll-up
+      // usam. Antes havia aqui um remendo que pegava o fim do motor
+      // (early_finish) só quando a tarefa estava exatamente onde o motor a
+      // poria — logo, uma tarefa de data fixa ou movida à mão desenhava com a
+      // largura errada, e as outras leituras erravam sempre.
+      const w = larguraDe(t, ppd);
       caixasForma.push({ x0: x, x1: x + w, y0: y, y1: y + h });
       const bar = svg("rect", {
         class: "bar" + dim, x, y, width: w, height: h,
@@ -2149,7 +2239,7 @@ function renderChart() {
     }
 
     if (escolhida) {
-      const selW = t.milestone ? h + 8 : Math.max(t.duration, 1) * ppd + 6;
+      const selW = t.milestone ? h + 8 : larguraDe(t, ppd) + 6;
       const selX = t.milestone ? x - h / 2 - 4 : x - 3;
       chart.appendChild(svg("rect", {
         class: "bar-sel", x: selX, y: y - 3, width: selW, height: h + 6,
@@ -2877,7 +2967,10 @@ function attachDrag(node, task, mode) {
     const naSelecao = isSelected(task.id) && selCount() > 1 ? selectedTasks() : [task];
     const grupo = mode === "move" ? leafTargets(naSelecao)
       : naSelecao.filter((t) => !(state.wbs?.summary.has(t.id) ?? false));
-    const orig = new Map(grupo.map((t) => [t.id, { start: t.start, duration: t.duration }]));
+    // o fim de cada uma no início do gesto: esticar se mede movendo o FIM, e
+    // o fim mora em dias corridos (é o que o mouse percorre)
+    const orig = new Map(grupo.map((t) => [t.id, {
+      start: t.start, duration: t.duration, end: fimDaFolha(t) }]));
     let moved = false;
 
     const onMove = (mv) => {
@@ -2891,10 +2984,17 @@ function attachDrag(node, task, mode) {
       for (const t of grupo) {
         const o = orig.get(t.id);
         if (mode === "move") {
-          t.start = fmtISO(addDays(parseDate(o.start), deltaDays));
+          // Soltar num dia não útil: o motor empurra para o próximo útil ao
+          // salvar (_snap), e sem fazer o mesmo aqui a barra pularia sozinha
+          // depois da gravação. O que se vê é onde ela vai ficar.
+          t.start = fmtISO(snapDiaUtil(addDays(parseDate(o.start), deltaDays)));
         } else if (!t.milestone) {
-          // marco ocupa o próprio dia: esticar a seleção não estica o losango
-          t.duration = Math.max(1, o.duration + deltaDays);
+          // O ponteiro anda em dias CORRIDOS; a duração conta dias ÚTEIS.
+          // Somar o delta direto na duração fazia um arrasto de sete dias
+          // esticar a tarefa por nove — mede-se onde o fim caiu e converte-se
+          // de volta. (Sem calendário as duas contas coincidem.)
+          const fim = addDays(o.end, deltaDays);
+          t.duration = duracaoEmDiasUteis(parseDate(t.start), fim);
         }
       }
       requestAnimationFrame(() => {

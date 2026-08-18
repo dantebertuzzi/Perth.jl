@@ -3727,6 +3727,170 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("gantt · o navegador conhece o calendário de dias úteis");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Os dias não úteis chegam do servidor (payload do CPM). Aqui entram os
+  // fins de semana de março/2026 — a mesma lista que _nonworking_days manda.
+  const fds = [];
+  for (let d = new Date(Date.UTC(2026, 1, 1)); d < new Date(Date.UTC(2026, 4, 1));
+       d.setUTCDate(d.getUTCDate() + 1)) {
+    const wd = d.getUTCDay();
+    if (wd === 0 || wd === 6) fds.push(d.toISOString().slice(0, 10));
+  }
+
+  const seed = (cal) => `
+    const mk = (id, name, start, duration, extra) => Object.assign({
+      id, name, start, duration, progress: 0, dependencies: [], color: "",
+      notes: "", milestone: false, parent: "", cost: 0, effort: 0, assignee: "",
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false }, extra || {});
+    state.current = { id: "pcal", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "Obra", "2026-03-02", 10),
+      mk("m", "Marco", "2026-03-20", 1, { milestone: true }) ] };
+    state.cpm = { cycle: false, finish: "2026-03-13", calendar: ${JSON.stringify(cal)},
+                  pert: null, byId: new Map(),
+                  nonworking: new Set(${cal ? JSON.stringify(fds) : "[]"}) };
+    state.highlight = null; state.search = "";
+    state.wbsClosed.clear(); state.lanesClosed.clear();
+    clearSelection();
+    state.undoStack = []; state.redoStack = [];
+    markDirty = () => {};
+    renderAll();`;
+
+  // 10 dias úteis a partir de segunda 02/03 terminam em SEXTA 13/03 — o
+  // motor diz isso; o navegador dizia 11/03 (dois dias a menos, crescendo)
+  let r = runIn(`${seed("Brazil")} return fmtISO(taskEnd(state.current.tasks[0]));`);
+  check(r === "2026-03-13", `gantt: o fim conta dias úteis (${r})`);
+
+  r = runIn(`${seed("")} return fmtISO(taskEnd(state.current.tasks[0]));`);
+  check(r === "2026-03-11",
+        "gantt: sem calendário, a conta é a de sempre — dias corridos");
+
+  // marco ocupa o próprio dia, com ou sem calendário
+  r = runIn(`${seed("Brazil")} return fmtISO(taskEnd(state.current.tasks[1]));`);
+  check(r === "2026-03-20", "gantt: marco termina no próprio dia");
+
+  // a barra desenhada tem de cobrir os dias CORRIDOS ocupados (12), não a
+  // duração em dias úteis (10)
+  r = runIn(`${seed("Brazil")}
+    return { largura: Number(document.querySelector('#chart .bar[data-id="a"]')
+                               .getAttribute("width")) / PPD[state.zoom],
+             dur: state.current.tasks[0].duration };`);
+  check(r.largura === 12 && r.dur === 10,
+        `gantt: a barra cobre os 12 dias corridos que os 10 úteis ocupam (${r.largura})`);
+
+  // e a MOLDURA da seleção acompanha, senão ela sobra ou falta na ponta
+  r = runIn(`${seed("Brazil")} selectOnly("a"); renderChart();
+    return Number(document.querySelector("#chart .bar-sel").getAttribute("width"))
+           / PPD[state.zoom];`);
+  check(Math.abs(r - 12) < 0.5, "gantt: e a moldura da seleção tem a mesma medida");
+
+  // ---------------------------------------------------------- o resumo
+  // extensão do bloco = dias CORRIDOS de ponta a ponta, que é como o
+  // _rollup_summaries! do servidor a define. Com o fim cego dava 10 aqui e
+  // 12 lá — a tabela mostrava um número que o servidor desmentia no salvamento
+  r = runIn(`${seed("Brazil")}
+    state.current.tasks.push({ id: "bloco", name: "Bloco", start: "2026-03-02",
+      duration: 1, progress: 0, dependencies: [], color: "", notes: "",
+      milestone: false, parent: "", cost: 0, effort: 0, assignee: "",
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false });
+    state.current.tasks[0].parent = "bloco";
+    renderAll();
+    const b = state.current.tasks.find((t) => t.id === "bloco");
+    return { dur: b.duration, fim: fmtISO(taskEnd(b)) };`);
+  check(r.dur === 12 && r.fim === "2026-03-13",
+        `gantt: a extensão do resumo bate com a do servidor (${r.dur})`);
+
+  // -------------------------------------------------- as outras leituras
+  // prazo em 12/03: com o fim cego (11/03) o plano parecia em dia
+  r = runIn(`${seed("Brazil")}
+    state.current.tasks[0].deadline = "2026-03-12";
+    return deadlineSlip(state.current.tasks[0]);`);
+  check(r === 1, `gantt: o prazo estourado conta a partir do fim certo (${r} d)`);
+
+  // baseline_duration sai da duração da tarefa, logo também conta dias úteis.
+  // Uma tarefa que NÃO saiu do lugar tem de acusar zero: com o fim do
+  // baseline em dias corridos e o da tarefa em dias úteis, ela acusava dois
+  // dias de atraso que nunca existiram.
+  r = runIn(`${seed("Brazil")}
+    state.current.tasks[0].baseline_start = "2026-03-02";
+    state.current.tasks[0].baseline_duration = 10;
+    return slipDays(state.current.tasks[0]);`);
+  check(r === 0, `gantt: tarefa parada não derrapa contra o próprio baseline (${r})`);
+
+  // e uma que andou de verdade acusa os dias corridos que andou
+  r = runIn(`${seed("Brazil")}
+    const t = state.current.tasks[0];
+    t.baseline_start = "2026-03-02"; t.baseline_duration = 10;
+    t.start = "2026-03-04";
+    return slipDays(t);`);
+  check(r === 4, `gantt: e uma que andou dois dias úteis derrapa quatro corridos (${r})`);
+
+  // o fantasma do baseline cobre os dias corridos que o plano original ocupava
+  r = runIn(`${seed("Brazil")}
+    const t = state.current.tasks[0];
+    t.baseline_start = "2026-03-02"; t.baseline_duration = 10;
+    ui.baseline = true; renderChart();
+    return Number(document.querySelector("#chart .baseline-ghost").getAttribute("width"))
+           / PPD[state.zoom];`);
+  check(r === 12, `gantt: e o fantasma do baseline tem a mesma medida (${r})`);
+
+  r = runIn(`${seed("Brazil")} renderStatus(); return el.statusLeft.textContent;`);
+  check(/2026-03-20/.test(r), "gantt: o vão do projeto na barra de status vai até o fim certo");
+
+  // ------------------------------------------------------- os gestos
+  const arrastar = (id, dias, alvo) => `{
+    const n = document.querySelector('#chart [data-id="${id}"].${alvo}');
+    n.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: 100 + ${dias} * PPD[state.zoom], clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+  }`;
+
+  // esticar sete dias no ponteiro tem de esticar SETE dias na tela — a
+  // duração guardada vira o número de dias úteis que couberem neles
+  r = runIn(`${seed("Brazil")} ${arrastar("a", 7, "bar-handle")}
+    const t = state.current.tasks[0];
+    return { dur: t.duration, fim: fmtISO(taskEnd(t)) };`);
+  check(r.fim === "2026-03-20",
+        `gantt: esticar 7 dias no ponteiro move o fim 7 dias (${r.fim})`);
+  check(r.dur === 15, `gantt: e a duração guardada vira 15 dias úteis (${r.dur})`);
+
+  // arrastar para um sábado: o motor empurra para segunda ao salvar, então a
+  // barra tem de mostrar a segunda desde já
+  r = runIn(`${seed("Brazil")} ${arrastar("a", 5, "bar")}
+    return state.current.tasks[0].start;`);
+  check(r === "2026-03-09",
+        `gantt: soltar num sábado encosta na segunda, como o motor fará (${r})`);
+
+  // O caminho crítico desenha por cima da barra e usa a MESMA largura: foi
+  // aqui que a suíte de navegador pegou uma referência que eu tinha apagado
+  // junto com o remendo antigo de largura
+  r = runIn(`${seed("Brazil")}
+    state.cpm.byId = new Map([["a", { id: "a", early_start: "2026-03-02",
+      early_finish: "2026-03-13", slack_days: 0, critical: true }]]);
+    state.showCritical = true;
+    renderChart();
+    const c = document.querySelector("#chart .bar-crit");
+    state.showCritical = false;
+    return c ? Number(c.getAttribute("width")) / PPD[state.zoom] : null;`);
+  check(r === 12, "gantt: o realce do caminho crítico cobre a barra inteira");
+
+  // sem calendário, o gesto é o de sempre
+  r = runIn(`${seed("")} ${arrastar("a", 5, "bar")}
+    return state.current.tasks[0].start;`);
+  check(r === "2026-03-07", "gantt: sem calendário, solta onde soltou");
+
+  r = runIn(`${seed("")} ${arrastar("a", 7, "bar-handle")}
+    return state.current.tasks[0].duration;`);
+  check(r === 17, "gantt: e esticar sete dias soma sete à duração");
+
+  close();
+}
+
 console.log("gantt · sobrecarga vem do servidor, não de uma segunda conta aqui");
 {
   const { runIn, close } = loadGanttApp();

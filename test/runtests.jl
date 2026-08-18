@@ -1698,6 +1698,47 @@ end
         delete_project(p.id)
     end
 
+    @testset "o .perth.jl não pode engolir campo nenhum" begin
+        # cost sumia no ida-e-volta havia sabe-se lá quanto tempo, e nenhum
+        # teste pegaria o próximo: os que existiam conferiam os campos de que
+        # alguém lembrou. Este varre fieldnames() — todo campo NOVO de
+        # GanttTask, Person ou Project entra na conferência sozinho, e quem
+        # esquecer de escrevê-lo reprova aqui, não em produção.
+        #
+        # Os valores são todos DIFERENTES do default de propósito: um campo
+        # que o escritor engole e o construtor repõe com o default passaria
+        # despercebido se o teste usasse o próprio default.
+        p = Project(name = "Varredura")
+        t = add_task!(p, "Tudo"; start = Date(2026, 3, 2), duration = 7,
+                      progress = 45, cost = 999.5, effort = 33.0,
+                      color = "#bd93f9", assignee = "Ana", notes = "uma nota",
+                      dependencies = String[], deadline = Date(2026, 3, 20),
+                      pinned = true, optimistic = 5, most_likely = 7,
+                      pessimistic = 12)
+        add_task!(p, "Outra"; start = Date(2026, 3, 2), duration = 2,
+                  dependencies = [t.id])
+        move_task!(p, t.id; position = 2)            # order != 0
+        set_baseline!(p)                             # baseline_start/duration
+        add_person!(p, "Ana"; role = "Arq", team = "Proj",
+                    email = "a@b.c", notes = "obs", capacity = 8)
+
+        arq = tempname() * ".perth.jl"
+        Perth.save(p, arq)
+        q = Perth.load(arq; register = false)
+
+        # tarefa por tarefa, campo por campo
+        for (a, b) in zip(p.tasks, q.tasks), c in fieldnames(GanttTask)
+            @test getfield(a, c) == getfield(b, c)
+        end
+        for c in fieldnames(Perth.Person)
+            @test getfield(p.people[1], c) == getfield(q.people[1], c)
+        end
+        for c in (:name, :calendar, :baseline_at)
+            @test getfield(p, c) == getfield(q, c)
+        end
+        rm(arq; force = true)
+    end
+
     @testset "capacidade e esforço atravessam os formatos" begin
         # JSON é automático (StructTypes.Mutable), o .perth.jl não é: ele
         # escreve campo por campo, e o que ele não escreve SOME. cost saía por

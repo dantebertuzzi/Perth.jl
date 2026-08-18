@@ -5,6 +5,48 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.5] - 2026-08-17
+
+### Fixed
+- **The browser now knows the business-day calendar, and the chart stops
+  lying.** With `set_calendar!` on, `duration` counts *working* days — but the
+  browser added it as *calendar* days. Ten working days from 2 March end on
+  the 13th; the drawing said the 11th. Two days per fortnight, growing with
+  the task. It was wrong in the bar's width, in the project span on the status
+  bar, in the *overdue* highlight, in the slippage against the baseline, in
+  the deadline check, and in the span of a summary — which is why a block read
+  12 days on the server and 10 on screen, until the next save corrected it.
+- What crosses the wire is **one** fact: which days are not worked
+  (`nonworking`, in the CPM payload, empty when there is no calendar). Not the
+  rule duplicated — the data from the side that knows the holidays. The four
+  derivations the browser needs (next working day, end after N working days,
+  working days between two dates, and the width in calendar days) come out of
+  it exactly as they come out of `_workday` in `schedule.jl`. Sending each
+  task's finish already computed was the other option, and it goes stale in
+  the middle of a drag, which is precisely when the geometry has to be right.
+- The old partial fix is gone: the bar used to borrow `early_finish` from the
+  engine, but only when the task sat exactly where the engine would put it —
+  so a pinned task, or one moved by hand, drew with the wrong width anyway.
+- **The baseline was measured with the other ruler.** `baseline_duration` is
+  copied from the task's duration, so it counts working days too — but the
+  browser ended it in calendar days. A task that had not moved at all reported
+  a two-day slip against its own baseline, and the ghost bar was drawn short.
+  Both now use the same walk the server's `_baseline_end` does.
+- **Dragging speaks the same language.** Stretching a bar seven days used to
+  add seven to a *working-day* duration, so the edge landed nine days away
+  from where the pointer let go; now the gesture measures where the end fell
+  and converts back. And dropping a bar on a Saturday shows the Monday the
+  engine will snap it to on save, instead of showing Saturday and jumping
+  after the round-trip.
+
+### Added
+- A round-trip test that walks `fieldnames` instead of the fields somebody
+  remembered. `cost` had been silently dropped by the `.perth.jl` writer for
+  who knows how long, and nothing would have caught the next one; now every
+  new field on `GanttTask`, `Person` or `Project` joins the check by itself.
+  Verified by breaking the writer on purpose — 50 assertions pass, the
+  missing field fails.
+
 ## [0.9.4] - 2026-08-17
 
 ### Added
