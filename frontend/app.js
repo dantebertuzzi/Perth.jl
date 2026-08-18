@@ -2283,6 +2283,32 @@ function renderChart() {
       attachDrag(handle, t, "resize");
       chart.appendChild(handle);
 
+      /* Punho do progresso, na borda do pedaço cheio.
+       *
+       * `progress` é o campo que mais muda — é o que uma reunião semanal É —
+       * e era o único sem gesto: data se arrasta na barra, ordem na linha,
+       * ligação no ponto, e a porcentagem exigia abrir o modal oito vezes
+       * seguidas.
+       *
+       * Só na barra SELECIONADA, como os pontos de ligar: um punho a mais em
+       * toda barra disputaria os mesmos pixels do arrasto de data, que é o
+       * gesto mais usado do gráfico.
+       *
+       * Preso a 9px do fim para nunca cobrir a alça de redimensionar, que
+       * mora nos últimos 8. Nos últimos por cento o punho fica um fio à
+       * esquerda da borda real do preenchimento — o arrasto continua exato, e
+       * é ele que chega aos 100. */
+      if (escolhida && !state.readOnly) {
+        const px = Math.min(x + (w * clampPct(t.progress)) / 100, x + w - 9);
+        const pg = svg("rect", {
+          class: "prog-grip" + dim, x: px - 3, y: y + 2, width: 6, height: h - 4,
+          rx: 2, "data-id": t.id,
+        });
+        pg.appendChild(svgTitle(`${T("Progress")} ${t.progress}%`));
+        attachProgressDrag(pg, t, x, w);
+        chart.appendChild(pg);
+      }
+
       if (ui.labels) {
         rotuloDaBarra(chart, t, dim, x + w + 8 + folga, y + h - 5, caixasRotulo, (label) => {
           if (slip <= 0) return;
@@ -3132,6 +3158,74 @@ function attachDrag(node, task, mode) {
   // nele. Só clique parado chega aqui.
   node.addEventListener("click", (ev) => selectTask(task.id, ev));
   node.addEventListener("dblclick", () => openModal(task.id));
+}
+
+const clampPct = (n) => Math.min(Math.max(Math.round(Number(n) || 0), 0), 100);
+
+/* Arrastar o punho do progresso.
+ *
+ * Mesma máquina do arrasto de data — pointerdown, listeners na window,
+ * pushUndo no primeiro movimento de verdade — trocando "pixels viram dias"
+ * por "pixels viram porcentagem da largura da barra". Passo de 5: ninguém
+ * relata 37% numa reunião, e um passo fino faria o arrasto exigir pontaria
+ * que a informação não merece.
+ *
+ * Resumo não entra: o progresso dele é a média dos filhos, calculada a cada
+ * render — escrever ali é escrever num campo que o próximo render apaga. É a
+ * mesma razão pela qual o punho de data também não aparece num resumo, e por
+ * isso o desenho já o condiciona a `escolhida` numa barra que não é resumo. */
+function attachProgressDrag(node, task, x0, largura) {
+  node.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0 || state.readOnly) return;
+    ev.stopPropagation();          // não é o arrasto da barra que começa aqui
+    const orig = task.progress;
+    let moved = false;
+
+    const pctDe = (mv) => {
+      const cx = mv.clientX - el.chart.getBoundingClientRect().left;
+      return clampPct(Math.round(((cx - x0) / Math.max(largura, 1)) * 100 / 5) * 5);
+    };
+    const onMove = (mv) => {
+      const novo = pctDe(mv);
+      if (novo === task.progress && !moved) return;
+      if (!moved) { pushUndo(); moved = true; }
+      state.dragging = true;
+      task.progress = novo;
+      requestAnimationFrame(() => { renderChart(); renderTable(); });
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      state.dragging = false;
+      if (moved && task.progress !== orig) { renderAll(); markDirty(); }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  });
+}
+
+/* Progresso pelo teclado, na seleção inteira.
+ *
+ * O roadmap pedia `0`-`9` soltos, mas `1`-`4` são o zoom desde sempre — e
+ * zoom com uma tarefa selecionada é uso corrente, não exceção. Vai com Shift,
+ * lido por `ev.code` e não por `ev.key`: Shift+2 é "@" no teclado americano e
+ * outra coisa no ABNT2, enquanto `Digit2` é o mesmo em todos.
+ *
+ * Os cem por cento não têm décimo: chega-se neles arrastando o punho até a
+ * ponta, que é o gesto que já existe para isso. Inventar uma tecla para o
+ * caso que o arrasto cobre seria inventar uma tecla para decorar. */
+function progressoPorTecla(ev) {
+  if (!ev.shiftKey || !/^Digit[0-9]$/.test(ev.code || "")) return false;
+  if (!state.current || !canEdit()) return false;
+  const alvos = selectedTasks().filter((t) => !(state.wbs?.summary.has(t.id) ?? false));
+  if (!alvos.length) return false;
+  const pct = Number(ev.code.slice(5)) * 10;
+  if (alvos.every((t) => t.progress === pct)) return true;   // nada a mudar
+  pushUndo();
+  for (const t of alvos) t.progress = pct;
+  renderAll();
+  markDirty();
+  return true;
 }
 
 /* Sincroniza scroll: cabeçalho segue X, tabela segue Y */
@@ -5554,6 +5648,7 @@ function showShortcuts() {
     ["Home / End", "first / last task"],
     ["N", "new task"],
     ["Enter / duplo clique", "edit task"],
+    ["Shift+0…9", "progress in tenths, on the whole selection (100% by dragging the fill)"],
     ["Ctrl+E", "edit the whole selection (dates, assignee, colour)"],
     ["Del", "delete selected task"],
     ["Ctrl+D", "duplicate selected task"],
@@ -5890,6 +5985,7 @@ document.addEventListener("keydown", (ev) => {
     return;
   }
   if (typing) return;
+  if (progressoPorTecla(ev)) { ev.preventDefault(); return; }
   if (navegarComTeclado(ev)) { ev.preventDefault(); return; }
   // Undo / Redo globais
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !ev.shiftKey) {

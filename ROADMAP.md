@@ -66,21 +66,6 @@ task that is no longer on screen, and a summary whose children all vanished
 
 ## Also worth doing
 
-### Recording progress without opening a task
-
-`progress` is the field that changes most often — it is what a weekly meeting
-*is* — and it is the one field with no gesture. Dates come from dragging the
-bar, order from dragging the row, links from dragging a dot; percentage
-complete needs the modal, eight times in a row. A handle on the filled part of
-the bar, and `0`-`9` on the selected task for the round tenths, would make the
-Monday pass a minute instead of ten.
-
-*Lean on:* the bar's own `pointerdown` machinery already converts pixels to
-days and back; here it converts pixels to a percentage of the bar's width, and
-snaps to 5. Summaries derive their progress from the children (`app.js` around
-the WBS roll-up) — the handle must refuse to appear on them, the way the date
-drag already does.
-
 ### Print / PDF
 
 PNG export exists, but a plan ends up as an attachment in a report and as paper
