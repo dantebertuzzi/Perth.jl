@@ -3727,6 +3727,72 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("gantt · o chip do projeto tem a largura do nome que ele mostra");
+{
+  // Um <select> se dimensiona pela opção mais LARGA (a caixa precisa caber a
+  // lista aberta), não pela selecionada. Com um projeto de nome comprido no
+  // cadastro, o chip da menubar ficava no teto de 230px para TODOS os outros
+  // — "Div" boiando num vão de dois centímetros. Nada disso é ajustável por
+  // CSS, então a largura é medida e aplicada; estes testes prendem isso.
+  const { w, runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  const montar = (nomes, i) => `{
+    const s = el.projectSelect;
+    s.innerHTML = "";
+    for (const n of ${JSON.stringify(nomes)}) {
+      const o = document.createElement("option");
+      o.textContent = n; s.appendChild(o);
+    }
+    s.selectedIndex = ${i};
+    ajustaChip();
+  }`;
+
+  // jsdom não faz layout: getBoundingClientRect devolve zero para todo mundo.
+  // O que dá para prender aqui é a REGRA — a largura sai do texto da opção
+  // SELECIONADA — e isso se vê na régua, que é onde o texto medido aparece.
+  let r = runIn(`${montar(["Div", "Learning Perth — the neighbourhood library"], 0)}
+    return document.getElementById("chip-ruler").textContent;`);
+  check(r === "Div",
+        "gantt: a medida é feita sobre a opção selecionada, não sobre a mais longa");
+
+  r = runIn(`${montar(["Div", "Learning Perth — the neighbourhood library"], 1)}
+    return document.getElementById("chip-ruler").textContent;`);
+  check(r === "Learning Perth — the neighbourhood library",
+        "gantt: trocar a seleção remede pelo nome novo");
+
+  // a régua não pode entrar no layout nem ser lida em voz alta
+  r = runIn(`${montar(["Div"], 0)}
+    const g = document.getElementById("chip-ruler");
+    return { pos: g.style.position, vis: g.style.visibility,
+             oculta: g.getAttribute("aria-hidden"),
+             fonte: g.style.fontSize === getComputedStyle(el.projectSelect).fontSize };`);
+  check(r.pos === "absolute" && r.vis === "hidden" && r.oculta === "true",
+        "gantt: a régua não ocupa espaço nem é anunciada por leitor de tela");
+  check(r.fonte === true, "gantt: e ela herda a fonte do chip, para medir o que ele desenha");
+
+  // uma régua só, não uma por render
+  r = runIn(`${montar(["Div"], 0)} ${montar(["Outro"], 0)} ${montar(["Mais um"], 0)}
+    return document.querySelectorAll("#chip-ruler").length;`);
+  check(r === 1, "gantt: a régua é criada uma vez e reaproveitada");
+
+  // a largura é escrita no chip, em px
+  r = runIn(`${montar(["Div"], 0)} return /^\\d+px$/.test(el.projectSelect.style.width);`);
+  check(r === true, "gantt: e a largura vai para o chip em pixels");
+
+  // sem opção nenhuma não quebra (projeto novo, lista ainda vazia)
+  r = runIn(`el.projectSelect.innerHTML = ""; ajustaChip();
+    return el.projectSelect.options.length;`);
+  check(r === 0, "gantt: lista vazia não derruba a medição");
+
+  // o teto do CSS continua valendo: nome enorme para no limite, com reticências
+  const css = read("frontend/shared/ui.css");
+  const bloco = css.slice(css.indexOf("select.board-chip"), css.indexOf("}", css.indexOf("select.board-chip")));
+  check(/max-width:\s*230px/.test(bloco) && /text-overflow:\s*ellipsis/.test(bloco),
+        "gantt: e o teto com reticências segue no CSS, para o nome que não cabe");
+  close();
+}
+
 console.log("gantt · o navegador conhece o calendário de dias úteis");
 {
   const { runIn, close } = loadGanttApp();

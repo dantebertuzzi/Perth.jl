@@ -5,6 +5,20 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.6] - 2026-08-17
+
+### Fixed
+- **The project chip is as wide as the name it shows.** A `<select>` sizes
+  itself to its *widest option* — the closed box has to be able to hold the
+  open list — so a single project with a long name pinned the menubar chip at
+  its 230px ceiling for every other project, leaving a short name floating in
+  two centimetres of empty pill. No CSS reaches this: neither `width: auto`
+  nor `fit-content` looks at the selection. The width is now measured from the
+  selected option, with an invisible ruler that inherits the chip's own font
+  (guessing a character width gets it wrong the moment a name has accents, and
+  these are people's project names). The ceiling and its ellipsis stay for the
+  name that genuinely does not fit.
+
 ## [0.9.5] - 2026-08-17
 
 ### Fixed

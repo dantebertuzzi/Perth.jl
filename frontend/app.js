@@ -1254,6 +1254,47 @@ function renderProjectSelect() {
   }
   // repopular não pode derrubar a seleção (chip da menubar ficaria vazio)
   if (state.current) el.projectSelect.value = state.current.id;
+  ajustaChip();
+}
+
+/* O chip do projeto tem a largura do NOME QUE ELE MOSTRA.
+ *
+ * Um <select> se dimensiona pela opção mais LARGA, não pela selecionada — a
+ * caixa tem de caber a lista inteira quando abre. Resultado: um único projeto
+ * de nome comprido ("Learning Perth — the neighbourhood library") empurrava o
+ * chip até o teto de 230px e o deixava lá para todos os outros, com "Div"
+ * boiando num vão de dois centímetros. Não é ajustável por CSS: nem `width:
+ * auto` nem `fit-content` olham para a seleção.
+ *
+ * Então a largura é medida à mão, com uma régua invisível que herda a fonte
+ * do próprio chip — medir com um tamanho de letra chutado erra em qualquer
+ * idioma com acentuação larga, e este texto é nome de projeto de gente. O
+ * max-width do CSS continua valendo: nome muito longo ainda para no teto e
+ * ganha reticências. */
+function ajustaChip() {
+  const s = el.projectSelect;
+  const escolhida = s.options[s.selectedIndex];
+  if (!escolhida) return;
+  const cs = getComputedStyle(s);
+  let regua = document.getElementById("chip-ruler");
+  if (!regua) {
+    regua = document.createElement("span");
+    regua.id = "chip-ruler";
+    regua.setAttribute("aria-hidden", "true");
+    document.body.appendChild(regua);
+  }
+  // position:absolute + visibility:hidden: mede sem entrar no layout e sem
+  // ser lido em voz alta. white-space:pre para espaços contarem.
+  regua.style.cssText = "position:absolute;top:-9999px;left:-9999px;" +
+    "visibility:hidden;white-space:pre;" +
+    `font-family:${cs.fontFamily};font-size:${cs.fontSize};` +
+    `font-weight:${cs.fontWeight};letter-spacing:${cs.letterSpacing}`;
+  regua.textContent = escolhida.textContent;
+  const texto = regua.getBoundingClientRect().width;
+  // o que a moldura come: os dois paddings e as duas bordas do próprio chip
+  const moldura = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) +
+                  parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+  s.style.width = Math.ceil(texto + moldura) + 1 + "px";
 }
 
 function renderStatus() {
@@ -5666,7 +5707,10 @@ el.highlightSelect.addEventListener("change", () => {
   renderChart();
 });
 
-el.projectSelect.addEventListener("change", () => openProject(el.projectSelect.value));
+el.projectSelect.addEventListener("change", () => {
+  ajustaChip();                       // o nome mudou: a largura muda com ele
+  openProject(el.projectSelect.value);
+});
 
 $("#modal-save").addEventListener("click", submitModal);
 $("#modal-cancel").addEventListener("click", () => closeModal(true));
