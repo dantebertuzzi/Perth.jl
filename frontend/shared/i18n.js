@@ -38,6 +38,11 @@ window.PerthI18n = (function () {
 
   const STR = {
     pt: {
+      // mesclagem quando duas máquinas gravam o mesmo projeto
+      "Merged with the change from the other machine":
+        "Mesclado com a mudança da outra máquina",
+      "Merged with the other machine — theirs kept in":
+        "Mesclado com a outra máquina — ficou a versão dela em",
       // curva-S: as duas réguas
       "work": "trabalho",
       "cost": "custo",
@@ -613,6 +618,11 @@ window.PerthI18n = (function () {
     },
 
     es: {
+      // mesclagem quando duas máquinas gravam o mesmo projeto
+      "Merged with the change from the other machine":
+        "Fusionado con el cambio de la otra máquina",
+      "Merged with the other machine — theirs kept in":
+        "Fusionado con la otra máquina — se mantuvo la versión de ella en",
       // curva-S: as duas réguas
       "work": "trabajo",
       "cost": "costo",
@@ -1180,6 +1190,11 @@ window.PerthI18n = (function () {
     },
 
     fr: {
+      // mesclagem quando duas máquinas gravam o mesmo projeto
+      "Merged with the change from the other machine":
+        "Fusionné avec la modification de l'autre machine",
+      "Merged with the other machine — theirs kept in":
+        "Fusionné avec l'autre machine — sa version conservée sur",
       // curva-S: as duas réguas
       "work": "travail",
       "cost": "coût",
@@ -1749,6 +1764,11 @@ window.PerthI18n = (function () {
     },
 
     zh: {
+      // mesclagem quando duas máquinas gravam o mesmo projeto
+      "Merged with the change from the other machine":
+        "已与另一台机器的改动合并",
+      "Merged with the other machine — theirs kept in":
+        "已与另一台机器合并 — 以下保留了对方的版本",
       // curva-S: as duas réguas
       "work": "工作量",
       "cost": "成本",

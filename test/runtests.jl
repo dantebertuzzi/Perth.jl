@@ -1698,6 +1698,32 @@ end
         delete_project(p.id)
     end
 
+    @testset "o 409 devolve o projeto, não só o status" begin
+        # O navegador MESCLA em cima disto: ele precisa do estado do servidor
+        # para fazer as três vias (base, meu, dele). Enquanto ele apenas
+        # recarregava, o corpo era um detalhe; agora é contrato.
+        router = Perth._build_router()
+        p = create_project("Conflito")
+        t = add_task!(p, "A"; start = Date(2026, 4, 6), duration = 3)
+        corpo = String(router(HTTP.Request("GET", "/api/projects/$(p.id)")).body)
+
+        # outra máquina grava primeiro
+        sleep(0.01)
+        update_task!(p, t.id; name = "A do colega")
+
+        # e a minha chega com a base velha
+        resp = router(HTTP.Request("PUT", "/api/projects/$(p.id)",
+            ["Content-Type" => "application/json",
+             "X-Perth-Base" => "2020-01-01T00:00:00"], corpo))
+        @test resp.status == 409
+        devolvido = JSON3.read(String(resp.body))
+        @test devolvido.id == p.id
+        @test length(devolvido.tasks) == 1
+        @test devolvido.tasks[1].name == "A do colega"     # o estado DELE
+        @test haskey(devolvido, :updated_at)               # a base da próxima
+        delete_project(p.id)
+    end
+
     @testset "a curva-S não soma dinheiro com trabalho" begin
         # Havia uma série só, com peso "cost se houver, senão pessoa-dias".
         # Uma tarefa de R$ 10.000 ao lado de uma de 5 pessoa-dias devolvia

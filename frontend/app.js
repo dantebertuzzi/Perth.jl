@@ -514,6 +514,9 @@ async function api(path, opts = {}) {
     const body = await res.json().catch(() => ({}));
     const err = new Error(body.error || `HTTP ${res.status}`);
     err.status = res.status;
+    // o corpo vem junto: num 409 ele É o projeto como está no servidor, e é
+    // com ele que a mesclagem trabalha (ver mesclaConcorrente)
+    err.body = body;
     throw err;
   }
   return res.json();
@@ -523,8 +526,73 @@ async function fetchRev() {
   return (await api("/api/rev")).rev;
 }
 
+/* A base de comparação: o carimbo E o conteúdo.
+ *
+ * O carimbo sozinho responde "alguém gravou depois de mim?". Só com o
+ * conteúdo dá para responder a pergunta seguinte, que é a que importa: "o que
+ * EU mudei desde então?" — e é ela que separa uma mesclagem de um descarte. */
+const CAMPOS_MESCLAVEIS = ["name", "calendar", "people", "bands", "markers",
+                           "month_marks", "file_path", "baseline_at"];
+
+function baseSnap(p) {
+  if (!p) return null;
+  const out = { tasks: (p.tasks || []).map(_cloneTask) };
+  for (const c of CAMPOS_MESCLAVEIS) out[c] = JSON.stringify(p[c] ?? null);
+  return out;
+}
+
 function noteBase() {
   state.baseUpdatedAt = state.current?.updated_at || "";
+  state.baseSnap = baseSnap(state.current);
+}
+
+/* Mesclagem de três vias quando outra máquina gravou antes.
+ *
+ * O que havia aqui era um descarte: o cliente jogava fora TUDO o que você
+ * tinha acabado de fazer e recarregava o projeto do servidor. Se você mexeu
+ * na tarefa A e o colega na tarefa B, a sua sumia — e as duas edições não se
+ * cruzavam em lugar nenhum.
+ *
+ * A política é a mesma que _reconcile já aplica no desfazer, pela mesma
+ * razão: campo que só EU mexi é meu, campo que só ELE mexeu é dele, e campo
+ * que os dois mexeram fica com o dele, porque sobrescrever trabalho alheio em
+ * silêncio é pior do que perder o meu e ser avisado. A diferença é que agora
+ * o "perder o meu" está restrito ao que de fato colidiu, e não é mais o
+ * padrão para tudo.
+ *
+ * Devolve o projeto mesclado e a lista do que colidiu, para o aviso dizer
+ * QUAIS tarefas — "houve um conflito" sem dizer onde não ajuda ninguém. */
+function mesclaConcorrente(base, meu, deles) {
+  const conflitos = [];
+  const B = _tasksById(base), M = _tasksById(meu), D = _tasksById(deles);
+  const ids = new Set([...B.keys(), ...M.keys(), ...D.keys()]);
+  const tasks = [];
+
+  // Ordem do servidor primeiro, depois o que só existe aqui: quem chegou por
+  // fora define a ordenação, e as minhas tarefas novas entram no fim
+  const ordem = [...D.keys(), ...[...ids].filter((id) => !D.has(id))];
+  for (const id of ordem) {
+    const b = B.get(id), m = M.get(id), d = D.get(id);
+    const mexiEu = !_taskEq(b, m);
+    const mexeuEle = !_taskEq(b, d);
+    if (!mexiEu) { d !== undefined && tasks.push(_cloneTask(d)); continue; }
+    if (!mexeuEle) { m !== undefined && tasks.push(_cloneTask(m)); continue; }
+    // os dois mexeram: fica o dele, e o nome vai no aviso
+    conflitos.push((d ?? m ?? b)?.name || id);
+    d !== undefined && tasks.push(_cloneTask(d));
+  }
+
+  const out = { ...deles, tasks };
+  for (const c of CAMPOS_MESCLAVEIS) {
+    const meuJSON = JSON.stringify(meu[c] ?? null);
+    if (meuJSON === base[c]) continue;                 // não mexi: fica o dele
+    if (JSON.stringify(deles[c] ?? null) === base[c]) { // só eu mexi: é meu
+      out[c] = meu[c];
+      continue;
+    }
+    conflitos.push(c);                                  // os dois: fica o dele
+  }
+  return { projeto: out, conflitos };
 }
 
 async function loadProjects(keepId = null) {
@@ -669,14 +737,7 @@ async function saveNow() {
     return salvo;
   } catch (err) {
     if (err && err.status === 409) {
-      // outra máquina salvou antes: recarrega em vez de sobrescrever
-      setSaveStatus("error",
-        window.PerthI18n
-          ? PerthI18n.t("Project changed on another machine — reloaded")
-          : "Project changed on another machine — reloaded");
-      state.dirty = false;
-      await loadProjects(state.current?.id ?? null);
-      return;
+      return resolveConflito(err.body);
     }
     setSaveStatus("error", `save failed: ${err.message} — retrying…`);
     clearTimeout(saveTimer);
@@ -5194,6 +5255,52 @@ async function renameProject() {
   renderAll();
   await saveNowAfterDirty();
   await loadProjects(state.current.id);
+}
+
+/* Outra máquina gravou antes da minha. Antes daqui saía um descarte; agora
+ * sai uma mesclagem.
+ *
+ * Sem o corpo do 409 (servidor antigo, resposta ilegível) não há três vias
+ * possíveis, e aí o comportamento antigo — recarregar — é o único honesto:
+ * melhor perder a edição sabendo do que gravar por cima da do colega.
+ *
+ * O limite de três tentativas é contra o pingue-pongue: se a cada mesclagem o
+ * servidor já mudou de novo, tentar para sempre é um laço. Na terceira, o
+ * caminho antigo assume e diz que assumiu. */
+let tentativasMerge = 0;
+
+async function resolveConflito(deles) {
+  const recarrega = async (chave) => {
+    setSaveStatus("error", T(chave));
+    state.dirty = false;
+    tentativasMerge = 0;
+    await loadProjects(state.current?.id ?? null);
+  };
+  if (!deles || !deles.tasks || !state.baseSnap) {
+    return recarrega("Project changed on another machine — reloaded");
+  }
+  if (++tentativasMerge > 3) {
+    return recarrega("Project changed on another machine — reloaded");
+  }
+
+  const { projeto, conflitos } = mesclaConcorrente(state.baseSnap, state.current, deles);
+  state.current = projeto;
+  // a base passa a ser a DELE: é contra o carimbo do servidor que a próxima
+  // gravação vai ser julgada, e mandar o carimbo antigo garantiria outro 409
+  state.baseUpdatedAt = deles.updated_at || "";
+  state.baseSnap = baseSnap(deles);
+  clearSelection();
+  renderAll();
+
+  PerthToast.info(conflitos.length
+    ? `${T("Merged with the other machine — theirs kept in")}: ` +
+      conflitos.slice(0, 3).join(", ") + (conflitos.length > 3 ? "…" : "")
+    : T("Merged with the change from the other machine"));
+
+  state.dirty = true;              // a mesclagem é o que precisa ser gravado
+  const salvo = await saveNow();
+  if (salvo) tentativasMerge = 0;
+  return salvo;
 }
 
 async function saveNowAfterDirty() {

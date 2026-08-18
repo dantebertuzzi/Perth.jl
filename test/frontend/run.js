@@ -3727,6 +3727,94 @@ console.log("gantt · painel de recursos");
   close();
 }
 
+console.log("gantt · duas máquinas gravando: mesclar, não descartar");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // O que havia era um DESCARTE: o cliente jogava fora tudo o que você tinha
+  // feito e recarregava. Você mexeu na tarefa A, o colega na B, e a sua
+  // sumia — sem as duas se cruzarem em lugar nenhum.
+  const mk = (id, nome, inicio, extra) => Object.assign({
+    id, name: nome, start: inicio, duration: 3, progress: 0, dependencies: [],
+    color: "", notes: "", milestone: false, parent: "", cost: 0, effort: 0,
+    assignee: "", baseline_start: null, baseline_duration: 0,
+    deadline: null, pinned: false }, extra || {});
+  const base = {
+    id: "pm", name: "Plano", calendar: "", people: [], bands: [], markers: [],
+    month_marks: [], file_path: "", baseline_at: null,
+    updated_at: "2026-04-06T10:00:00",
+    tasks: [mk("a", "A", "2026-04-06"), mk("b", "B", "2026-04-10"),
+            mk("c", "C", "2026-04-14")] };
+
+  const cenario = (meu, deles) => `
+    state.current = ${JSON.stringify(base)};
+    noteBase();                                  // base = carimbo + conteúdo
+    (${meu})(state.current);                     // o que EU faço aqui
+    const doServidor = ${JSON.stringify(base)};
+    doServidor.updated_at = "2026-04-06T10:00:05";
+    (${deles})(doServidor);                      // o que a outra máquina gravou
+    const r = mesclaConcorrente(state.baseSnap, state.current, doServidor);
+    return { tarefas: r.projeto.tasks.map((t) => t.id + ":" + t.name + ":" + t.start),
+             conflitos: r.conflitos, nome: r.projeto.name };`;
+
+  const tocaA = `(p) => { p.tasks[0].start = "2026-04-07"; }`;
+  const tocaB = `(p) => { p.tasks[1].name = "B do colega"; }`;
+  const nada = `(p) => {}`;
+
+  // o caso que doía: tarefas diferentes, ninguém perde nada
+  let r = runIn(cenario(tocaA, tocaB));
+  check(r.tarefas.join("|") === "a:A:2026-04-07|b:B do colega:2026-04-10|c:C:2026-04-14",
+        "gantt: eu mexi em A, o colega em B — as DUAS edições ficam");
+  check(r.conflitos.length === 0, "gantt: e isso não é conflito nenhum");
+
+  // mesma tarefa: fica a dele, e o aviso diz qual
+  r = runIn(cenario(tocaA, `(p) => { p.tasks[0].start = "2026-04-09"; }`));
+  check(r.tarefas[0] === "a:A:2026-04-09",
+        "gantt: na MESMA tarefa fica a versão dele — sobrescrever alheio em silêncio é pior");
+  check(r.conflitos.join() === "A", "gantt: e o aviso nomeia a tarefa que colidiu");
+
+  // tarefa que só eu criei sobrevive
+  r = runIn(cenario(`(p) => { p.tasks.push(${JSON.stringify(mk("d", "Minha nova", "2026-04-20"))}); }`, tocaB));
+  check(/d:Minha nova/.test(r.tarefas.join("|")),
+        "gantt: tarefa que eu acabei de criar não some na mesclagem");
+
+  // tarefa que o colega criou chega
+  r = runIn(cenario(tocaA, `(p) => { p.tasks.push(${JSON.stringify(mk("e", "Dele", "2026-04-22"))}); }`));
+  check(/e:Dele/.test(r.tarefas.join("|")), "gantt: e a que ele criou chega junto");
+
+  // eu apaguei, ele não tocou: some
+  r = runIn(cenario(`(p) => { p.tasks = p.tasks.filter((t) => t.id !== "c"); }`, tocaB));
+  check(!/c:C/.test(r.tarefas.join("|")),
+        "gantt: tarefa que EU apaguei continua apagada depois de mesclar");
+
+  // ele apagou, eu não toquei: some também
+  r = runIn(cenario(nada, `(p) => { p.tasks = p.tasks.filter((t) => t.id !== "c"); }`));
+  check(!/c:C/.test(r.tarefas.join("|")), "gantt: e a que ELE apagou some daqui");
+
+  // campo do projeto (não-tarefa) segue a mesma regra
+  r = runIn(cenario(`(p) => { p.name = "Meu nome"; }`, tocaB));
+  check(r.nome === "Meu nome" && r.conflitos.length === 0,
+        "gantt: o nome do projeto que só eu mudei fica meu");
+  r = runIn(cenario(`(p) => { p.name = "Meu nome"; }`, `(p) => { p.name = "Nome dele"; }`));
+  check(r.nome === "Nome dele" && r.conflitos.join() === "name",
+        "gantt: e se os dois renomearam, fica o dele, nomeado no aviso");
+
+  // ------------------------------------------------- o caminho do 409
+  // sem corpo aproveitável não há três vias: recarregar é o único honesto
+  r = runIn(`
+    state.current = ${JSON.stringify(base)}; noteBase();
+    window.__recarregou = 0;
+    loadProjects = async () => { window.__recarregou++; };
+    resolveConflito(null);
+    return 1;`);
+  await new Promise((r2) => setTimeout(r2, 0));
+  r = runIn(`return window.__recarregou;`);
+  check(r === 1, "gantt: 409 sem corpo cai no recarregar de antes, que é o honesto ali");
+
+  close();
+}
+
 console.log("gantt · a curva-S diz de que régua está falando");
 {
   const { runIn, close } = loadGanttApp();
