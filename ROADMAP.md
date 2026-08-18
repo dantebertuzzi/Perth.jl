@@ -11,21 +11,42 @@ piece of code it should lean on.
 
 ## Next up
 
-### Capacity per person
+### Levelling: doing something about the overload, not just naming it
 
-"Overallocated" means *two tasks on the same day*, which is crude: two one-hour
-tasks are not an overload. With `capacity` on `Person` and effort in hours on
-the task, load, overallocation, warnings and statistics would all describe real
-work.
+`schedule!` pushes successors so the plan respects **dependencies**. Nothing
+pushes anything so it respects **capacity** — which now exists, is measured
+per day, and is reported in four places. Perth diagnoses the overload
+precisely and then leaves the person to drag the bar by hand, which is the
+half of "diagnose → act" that never got built.
 
-*Lean on:* `_workload_rows` in `src/insights.jl` is the single place that spreads
-a task's weight across its days — it already picks `cost` when set and
-person-days otherwise, so capacity is a third input to the same function. But
-four readings agree with each other today (workload, overallocations, warnings,
-`people_stats`); changing the unit under them is a release of its own, not an
-item in a mixed one.
+`level!(p)` would move what it is allowed to move until nobody is over
+capacity, and return the project — the same shape `schedule!` and `pert!`
+already established, where the engine proposes and the caller decides.
 
-## Also worth doing
+Two decisions come *before* the first line of code, and both are the kind
+that is expensive to rediscover:
+
+- **Which priority rule.** Levelling is NP-hard, so every tool picks a
+  heuristic and lives with it: least slack first, earliest deadline first,
+  longest task first. Perth has to choose one, say which one in the
+  docstring, and never pretend it is the optimum. `slack(p)` already computes
+  the number the most defensible rule needs.
+- **What may move.** `pinned` means a date somebody promised, so it stays —
+  and a plan that cannot be levelled without moving a pin should say so
+  rather than move it. Dependencies still bind. What is left to give is the
+  slack, which is exactly what the CPM already measures.
+
+*Lean on:* `_over_day` in `src/insights.jl` is the single definition of an
+overloaded day, and `_workload_rows` already produces them per person per
+day — levelling is a loop that asks it, moves one task, and asks again. The
+stopping condition is the honest hard part: a plan with more work than
+capacity *cannot* be levelled, and the function has to end saying "these
+three days still do not fit" instead of looping or lying.
+
+*Careful:* it changes dates, so it is one undo entry and one save, like
+auto-schedule. And it only means anything where somebody declared a
+capacity — on a plan with none, the old two-tasks-on-a-day rule has nothing
+to level against, and the honest answer is to do nothing and say why.
 
 ### Hide what does not match, not just dim it
 
@@ -42,6 +63,8 @@ same predicate applied one step earlier, where rows are built. The care is in
 what a hidden row does to what is drawn *between* rows: dependency arrows to a
 task that is no longer on screen, and a summary whose children all vanished
 (hide the parent too, or it becomes a bar with nothing under it).
+
+## Also worth doing
 
 ### Recording progress without opening a task
 
@@ -85,9 +108,12 @@ sentence, next to the shape.
 
 *Lean on:* `_scurve` returns the whole series, so the tile is derived on the
 client from a payload it already fetches — no new route, no new arithmetic in
-Julia. The unit trap is the one the roadmap's capacity item names: "under cost"
-means nothing when `cost` is zero and the weight is person-days, so the tile
-has to say which of the two it is measuring.
+Julia. The unit trap is the one capacity per person already walked into and
+came out of (see `_work_weight` in `src/insights.jl`): "under cost" means
+nothing when `cost` is zero and the weight is person-days, so the tile has to
+say which of the two it is measuring. Daily load solved it by preferring the
+new `effort` field and falling back to `cost` — the S-curve is the other half,
+and wants `cost` to go back to meaning money.
 
 ### The plan as it was last Monday
 

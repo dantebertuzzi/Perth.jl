@@ -17,6 +17,13 @@ A single task (or milestone) on the Gantt chart.
   `"FF:id"` (optionally with lag) declare start-to-start / finish-to-finish.
 - `cost::Float64`: planned cost (any unit). `0` = use duration (person-days)
   as the weight in S-curve analytics.
+- `effort::Float64`: how much *work* the task is, in whatever unit is also
+  used for [`Person`](@ref)'s `capacity` (hours, person-days, points — Perth
+  never needs to know which, only that the two agree). `0` = fall back to
+  `cost`, and then to the duration in person-days, which is what daily load
+  has always been measured in. It never moves the task: two hours of work
+  inside a task that spans a week is a statement about load, not about dates.
+  See [`workload`](@ref) and [`overallocations`](@ref).
 - `color::String`: hex color (e.g. `"#bd93f9"`); empty string means automatic.
 - `assignee::String`: person or resource responsible.
 - `notes::String`: free-form notes.
@@ -58,6 +65,7 @@ Base.@kwdef mutable struct GanttTask
     notes::String = ""
     milestone::Bool = false
     cost::Float64 = 0.0
+    effort::Float64 = 0.0         # trabalho; 0 = cai em cost, depois em pessoa-dias
     parent::String = ""
     order::Int = 0                # posição manual entre irmãos; 0 = pela data
     baseline_start::Union{Nothing,Date} = nothing
@@ -71,7 +79,7 @@ Base.@kwdef mutable struct GanttTask
 end
 
 """
-    Person(; name, role = "", team = "", email = "", notes = "")
+    Person(; name, role = "", team = "", email = "", notes = "", capacity = 0)
 
 A registered collaborator. `name` is the only field that matters to the
 schedule — it is what a task's `assignee` holds. The rest is the address
@@ -85,6 +93,17 @@ channel to be understood.
 - `team::String`: department, squad, company — whatever the org divides by.
 - `email::String`: free text; nothing sends mail on its own.
 - `notes::String`: anything else (phone, shift, holidays).
+- `capacity::Float64`: how much work this person absorbs on **one working
+  day**, in the same unit as a task's `effort` — `8` if effort is in hours,
+  `1` for one full-time person-day, `0.5` for half time. It is what turns
+  "two tasks on the same day" into "more work than the day holds": two
+  one-hour tasks stop being an overload the moment there is a number to
+  compare them to. See [`workload`](@ref) and [`overallocations`](@ref).
+
+  `0` (the default) means *not declared*, and overallocation falls back to
+  the older, cruder rule — two tasks on the same day. Declaring capacity is
+  therefore opt-in, one person at a time: nobody's plan changes meaning
+  because a field appeared.
 """
 Base.@kwdef mutable struct Person
     name::String = ""
@@ -92,6 +111,7 @@ Base.@kwdef mutable struct Person
     team::String = ""
     email::String = ""
     notes::String = ""
+    capacity::Float64 = 0.0       # trabalho por dia útil; 0 = não declarada
 end
 
 """
@@ -252,6 +272,7 @@ end
 function _normalize!(t::GanttTask)
     t.duration = max(t.duration, 1)
     t.cost = max(t.cost, 0.0)
+    t.effort = max(t.effort, 0.0)
     t.progress = clamp(t.progress, 0, 100)
     t.name = _cap_text(t.name)
     t.assignee = _cap_text(t.assignee)
@@ -350,6 +371,9 @@ function _clean_people(pessoas)
         pe.team  = _cap_text(strip(pe.team))
         pe.email = _cap_text(strip(pe.email))
         pe.notes = _cap_text(pe.notes)
+        # capacidade negativa é erro de digitação, não um plano: vira "não
+        # declarada", como duração negativa vira 1
+        pe.capacity = max(pe.capacity, 0.0)
         isempty(pe.name) && continue
         k = lowercase(pe.name)
         k in vistos && continue

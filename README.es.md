@@ -154,6 +154,7 @@ primero.
 |---|---|
 | **Curva S** | previsto × realizado — la distancia es el atraso medido en trabajo, no en días |
 | **Carga** | cuánto tiene cada persona cada día (`workload`, `overallocations`) |
+| **Capacidad** | `add_person!(p, "Ana"; capacity = 8)` y `effort` en la tarea: la sobrecarga pasa a ser *más trabajo del que cabe en el día*, no *dos tareas el mismo día* |
 | **Estadísticas** | por persona y por equipo: esfuerzo, hecho, días ocupados, días duplicados |
 | **Avisos** | ciclo de dependencia · plazo vencido · vencida · sobrecarga · atrás de la línea base · *empieza antes de lo que permiten sus dependencias* |
 | **Glosario** | Ayuda → *Qué quieren decir las palabras*: holgura, ruta crítica, línea base, P80 |

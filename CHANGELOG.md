@@ -5,6 +5,62 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.4] - 2026-08-17
+
+### Added
+- **Capacity per person, and effort on the task.** "Overallocated" meant *two
+  tasks on the same day*, which is crude — two one-hour tasks are not an
+  overload, and there was no way to say so. Declare what a day holds
+  (`add_person!(p, "Ana"; capacity = 8)`, or the *Capacity per day* field in
+  the collaborator registry) and how much work a task is (`effort`, next to
+  `cost` in the task modal), and overload becomes a comparison instead of a
+  count: more work than the day holds.
+- **The unit is yours, and Perth never has to know which.** `capacity` and
+  `effort` only have to agree with each other — `8` and hours, `1` and
+  person-days, points, whatever the team already says out loud. What the
+  package needs is that the two sides of the comparison use the same ruler,
+  which is a much smaller promise than picking a unit for everybody.
+- **Declaring it is opt-in, one person at a time.** With no capacity the old
+  rule stands, exactly as it was, so no existing plan changes meaning because
+  a field appeared. `effort` follows the same shape: unset, the weight of a
+  task falls back to `cost` and then to the duration in person-days, which is
+  what daily load has always been measured in.
+- **One definition of "overloaded day", for everybody.** It lives in
+  `_over_day` (`src/insights.jl`) and every reading now asks it: the resource
+  panel, the warnings, `people_stats`, `team_stats`, and the pair-by-pair
+  `overallocations`. That last one used to run its own independent
+  date-overlap loop that merely happened to agree; now it derives the pairs
+  from the overloaded days, so it *cannot* disagree.
+- **A warning for the day a single task blows up.** With capacity declared,
+  ten hours of work in an eight-hour day is a real problem with nobody to
+  collide with — and a list of *pairs* structurally cannot report it. New
+  `over capacity` warning, grouped per task (ten blown days of the same task
+  are one problem, not ten). Without capacity it can never fire.
+- The resource panel paints the ratio, not the count: within capacity stays
+  calm, over it warns, and past double it warns harder. The tooltip switches
+  from "2 tasks" to "12 / 8" the moment somebody says how much fits — the
+  count stopped being the answer that day.
+
+### Changed
+- **The browser no longer computes overallocation.** There was a second
+  implementation of the rule in `frontend/app.js` feeding the *overallocated*
+  highlight, the toolbar chip and the status-bar count — and it had already
+  drifted: it added durations in *calendar* days while the engine counts
+  *business* days, so under a business-day calendar the two could disagree
+  about who was overloaded. It now reads the server's answer, like the
+  critical path always has. The warning payload carries `other_id` so the
+  client can still light up both tasks of a pair.
+
+### Fixed
+- **`.perth.jl` was silently dropping `cost`.** The writer emits field by
+  field and `cost` was never in the list, so a project with costs saved to the
+  interchange format — the one meant for humans and for version control — came
+  back zeroed. Found while adding `effort` next to it.
+- `add_person!` converted every keyword value with `String(v)`, which meant
+  `add_person!(p, "Ana"; capacity = 8)` died before reaching the field. It now
+  converts to the field's own type, and says which fields exist when given one
+  that does not.
+
 ## [0.9.3] - 2026-08-17
 
 ### Added

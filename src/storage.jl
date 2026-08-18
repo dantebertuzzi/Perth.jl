@@ -328,15 +328,28 @@ Register one collaborator. A name already on the list (in any case) is
 fields you pass are overwritten — so `add_person!(p, "Ana"; team = "Obra")`
 does not erase her role.
 """
+# setfield! com o tipo do CAMPO, não String(v) para tudo: capacity é um
+# número, e a versão anterior — que convertia qualquer valor para String —
+# morria em add_person!(p, "Ana"; capacity = 8) antes de chegar no campo.
+_person_value(::Type{Float64}, v) = Float64(v)
+_person_value(::Type{String}, v) = String(v)
+
+function _set_person!(pe::Person, k::Symbol, v)
+    hasfield(Person, k) ||
+        throw(ArgumentError("Person has no field $(repr(k)) — " *
+                            "try name, role, team, email, notes or capacity"))
+    setfield!(pe, k, _person_value(fieldtype(Person, k), v))
+end
+
 function add_person!(p::Project, name::AbstractString; kwargs...)
     novo = _as_person(name)
     atual = person(p, name)
     if atual === nothing
-        for (k, v) in kwargs; setfield!(novo, k, String(v)); end
+        for (k, v) in kwargs; _set_person!(novo, k, v); end
         return people!(p, [p.people; novo])
     end
     atual.name = _clean_person(name)
-    for (k, v) in kwargs; setfield!(atual, k, String(v)); end
+    for (k, v) in kwargs; _set_person!(atual, k, v); end
     return people!(p, p.people)
 end
 

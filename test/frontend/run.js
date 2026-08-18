@@ -2610,8 +2610,12 @@ console.log("gantt · cadastro de colaboradores");
   r = runIn(`document.querySelector(".people-row").click();
     return [...document.querySelectorAll(".people-form input")]
       .map((i) => i.dataset.field + "=" + i.value);`);
-  check(r.join("|") === "role=Eletricista|team=Obra|email=|notes=",
+  check(r.join("|") === "role=Eletricista|team=Obra|email=|notes=|capacity=",
         "gantt: clicar na linha abre a ficha preenchida");
+  // capacidade em branco é "não declarada", e não um limite de zero — zero
+  // escrito no campo diria que a pessoa não absorve nada
+  r = runIn(`return document.querySelector('.people-form input[data-field="capacity"]').type;`);
+  check(r === "number", "gantt: e a capacidade é um campo numérico, não texto");
 
   // grava no change (sair do campo), não a cada tecla: uma letra por PUT
   // seria um PUT por letra
@@ -3651,9 +3655,11 @@ console.log("gantt · painel de recursos");
     document.getElementById("res-pane").hidden = false;
     state.resources = { start: "2026-03-02", days: 6, calendar: "", people: [
       { assignee: "", load: [1, 1, 0, 0, 0, 0], effort: [1, 1, 0, 0, 0, 0],
+        over: [false, false, false, false, false, false], capacity: 0,
         peak: 1, busy_days: 2, over_days: 0, total_effort: 2,
         tasks: [{ id: "t3", name: "C", from: "2026-03-02", to: "2026-03-03" }] },
       { assignee: "Ana", load: [1, 1, 2, 2, 1, 0], effort: [1, 1, 2, 2, 1, 0],
+        over: [false, false, true, true, false, false], capacity: 0,
         peak: 2, busy_days: 5, over_days: 2, total_effort: 7,
         tasks: [{ id: "t1", name: "A", from: "2026-03-02", to: "2026-03-06" },
                 { id: "t2", name: "B", from: "2026-03-04", to: "2026-03-06" }] } ] };
@@ -3717,6 +3723,158 @@ console.log("gantt · painel de recursos");
   r = runIn(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true }));
     return { open: state.resOpen, hidden: document.getElementById("res-pane").hidden };`);
   check(r.open === false && r.hidden === true, "gantt: R fecha o painel");
+
+  close();
+}
+
+console.log("gantt · sobrecarga vem do servidor, não de uma segunda conta aqui");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Havia uma reimplementação da regra em JS alimentando o destaque, o chip
+  // do seletor e a barra de status — e ela já divergia do motor (taskEnd soma
+  // dias corridos; o motor conta dias úteis). Agora o cliente só LÊ.
+  const seed = `
+    const mk = (id, name, start, extra) => Object.assign({
+      id, name, start, duration: 5, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0, effort: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false }, extra || {});
+    state.current = { id: "pc", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "A", "2026-04-06", { assignee: "Ana" }),
+      mk("b", "B", "2026-04-08", { assignee: "Ana" }),
+      mk("c", "C", "2026-04-20", { assignee: "Bruno" }) ] };
+    state.cpm = { cycle: false, finish: "2026-04-24", calendar: "", pert: null, byId: new Map() };
+    state.highlight = null; state.search = "";
+    clearSelection();
+    renderAll();`;
+
+  check(runIn(`${seed} return typeof computeOverallocations;`) === "undefined",
+        "gantt: a conta local de sobrecarga não existe mais");
+
+  // sem aviso nenhum do servidor, ninguém está sobrecarregado — mesmo com
+  // duas tarefas da Ana se cruzando na tela
+  let r = runIn(`${seed} state.warnings = []; overallocFromWarnings();
+    return { pares: state.overalloc.pairs.length, ids: [...state.overalloc.ids] };`);
+  check(r.pares === 0 && r.ids.length === 0,
+        "gantt: sem aviso do servidor, a sobreposição na tela não é sobrecarga");
+
+  const avisar = `state.warnings = [{ kind: "overallocation", severity: "warning",
+      task_id: "a", other_id: "b", who: "Ana", task: "A", other: "B",
+      from: "2026-04-08", to: "2026-04-10" }];
+    overallocFromWarnings();`;
+
+  r = runIn(`${seed} ${avisar} return [...state.overalloc.ids];`);
+  check(r.join() === "a,b",
+        "gantt: o aviso do servidor acende as DUAS tarefas do par (other_id)");
+
+  r = runIn(`${seed} ${avisar} renderStatus(); return el.statusLeft.textContent;`);
+  check(/⚠ 1 overallocation/.test(r), "gantt: e a barra de status conta o par");
+
+  // o destaque "overallocated" do seletor sai da mesma fonte
+  r = runIn(`${seed} ${avisar} renderAll();
+    state.highlight = { kind: "status", value: "overallocated" };
+    renderAll();
+    return [...document.querySelectorAll(".tt-row")]
+      .map((x) => x.dataset.id + ":" + (x.className.includes("dim") ? "off" : "on"));`);
+  check(r.join("|") === "a:on|b:on|c:off",
+        "gantt: e o destaque acende exatamente quem o servidor apontou");
+
+  r = runIn(`${seed} ${avisar} renderAll();
+    return document.getElementById("highlight-select").innerHTML.includes("Overallocated");`);
+  check(r === true, "gantt: o seletor só oferece o status quando há sobrecarga");
+
+  // projeto trocado (ou busca falhando) tem de ZERAR: senão o chip e o
+  // destaque seguem contando o problema do projeto anterior
+  r = runIn(`${seed} ${avisar}
+    state.warnings = []; overallocFromWarnings();
+    return { pares: state.overalloc.pairs.length, ids: state.overalloc.ids.size };`);
+  check(r.pares === 0 && r.ids === 0, "gantt: lista de avisos vazia zera a sobrecarga");
+
+  // o aviso novo: dia estourado por UMA tarefa, que par nenhum descreve
+  r = runIn(`${seed}
+    state.warnings = [{ kind: "overload", severity: "warning", task_id: "a",
+      who: "Ana", task: "A", days: 2, at: "2026-04-06",
+      effort: 15, capacity: 8 }];
+    overallocFromWarnings();
+    showWarnings();
+    return { kind: document.querySelector(".warn-kind").textContent,
+             texto: document.querySelector(".warn-text").textContent,
+             pares: state.overalloc.pairs.length };`);
+  check(/capacity|capacidade/.test(r.kind),
+        "gantt: o dia estourado tem etiqueta própria na lista de avisos");
+  check(/15\/8/.test(r.texto) && /Ana/.test(r.texto),
+        "gantt: e a frase diz o trabalho contra o que o dia aguenta");
+  check(r.pares === 0,
+        "gantt: ele não conta como par — quem conta pares é o outro aviso");
+
+  close();
+}
+
+console.log("gantt · o painel de recursos lê a capacidade");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // O payload traz `over` PRONTO (uma definição só, no motor). O painel só
+  // escolhe o tom — e com capacidade declarada o tom vem da razão, porque um
+  // dia com o dobro do que cabe não é o mesmo aviso que um 10% acima.
+  const seed = (cap, effort, over) => `
+    const mk = (id, name, start, assignee) => ({
+      id, name, start, duration: 3, assignee, progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0, effort: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false });
+    state.current = { id: "pr", name: "P", people: [], bands: [], markers: [],
+      tasks: [mk("t1", "A", "2026-03-02", "Ana")] };
+    state.cpm = { cycle: false, finish: "2026-03-06", calendar: "", pert: null, byId: new Map() };
+    state.resOpen = true;
+    document.getElementById("res-pane").hidden = false;
+    state.resources = { start: "2026-03-02", days: 4, calendar: "", people: [
+      { assignee: "Ana", load: [1, 2, 2, 0], effort: ${JSON.stringify(effort)},
+        over: ${JSON.stringify(over)}, capacity: ${cap},
+        peak: 2, busy_days: 3, over_days: ${over.filter(Boolean).length},
+        total_effort: ${effort.reduce((a, b) => a + b, 0)},
+        tasks: [{ id: "t1", name: "A", from: "2026-03-02", to: "2026-03-04" }] } ] };
+    renderAll();`;
+
+  const tons = `[...document.querySelectorAll("#res-chart .res-cell")]
+    .map((c) => c.getAttribute("class").match(/l\\d/)[0])`;
+
+  // sem capacidade: o tom é a contagem de tarefas, como sempre foi
+  let r = runIn(`${seed(0, [1, 2, 2, 0], [false, true, true, false])} return ${tons};`);
+  check(r.join("|") === "l1|l2", "gantt: sem capacidade, o tom continua vindo da contagem");
+
+  // com capacidade e 10% acima: o tom brando do estouro
+  r = runIn(`${seed(8, [8, 9, 9, 0], [false, true, true, false])} return ${tons};`);
+  check(r.join("|") === "l1|l2", "gantt: 8 de 8 não estoura; 9 de 8 estoura no tom brando");
+
+  // com o dobro do que cabe: o tom forte
+  r = runIn(`${seed(8, [8, 20, 20, 0], [false, true, true, false])} return ${tons};`);
+  check(r.join("|") === "l1|l3",
+        "gantt: acima do dobro da capacidade, o tom forte");
+
+  // o tooltip troca "2 tarefas" por trabalho/capacidade no dia em que se diz
+  // quanto cabe — a contagem deixou de ser a resposta
+  r = runIn(`${seed(8, [8, 12, 12, 0], [false, true, true, false])}
+    return [...document.querySelectorAll("#res-chart .res-cell title")]
+      .map((t) => t.textContent.split("\\n")[0]);`);
+  check(/8 \/ 8/.test(r[0]) && /12 \/ 8/.test(r[1]),
+        "gantt: o tooltip diz trabalho / capacidade");
+  r = runIn(`${seed(0, [1, 2, 2, 0], [false, true, true, false])}
+    return document.querySelector("#res-chart .res-cell title").textContent;`);
+  check(/1 task/.test(r), "gantt: e sem capacidade volta a contar tarefas");
+
+  // a linha da pessoa anuncia a capacidade no title
+  r = runIn(`${seed(8, [8, 12, 12, 0], [false, true, true, false])}
+    return document.querySelector("#res-names .res-row").title;`);
+  check(/capacity 8\/day|capacidade 8\/dia/.test(r),
+        "gantt: a linha da pessoa diz a capacidade dela");
+
+  // blocos vizinhos de tons IGUAIS viram um só, mesmo com contagens diferentes
+  r = runIn(`${seed(8, [9, 9, 9, 0], [true, true, true, false])}
+    return [...document.querySelectorAll("#res-chart .res-cell")].length;`);
+  check(r === 1,
+        "gantt: dias de contagem diferente mas mesmo tom viram um bloco só");
 
   close();
 }

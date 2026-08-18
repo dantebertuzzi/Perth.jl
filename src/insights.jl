@@ -208,27 +208,56 @@ end
 """
     overallocations(p::Project) -> Vector{NamedTuple}
 
-Pairs of *leaf* tasks assigned to the same person whose date ranges
-overlap — Tables.jl-compatible rows with `assignee`, `task1`,
-`task1_name`, `task2`, `task2_name`, `from` and `to` (the overlapping
-interval, calendar-aware ends). Summaries are containers, not work, so
-they are ignored.
+Pairs of *leaf* tasks assigned to the same person that share at least one
+**overloaded day** — Tables.jl-compatible rows with `assignee`, `task1`,
+`task1_name`, `task2`, `task2_name`, `from` and `to` (the first and last
+overloaded day the two share). Summaries are containers, not work, so they
+are ignored.
+
+What counts as overloaded is the one definition the whole package uses (see
+[`workload`](@ref)): with a `capacity` declared for the person, a day whose
+work exceeds it; without one, a day carrying two or more tasks. So declaring
+`capacity = 8` and two one-hour tasks makes the pair *stop* being reported —
+which is the entire point of declaring it.
+
+Only working days count. Under a business-day calendar
+([`set_calendar!`](@ref)) two tasks that merely touch across a weekend never
+share a day of work, and are not a conflict.
 """
 function overallocations(p::Project)
-    leaves = [t for t in p.tasks
-              if !_has_children(p, t.id) && !isempty(strip(t.assignee))]
-    sort!(leaves; by = t -> (lowercase(strip(t.assignee)), t.start, t.name))
+    # Os dias sobrecarregados de cada pessoa vêm de _workload_rows: uma
+    # definição só, e por construção este par a par não pode discordar do
+    # painel de recursos, das estatísticas nem do aviso na tela. Antes eram
+    # duas contas independentes que só por sorte davam a mesma resposta.
+    dias = Dict{String,Vector{Date}}()
+    tarefas = Dict{Tuple{String,Date},Vector{String}}()
+    for r in _workload_rows(p)
+        r.over || continue
+        push!(get!(dias, r.assignee, Date[]), r.date)
+        tarefas[(r.assignee, r.date)] = r.task_ids
+    end
+    isempty(dias) && return NamedTuple[]
+
+    nomes = Dict(t.id => t.name for t in p.tasks)
     out = NamedTuple[]
-    for i in 1:length(leaves)-1, j in i+1:length(leaves)
-        a, b = leaves[i], leaves[j]
-        strip(a.assignee) == strip(b.assignee) || continue
-        from = max(a.start, b.start)
-        to = min(end_date(p, a), end_date(p, b))
-        from <= to && push!(out, (
-            assignee = String(strip(a.assignee)),
-            task1 = a.id, task1_name = a.name,
-            task2 = b.id, task2_name = b.name,
-            from = from, to = to))
+    for who in sort!(collect(keys(dias)); by = lowercase)
+        # (par de tarefas) -> dias sobrecarregados em que as duas correm
+        juntos = Dict{Tuple{String,String},Vector{Date}}()
+        for d in dias[who]
+            ids = sort!(copy(tarefas[(who, d)]))
+            for i in 1:length(ids)-1, j in i+1:length(ids)
+                push!(get!(juntos, (ids[i], ids[j]), Date[]), d)
+            end
+        end
+        # Um dia sobrecarregado com UMA tarefa só (possível com capacidade:
+        # uma tarefa pesada sozinha já estoura o dia) não forma par — quem o
+        # denuncia é o painel de recursos e o `over_days` das estatísticas.
+        for (par, ds) in sort!(collect(juntos); by = kv -> (kv[1][1], kv[1][2]))
+            push!(out, (assignee = who,
+                        task1 = par[1], task1_name = get(nomes, par[1], ""),
+                        task2 = par[2], task2_name = get(nomes, par[2], ""),
+                        from = minimum(ds), to = maximum(ds)))
+        end
     end
     return out
 end
@@ -264,6 +293,42 @@ end
 # Linhas cruas da carga. `unassigned = true` inclui as tarefas-folha sem
 # responsável sob a chave "" — o painel as mostra como uma faixa própria,
 # mas a API pública (workload) fica só com gente de verdade.
+# Quanto TRABALHO a tarefa é, para efeito de carga. `effort` quando dito;
+# senão `cost`, que sempre serviu de peso na falta de coisa melhor; senão a
+# duração em pessoa-dias. A ordem importa: sem `effort` em lugar nenhum, a
+# conta é exatamente a de antes, e nenhum plano existente muda de resposta.
+#
+# A curva-S NÃO passa por aqui, e agora é de propósito. Ela pergunta quanto
+# VALOR foi entregue (dinheiro, quando há dinheiro); esta pergunta quanto
+# trabalho cabe num dia. Enquanto só um dos dois campos estiver preenchido as
+# duas continuam contando a mesma história sobre a mesma tarefa — separá-las
+# só muda algo para quem disser as duas coisas, que é justamente quem precisa
+# que elas sejam diferentes.
+_work_weight(t::GanttTask) =
+    t.effort > 0 ? t.effort : (t.cost > 0 ? t.cost : Float64(_effdur(t)))
+
+# Capacidade declarada da pessoa (0 = não declarada). Nome solto — alguém que
+# aparece só no `assignee` de uma tarefa, sem cadastro — não tem capacidade,
+# e cai na regra antiga.
+function _capacity_of(p::Project, who::AbstractString)
+    pe = person(p, who)
+    return pe === nothing ? 0.0 : pe.capacity
+end
+
+# Sobrecarga do dia, DEFINIÇÃO ÚNICA — todo mundo (avisos, painel de recursos,
+# estatísticas, o par a par de overallocations) pergunta a esta função.
+#
+# Com capacidade declarada é uma comparação de trabalho contra o que o dia
+# aguenta; sem ela, a regra antiga e crua: duas tarefas no mesmo dia. Duas
+# tarefas de uma hora não são sobrecarga, e era exatamente isso que não havia
+# como dizer — mas dizer exige um número contra o qual comparar, e enquanto
+# ninguém o der, contar tarefas é a melhor resposta disponível.
+#
+# A folga de 1e-9 é aritmética de ponto flutuante, não generosidade: oito
+# tarefas de uma hora somam 7.999999999999999 num dia de 8.
+_over_day(tasks::Int, effort::Float64, capacity::Float64) =
+    capacity > 0 ? effort > capacity + 1e-9 : tasks >= 2
+
 function _workload_rows(p::Project; unassigned::Bool = false)
     cal = _cal(p)
     leaves = [t for t in p.tasks
@@ -275,18 +340,24 @@ function _workload_rows(p::Project; unassigned::Bool = false)
         who = String(strip(t.assignee))
         days = _task_days(cal, t)
         isempty(days) && continue
-        # Mesmo peso da curva-S: custo quando informado, senão pessoa-dias.
-        # As duas análises contam a mesma história sobre a mesma tarefa.
-        per = (t.cost > 0 ? t.cost : Float64(_effdur(t))) / length(days)
+        per = _work_weight(t) / length(days)
         for d in days
             k = (who, d)
             push!(get!(ids, k, String[]), t.id)
             eff[k] = get(eff, k, 0.0) + per
         end
     end
+    caps = Dict{String,Float64}()
     keys_sorted = sort!(collect(keys(ids)); by = k -> (lowercase(k[1]), k[2]))
-    return [(assignee = k[1], date = k[2], tasks = length(ids[k]),
-             effort = eff[k], task_ids = ids[k]) for k in keys_sorted]
+    out = NamedTuple[]
+    for k in keys_sorted
+        cap = get!(caps, k[1]) do; _capacity_of(p, k[1]); end
+        n = length(ids[k])
+        push!(out, (assignee = k[1], date = k[2], tasks = n, effort = eff[k],
+                    capacity = cap, over = _over_day(n, eff[k], cap),
+                    task_ids = ids[k]))
+    end
+    return out
 end
 
 """
@@ -329,11 +400,13 @@ function _workload_payload(p::Project)
         mine = [r for r in rows if r.assignee == who]
         load = zeros(Int, ndays)
         effort = zeros(Float64, ndays)
+        over = falses(ndays)
         for r in mine
             i = at(r.date)
             1 <= i <= ndays || continue
             load[i] = r.tasks
             effort[i] = r.effort
+            over[i] = r.over
         end
         seen = String[]
         for r in mine, id in r.task_ids
@@ -345,9 +418,13 @@ function _workload_payload(p::Project)
             push!(ts, (id = t.id, name = t.name,
                        from = _snap(_cal(p), t.start), to = end_date(p, t)))
         end
-        push!(people, (assignee = who, load = load, effort = effort,
+        # `over` vai pronto: quem decide se o dia estourou é _over_day, uma
+        # vez só, e o navegador só escolhe a cor. Era daqui que saía a
+        # segunda implementação da regra do outro lado do fio.
+        push!(people, (assignee = who, load = load, effort = effort, over = over,
+                       capacity = isempty(mine) ? 0.0 : first(mine).capacity,
                        peak = maximum(load), busy_days = count(>(0), load),
-                       over_days = count(>(1), load),
+                       over_days = count(over),
                        total_effort = sum(effort), tasks = ts))
     end
     return (; start = d0, days = ndays, calendar = p.calendar, people = people)
@@ -439,7 +516,7 @@ function _stats_group(p::Project, chave)
     # de cada uma, e a linha do setor só soma as das suas.
     sobrecarga = Dict{String,Int}()
     for r in _workload_rows(p; unassigned = true)
-        r.tasks >= 2 && (sobrecarga[r.assignee] = get(sobrecarga, r.assignee, 0) + 1)
+        r.over && (sobrecarga[r.assignee] = get(sobrecarga, r.assignee, 0) + 1)
     end
 
     return (grupos = grupos, dias = dias, atrasadas = atrasadas,
@@ -464,8 +541,12 @@ they carry, how far along it is, and where it hurts.
 - `first`, `last`: first and last working day they are occupied.
 - `busy_days`: distinct days with work. Under a business-day calendar
   (`set_calendar!`) holidays carry none.
-- `over_days`: days with two or more of *their own* tasks running — the same
-  overlap [`overallocations`](@ref) reports pair by pair.
+- `capacity`: the work they absorb per working day, from the registry
+  ([`add_person!`](@ref)); `0` when not declared.
+- `over_days`: days that carry more work than they hold — over `capacity`
+  when it is declared, two or more of *their own* tasks when it is not. Same
+  definition [`overallocations`](@ref) reports pair by pair and the resource
+  panel paints.
 - `late`: their tasks finishing after their deadline (see
   [`deadline_slip`](@ref)).
 
@@ -486,6 +567,7 @@ function people_stats(p::Project)
         push!(out, (assignee = who,
                     role = pe === nothing ? "" : pe.role,
                     team = pe === nothing ? "" : pe.team,
+                    capacity = pe === nothing ? 0.0 : pe.capacity,
                     tasks = length(ts),
                     milestones = count(t -> t.milestone, ts),
                     effort = esforco,

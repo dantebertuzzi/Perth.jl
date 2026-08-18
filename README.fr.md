@@ -161,6 +161,7 @@ d'abord.
 |---|---|
 | **Courbe en S** | prévu × réalisé — l'écart est le retard mesuré en travail, pas en jours |
 | **Charge** | ce que chaque personne a chaque jour (`workload`, `overallocations`) |
+| **Capacité** | `add_person!(p, "Ana"; capacity = 8)` et `effort` sur la tâche : la surcharge devient *plus de travail que le jour n'en contient*, et non *deux tâches le même jour* |
 | **Statistiques** | par personne et par équipe : effort, fait, jours occupés, jours en double |
 | **Avertissements** | cycle de dépendance · délai dépassé · en retard · surcharge · derrière la ligne de base · *commence avant ce que ses dépendances permettent* |
 | **Glossaire** | Aide → *Ce que veulent dire les mots* : marge, chemin critique, ligne de base, P80 |
