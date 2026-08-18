@@ -377,6 +377,12 @@
         <label title="How much work this task is, in the same unit as a person's capacity per day. It never moves the task. Empty falls back to the cost, and then to the duration in person-days.">Effort
           <input type="number" id="f-effort" min="0" step="0.5">
         </label>
+        <label title="A state only you can know: work stopped and expected to resume. It changes nothing in the schedule — the task keeps its dates, its load and its place on the critical path.">Status
+          <select id="f-status">
+            <option value="">Normal</option>
+            <option value="hold">On hold</option>
+          </select>
+        </label>
         <label>Color
           <select id="f-color">
             <option value="">Automatic</option>

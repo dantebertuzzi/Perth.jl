@@ -462,6 +462,10 @@ function taskMatchesHighlight(t) {
     if (h.value === "past-deadline") return deadlineSlip(t) > 0;
     if (h.value === "pinned") return !!t.pinned;
     if (h.value === "overallocated") return state.overalloc.ids.has(t.id);
+    if (h.value === "hold") return t.status === "hold";
+    // gargalo é derivado pelo motor (folga zero + dois ou mais dependentes),
+    // e chega junto com o resto do CPM — o cliente não recalcula a regra
+    if (h.value === "bottleneck") return !!state.cpm?.byId.get(t.id)?.bottleneck;
   }
   if (h.kind === "type") return !!t.milestone;
   return true;
@@ -1182,6 +1186,14 @@ function renderHighlightSelect() {
   if (state.overalloc.pairs.length) {
     gs.appendChild(opt("status:overallocated", "Overallocated"));
   }
+  if (state.current.tasks.some((t) => t.status === "hold")) {
+    gs.appendChild(opt("status:hold", "On hold"));
+  }
+  // o gargalo só entra quando o motor achou algum: um item de menu que
+  // nunca casa com nada é ruído — a mesma regra dos outros daqui
+  if ([...(state.cpm?.byId.values() ?? [])].some((i) => i.bottleneck)) {
+    gs.appendChild(opt("status:bottleneck", "Bottleneck"));
+  }
   sel.appendChild(gs);
   const gt = document.createElement("optgroup");
   gt.label = "Type";
@@ -1618,7 +1630,7 @@ function taskRow(t, seq) {
   row.dataset.id = t.id;
   row.innerHTML = `
     <span class="c-seq" title="id: ${escapeHTML(t.id)}">${seq}</span>
-    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? `<button type="button" class="sum-mark" title="${T(fechado ? "Expand" : "Collapse")}">${fechado ? "▸" : "▾"}</button>` : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
+    <span class="c-name" style="padding-left:${depth * 14}px">${isSum ? `<button type="button" class="sum-mark" title="${T(fechado ? "Expand" : "Collapse")}">${fechado ? "▸" : "▾"}</button>` : t.milestone ? '<span class="ms">◆</span>' : ""}${escapeHTML(t.name)}${t.status === "hold" ? `<span class="hold-mark" title="${T("On hold")}">‖</span>` : ""}${(t.notes || "").trim() ? '<span class="note-mark" title="has notes"></span>' : ""}</span>
     <span class="c-date">${t.start}</span>
     <span class="c-num">${t.milestone ? "—" : t.duration + "d"}</span>
     <span class="c-num">${t.progress}</span>`;
@@ -2050,6 +2062,19 @@ function renderChart() {
 
   const chart = el.chart;
   chart.innerHTML = "";
+
+  /* A hachura das tarefas paradas vive num <defs>, definida uma vez por
+     render e referenciada por url(#…) em cada barra: um <pattern> por barra
+     seria o mesmo desenho repetido N vezes no DOM. `currentColor` para ela
+     acompanhar o tema — no escuro o traço tem de clarear junto com o texto. */
+  const defs = svg("defs", {});
+  const hach = svg("pattern", {
+    id: "hachura-parada", width: 6, height: 6,
+    patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)",
+  });
+  hach.appendChild(svg("rect", { class: "hold-hatch", x: 0, y: 0, width: 2.2, height: 6 }));
+  defs.appendChild(hach);
+  chart.appendChild(defs);
   chart.setAttribute("width", totalW);
   chart.setAttribute("height", totalH);
 
@@ -2328,6 +2353,23 @@ function renderChart() {
       if (state.showCritical && info?.critical) {
         chart.appendChild(svg("rect", {
           class: "bar-crit", x, y, width: w, height: h,
+        }));
+      }
+
+      /* Parada: hachura por cima, e a barra mantém a COR.
+       *
+       * Cor aqui é identidade — é a da tarefa, escolhida por quem planeja, ou
+       * a da rotação automática. Estado sempre foi decoração por cima
+       * (bar-crit é um contorno, pin-mark é um marcador acima da barra), e
+       * trocar a cor por estado tiraria as duas leituras de uma vez: "azul"
+       * passaria a às vezes significar Ana e às vezes significar parada.
+       *
+       * A hachura diagonal é a convenção para "esta área não está ativa", e
+       * lê bem por cima de qualquer cor, que era o requisito. */
+      if (t.status === "hold") {
+        chart.appendChild(svg("rect", {
+          class: "bar-hold" + dim, x, y, width: w, height: h,
+          fill: "url(#hachura-parada)",
         }));
       }
     }
@@ -3338,6 +3380,7 @@ function openModal(id) {
   $("#f-milestone").checked = !!t.milestone;
   $("#f-deadline").value = t.deadline || "";
   $("#f-pinned").checked = !!t.pinned;
+  $("#f-status").value = t.status || "";
   $("#f-optimistic").value = t.optimistic || "";
   $("#f-most-likely").value = t.most_likely || "";
   $("#f-pessimistic").value = t.pessimistic || "";
@@ -3604,6 +3647,7 @@ function submitModal() {
   t.color = $("#f-color").value;
   t.cost = Math.max(0, parseFloat($("#f-cost").value) || 0);
   t.effort = Math.max(0, parseFloat($("#f-effort").value) || 0);
+  t.status = $("#f-status").value || "";
   t.dependencies = $$("#f-deps input:checked").map((cb) => {
     const lag = parseInt(cb.parentElement.querySelector(".dep-lag")?.value, 10) || 0;
     const typ = cb.dataset.depType ? cb.dataset.depType + ":" : "";
@@ -5064,6 +5108,7 @@ function newTask() {
     milestone: false,
     cost: 0,
     effort: 0,
+    status: "",
     parent: "",
     baseline_start: null,
     baseline_duration: 0,
@@ -5711,6 +5756,8 @@ const GLOSSARY = [
     ["dependency cycle", "A waits for B and B waits for A. Nothing can be scheduled until the loop is cut — this is the one warning that stops the engine."],
     ["past deadline", "The task finishes after the date it had promised."],
     ["overdue", "The day has passed and the task is not at 100%."],
+    ["Bottleneck", "A task with zero slack that more than one other task is waiting on. The critical path already tells you a task cannot slip; the bottleneck tells you where the chain becomes a funnel, and that is the one worth protecting first. It is derived from the plan, never typed: a hand-set flag would be wrong the moment somebody drags a bar."],
+    ["On hold", "Work stopped and expected to resume — a state nothing in the plan can reveal, so it is the one thing you declare rather than Perth deducing. It changes no arithmetic: the task keeps its dates, its load and its place on the critical path. What it stops is the reader's assumption that a bar on the chart means somebody is on it."],
     ["overallocation", "Two tasks of the same person on a day that carries more work than it holds. With a capacity declared for that person, \"more than it holds\" means over the capacity; without one, it falls back to the cruder rule that any two tasks on the same day are too many."],
     ["Capacity per day", "How much work a person absorbs in one working day, in the same unit as a task's effort — 8 for hours, 1 for a full-time person-day, 0.5 for half time. Declaring it is what lets two one-hour tasks stop counting as an overload. Empty means not declared, and the old rule applies."],
     ["Effort", "How much work a task is, in the same unit as a person's capacity. It never moves the task: two hours of work inside a task that spans a week is a statement about load, not about dates. Empty falls back to the cost, and then to the duration in person-days."],

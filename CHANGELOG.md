@@ -5,6 +5,39 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.9.10] - 2026-08-17
+
+### Added
+- **Bottleneck**, derived — never typed. A task with zero slack that *more than
+  one* other task is waiting on. The critical path already says a task cannot
+  slip; the bottleneck says where the chain becomes a funnel, and that is the
+  one worth protecting first. A critical task with a single dependent is just a
+  link, which `critical` already reported. `slack(p)` now carries `dependents`
+  (the fan-out, counted through lags and `SS:`/`FF:` references) and
+  `bottleneck`, and the browser reads them — a hand-set flag would be wrong the
+  moment somebody drags a bar, and nobody comes back to fix it.
+- **On hold**, declared — the one state nothing in the plan can reveal. Every
+  other state Perth shows (not started, in progress, done, overdue, slipped,
+  past deadline, pinned, overallocated, bottleneck) is deduced from dates,
+  progress and the graph; no arithmetic can tell you the permit is late. New
+  `status` field on the task, from a **closed** vocabulary — `""` or `"hold"`,
+  with unknown values normalising to `""`. Free text would become fifteen
+  spellings of "parado" and nothing could filter on it.
+- It changes **no arithmetic**: a task on hold keeps its dates, its load and
+  its place on the critical path, because it is still planned work. What it
+  stops is the reader's assumption that a bar on the chart means somebody is
+  on it.
+- The bar keeps its **colour** and takes diagonal **hatching** on top. Colour
+  is identity here — the task's own, chosen by whoever planned it — and state
+  has always been a decoration over it: the critical path is an outline, the
+  pinned start is a marker above the bar. Painting state into the colour would
+  cost both readings at once, with "blue" sometimes meaning Ana and sometimes
+  meaning stopped. The table row carries a `‖` for the summaries and
+  milestones that have no bar to hatch.
+- Both join the highlight select, and only when the plan has one — a filter
+  that never matches anything is noise. Both are in the glossary, in all five
+  languages.
+
 ## [0.9.9] - 2026-08-17
 
 ### Added

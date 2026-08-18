@@ -1698,6 +1698,96 @@ end
         delete_project(p.id)
     end
 
+    @testset "gargalo: onde a corrente vira funil" begin
+        # O caminho crítico já diz que uma tarefa não pode atrasar. O gargalo
+        # diz onde MAIS DE UMA coisa espera pela mesma — que é outra pergunta,
+        # e é a que decide o que proteger primeiro.
+        p = Project(name = "Funil")
+        add_task!(p, "Fundação";   start = Date(2026, 4, 6),  duration = 5, id = "f")
+        add_task!(p, "Alvenaria";  start = Date(2026, 4, 11), duration = 5,
+                  dependencies = ["f"], id = "t1")
+        add_task!(p, "Hidráulica"; start = Date(2026, 4, 11), duration = 5,
+                  dependencies = ["f"], id = "t2")
+        add_task!(p, "Elétrica";   start = Date(2026, 4, 11), duration = 5,
+                  dependencies = ["f"], id = "t3")
+        add_task!(p, "Pintura";    start = Date(2026, 4, 16), duration = 3,
+                  dependencies = ["t1"], id = "pi")
+        add_task!(p, "Limpeza";    start = Date(2026, 4, 19), duration = 2,
+                  dependencies = ["pi"], id = "li")
+        s = Dict(r.id => r for r in slack(p))
+
+        @test s["f"].dependents == 3 && s["f"].critical && s["f"].bottleneck
+        # crítica com UM dependente é elo de corrente, não funil: o caminho
+        # crítico já contava essa história
+        @test s["t1"].critical && s["t1"].dependents == 1 && !s["t1"].bottleneck
+        @test s["li"].critical && s["li"].dependents == 0 && !s["li"].bottleneck
+        # com folga não é gargalo por mais que espere gente
+        @test s["t2"].dependents == 0 && !s["t2"].bottleneck
+
+        # com folga e três dependentes: continua não sendo gargalo, porque
+        # atrasá-la não atrasa nada
+        q = Project(name = "ComFolga")
+        add_task!(q, "Solta"; start = Date(2026, 4, 6), duration = 1, id = "s")
+        for i in 1:3
+            add_task!(q, "D$(i)"; start = Date(2026, 5, 20), duration = 2,
+                      dependencies = ["s"], id = "d$(i)")
+        end
+        add_task!(q, "Longa"; start = Date(2026, 4, 6), duration = 60, id = "L")
+        sq = Dict(r.id => r for r in slack(q))
+        @test sq["s"].dependents == 3 && !sq["s"].critical && !sq["s"].bottleneck
+
+        # a referência pode vir com lag ou tipo: "t+3", "SS:t" contam igual
+        r = Project(name = "ComLag")
+        add_task!(r, "Base"; start = Date(2026, 4, 6), duration = 3, id = "b")
+        add_task!(r, "X"; start = Date(2026, 4, 9), duration = 2,
+                  dependencies = ["b+1"], id = "x")
+        add_task!(r, "Y"; start = Date(2026, 4, 9), duration = 2,
+                  dependencies = ["SS:b"], id = "y")
+        @test Dict(z.id => z for z in slack(r))["b"].dependents == 2
+    end
+
+    @testset "situação declarada: vocabulário fechado" begin
+        # Os nove estados que o Perth já mostra são DERIVADOS. Este é o único
+        # que uma pessoa precisa dizer — nada no plano revela que o alvará
+        # atrasou —, e por isso ele é curto e fechado: texto livre viraria
+        # quinze grafias de "parado" e nada filtraria sobre elas.
+        p = Project(name = "Situacao")
+        t = add_task!(p, "Alvará"; start = Date(2026, 4, 6), duration = 5,
+                      status = "HOLD")
+        @test p.tasks[1].status == "hold"            # normaliza a caixa
+
+        update_task!(p, t.id; status = "parado à toa")
+        @test p.tasks[1].status == ""                # desconhecido vira vazio
+
+        update_task!(p, t.id; status = "  Hold  ")
+        @test p.tasks[1].status == "hold"            # e apara o espaço
+
+        # não muda aritmética nenhuma: continua sendo trabalho planejado
+        add_task!(p, "Outra"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Ana")
+        update_task!(p, t.id; assignee = "Ana")
+        @test count(r -> r.over, workload(p)) == 5   # parada ainda ocupa a Ana
+        @test !isempty(critical_path(p))
+
+        # atravessa o .perth.jl (a varredura de campos pegaria, mas o valor
+        # normalizado merece a conferência explícita)
+        arq = tempname() * ".perth.jl"
+        Perth.save(p, arq)
+        @test Perth.load(arq; register = false).tasks[1].status == "hold"
+        rm(arq; force = true)
+
+        # e a coluna nova do CSV
+        router = Perth._build_router()
+        pc = create_project("CSVSituacao")
+        add_task!(pc, "A"; start = Date(2026, 4, 6), duration = 2, status = "hold")
+        linhas = split(strip(String(router(HTTP.Request(
+            "GET", "/api/projects/$(pc.id)/export.csv")).body)), "\n")
+        cols = split(linhas[1], ",")
+        i = findfirst(==("status"), cols)
+        @test i !== nothing && split(linhas[2], ",")[i] == "hold"
+        delete_project(pc.id)
+    end
+
     @testset "o 409 devolve o projeto, não só o status" begin
         # O navegador MESCLA em cima disto: ele precisa do estado do servidor
         # para fazer as três vias (base, meu, dele). Enquanto ele apenas

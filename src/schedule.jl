@@ -320,21 +320,46 @@ end
     slack(p::Project) -> Vector{NamedTuple}
 
 Per-task CPM summary as Tables.jl-compatible rows: `id`, `name`,
-`early_start`, `early_finish`, `slack_days`, `critical`.
+`early_start`, `early_finish`, `slack_days`, `critical`, `dependents`,
+`bottleneck`.
 
 `slack_days` goes negative when a `deadline` cannot be met: the task
 and everything feeding it are late by that many days. `critical` is
 `slack_days ≤ 0`.
+
+`dependents` counts how many *other leaf tasks* name this one as a
+predecessor — the fan-out, not the whole downstream. `bottleneck` is
+`critical && dependents ≥ 2`: a zero-slack task that more than one
+thing is waiting on. A critical task with a single dependent is just a
+link in the chain, which `critical` already says; the bottleneck is
+where the chain becomes a funnel, and it is the task worth protecting
+first.
+
+Both are **derived**, never declared. A hand-typed "bottleneck" flag
+would be wrong the moment somebody drags a bar, and nobody comes back
+to fix it.
 """
 function slack(p::Project)
     lv = _leaf_view(p)
     isempty(lv.tasks) && return NamedTuple[]
     cpm = _cpm(lv)
     order, _ = _toposort(lv)
-    return [(id = lv.tasks[i].id, name = lv.tasks[i].name,
-             early_start = cpm.es[i], early_finish = cpm.ef[i],
-             slack_days = cpm.slack[i], critical = cpm.slack[i] <= 0)
-            for i in order]
+    # dependentes diretos: quem cita esta como predecessora. _parse_dep
+    # porque a referência pode vir como "id+3" ou "SS:id" — comparar a
+    # string inteira contaria dependência de menos.
+    fanout = Dict{String,Int}()
+    for t in lv.tasks, d in t.dependencies
+        k = _parse_dep(d).id
+        fanout[k] = get(fanout, k, 0) + 1
+    end
+    return [begin
+        crit = cpm.slack[i] <= 0
+        deps = get(fanout, lv.tasks[i].id, 0)
+        (id = lv.tasks[i].id, name = lv.tasks[i].name,
+         early_start = cpm.es[i], early_finish = cpm.ef[i],
+         slack_days = cpm.slack[i], critical = crit,
+         dependents = deps, bottleneck = crit && deps >= 2)
+    end for i in order]
 end
 
 """

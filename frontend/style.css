@@ -688,6 +688,18 @@ body.row-dragging { cursor: grabbing; user-select: none; }
 }
 .bar-handle { fill: transparent; cursor: ew-resize; }
 .bar-sel { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-dasharray: 4 3; rx: 5; }
+/* Tarefa parada: hachura POR CIMA, a barra mantém a cor dela. Cor é
+   identidade (de quem é a tarefa) e sempre foi; estado é decoração — o
+   caminho crítico é um contorno, a data fixa é um marcador. */
+.hold-hatch { fill: var(--ink); opacity: 0.38; }
+.bar-hold { pointer-events: none; }
+.bar-hold.dim { opacity: 0.35; }
+.hold-mark {
+  margin-left: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: -1px;
+}
 /* Punho do progresso: só na barra selecionada, na borda do pedaço cheio.
    Discreto em repouso e sólido sob o cursor — ele divide a barra com o
    arrasto de data, e um punho gritando competiria com o gesto mais usado. */
