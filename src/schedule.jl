@@ -91,6 +91,27 @@ function _dur_between(cal::AbstractCalendar, s::Date, e::Date)
     return n
 end
 
+# Os dias em que NÃO se trabalha, dentro de uma janela. É o único primitivo
+# do calendário que o navegador precisa receber: _end_of, _snap, _dur_between
+# e _shift são todos derivados de _workday, e derivar quatro funções de um
+# dado recebido não é duplicar uma decisão — é aplicar a resposta de quem
+# sabe. A alternativa (mandar o fim de cada tarefa já calculado) fica velha no
+# meio de um arrasto, que é justamente quando a geometria importa.
+#
+# Sem calendário devolve vazio: em dias corridos todo dia trabalha, e uma
+# lista vazia diz isso sem custo nenhum no payload.
+function _nonworking_days(p::Project, de::Date, ate::Date)
+    cal = _cal(p)
+    cal isa CalendarDays && return Date[]
+    out = Date[]
+    d = de
+    while d <= ate && length(out) < 3660      # a mesma sanidade de _dur_between
+        _workday(cal, d) || push!(out, d)
+        d += Dates.Day(1)
+    end
+    return out
+end
+
 """
     set_calendar!(p::Project, name::AbstractString) -> Project
 

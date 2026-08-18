@@ -1614,6 +1614,204 @@ end
         delete_project(pb.id)
     end
 
+    @testset "capacidade por pessoa" begin
+        # A queixa que o item existia para resolver: duas tarefas de UMA HORA
+        # não são uma sobrecarga, e sem um número contra o qual comparar não
+        # havia como dizer isso.
+        p = create_project("Capacidade")
+        add_person!(p, "Ana"; capacity = 8)
+        add_task!(p, "Telefonema"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Ana", effort = 1)
+        add_task!(p, "Revisão"; start = Date(2026, 4, 8), duration = 5,
+                  assignee = "Ana", effort = 1)
+        @test isempty(overallocations(p))
+        @test only(people_stats(p)).over_days == 0
+        @test only(people_stats(p)).capacity == 8.0
+        # e a carga do dia é a soma dos pedaços, não a contagem de tarefas
+        cruzado = only(filter(r -> r.date == Date(2026, 4, 8), workload(p)))
+        @test cruzado.tasks == 2 && cruzado.effort ≈ 0.4 && !cruzado.over
+
+        # trabalho de verdade continua estourando
+        q = create_project("CapacidadeCheia")
+        add_person!(q, "Ana"; capacity = 8)
+        add_task!(q, "A"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Ana", effort = 40)
+        add_task!(q, "B"; start = Date(2026, 4, 8), duration = 5,
+                  assignee = "Ana", effort = 40)
+        ov = only(overallocations(q))
+        @test ov.assignee == "Ana"
+        @test ov.from == Date(2026, 4, 8) && ov.to == Date(2026, 4, 10)
+        @test only(people_stats(q)).over_days == 3
+        delete_project(q.id)
+
+        # SEM capacidade declarada nada muda: é a regra antiga, e é por isso
+        # que nenhum plano existente muda de resposta por o campo existir
+        r = create_project("SemCapacidade")
+        add_task!(r, "A"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Ana", effort = 1)
+        add_task!(r, "B"; start = Date(2026, 4, 8), duration = 5,
+                  assignee = "Ana", effort = 1)
+        @test length(overallocations(r)) == 1
+        @test only(people_stats(r)).over_days == 3
+        @test only(people_stats(r)).capacity == 0.0
+        delete_project(r.id)
+
+        # capacidade é por pessoa: declarar a da Ana não muda a do Bruno
+        s = create_project("CapacidadeParcial")
+        add_person!(s, "Ana"; capacity = 8)
+        add_task!(s, "A1"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Ana", effort = 1)
+        add_task!(s, "A2"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Ana", effort = 1)
+        add_task!(s, "B1"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Bruno", effort = 1)
+        add_task!(s, "B2"; start = Date(2026, 4, 6), duration = 5,
+                  assignee = "Bruno", effort = 1)
+        @test [x.assignee for x in overallocations(s)] == ["Bruno"]
+        delete_project(s.id)
+
+        # meio período: a mesma tarefa que cabe num dia inteiro não cabe em meio
+        t = create_project("MeioPeriodo")
+        add_person!(t, "Ana"; capacity = 0.5)
+        add_task!(t, "Única"; start = Date(2026, 4, 6), duration = 2,
+                  assignee = "Ana")          # sem effort: 2 pessoa-dias / 2 dias = 1/dia
+        @test count(r -> r.over, workload(t)) == 2
+        @test isempty(overallocations(t))    # dia estourado por UMA tarefa não forma par
+        delete_project(t.id)
+
+        # a ordem do peso: effort ganha de cost, cost ganha da duração
+        u = create_project("PesoDaCarga")
+        add_task!(u, "Só duração"; start = Date(2026, 4, 6), duration = 2, assignee = "X")
+        add_task!(u, "Com custo"; start = Date(2026, 4, 20), duration = 2,
+                  assignee = "Y", cost = 100)
+        add_task!(u, "Com os dois"; start = Date(2026, 5, 4), duration = 2,
+                  assignee = "Z", cost = 100, effort = 6)
+        peso(quem) = sum(r.effort for r in workload(u) if r.assignee == quem)
+        @test peso("X") ≈ 2.0        # pessoa-dias
+        @test peso("Y") ≈ 100.0      # o custo, como sempre foi
+        @test peso("Z") ≈ 6.0        # o esforço, quando dito
+        delete_project(u.id)
+
+        # capacidade negativa é erro de digitação, não plano
+        add_person!(p, "Bruno"; capacity = -3)
+        @test Perth.person(p, "Bruno").capacity == 0.0
+        delete_project(p.id)
+    end
+
+    @testset "o .perth.jl não pode engolir campo nenhum" begin
+        # cost sumia no ida-e-volta havia sabe-se lá quanto tempo, e nenhum
+        # teste pegaria o próximo: os que existiam conferiam os campos de que
+        # alguém lembrou. Este varre fieldnames() — todo campo NOVO de
+        # GanttTask, Person ou Project entra na conferência sozinho, e quem
+        # esquecer de escrevê-lo reprova aqui, não em produção.
+        #
+        # Os valores são todos DIFERENTES do default de propósito: um campo
+        # que o escritor engole e o construtor repõe com o default passaria
+        # despercebido se o teste usasse o próprio default.
+        p = Project(name = "Varredura")
+        t = add_task!(p, "Tudo"; start = Date(2026, 3, 2), duration = 7,
+                      progress = 45, cost = 999.5, effort = 33.0,
+                      color = "#bd93f9", assignee = "Ana", notes = "uma nota",
+                      dependencies = String[], deadline = Date(2026, 3, 20),
+                      pinned = true, optimistic = 5, most_likely = 7,
+                      pessimistic = 12)
+        add_task!(p, "Outra"; start = Date(2026, 3, 2), duration = 2,
+                  dependencies = [t.id])
+        move_task!(p, t.id; position = 2)            # order != 0
+        set_baseline!(p)                             # baseline_start/duration
+        add_person!(p, "Ana"; role = "Arq", team = "Proj",
+                    email = "a@b.c", notes = "obs", capacity = 8)
+
+        arq = tempname() * ".perth.jl"
+        Perth.save(p, arq)
+        q = Perth.load(arq; register = false)
+
+        # tarefa por tarefa, campo por campo
+        for (a, b) in zip(p.tasks, q.tasks), c in fieldnames(GanttTask)
+            @test getfield(a, c) == getfield(b, c)
+        end
+        for c in fieldnames(Perth.Person)
+            @test getfield(p.people[1], c) == getfield(q.people[1], c)
+        end
+        for c in (:name, :calendar, :baseline_at)
+            @test getfield(p, c) == getfield(q, c)
+        end
+        rm(arq; force = true)
+    end
+
+    @testset "capacidade e esforço atravessam os formatos" begin
+        # JSON é automático (StructTypes.Mutable), o .perth.jl não é: ele
+        # escreve campo por campo, e o que ele não escreve SOME. cost saía por
+        # aí desde sempre — um projeto com custos salvo e recarregado voltava
+        # zerado, e o formato é justamente o de intercâmbio para gente e para
+        # controle de versão.
+        p = Project(name = "Formatos")
+        add_person!(p, "Ana"; role = "Arquiteta", capacity = 8)
+        add_person!(p, "Bruno")
+        add_task!(p, "A"; start = Date(2026, 4, 6), duration = 3,
+                  assignee = "Ana", cost = 1234.5, effort = 24)
+        arq = tempname() * ".perth.jl"
+        Perth.save(p, arq)
+        q = Perth.load(arq; register = false)
+        @test q.tasks[1].cost == 1234.5
+        @test q.tasks[1].effort == 24.0
+        @test Perth.person(q, "Ana").capacity == 8.0
+        @test Perth.person(q, "Ana").role == "Arquiteta"
+        @test Perth.person(q, "Bruno").capacity == 0.0
+        # capacidade zero não é escrita: o arquivo não ganha ruído por um
+        # campo que ninguém preencheu
+        @test !occursin("capacity", split(read(arq, String), "Bruno")[2])
+        rm(arq; force = true)
+
+        # add_person! convertia TODO valor para String — capacity numérica
+        # morria antes de chegar no campo
+        r = Project(name = "Coerção")
+        add_person!(r, "Ana"; capacity = 6)
+        @test Perth.person(r, "Ana").capacity == 6.0
+        add_person!(r, "Ana"; capacity = 4)          # atualiza quem já existe
+        @test Perth.person(r, "Ana").capacity == 4.0
+        @test_throws ArgumentError add_person!(r, "Ana"; inventado = 1)
+
+        # CSV: a coluna do esforço ao lado da do custo
+        router = Perth._build_router()
+        pc = create_project("CSVEsforco")
+        add_task!(pc, "A"; start = Date(2026, 4, 6), duration = 2, cost = 10, effort = 16)
+        csv = String(router(HTTP.Request("GET", "/api/projects/$(pc.id)/export.csv")).body)
+        linhas = split(strip(csv), "\n")
+        cols = split(linhas[1], ",")
+        @test cols[findfirst(==("cost"), cols) + 1] == "effort"
+        i = findfirst(==("effort"), cols)
+        @test split(linhas[2], ",")[i] == "16.0"
+        delete_project(pc.id)
+    end
+
+    @testset "aviso de dia estourado por uma tarefa só" begin
+        # Com capacidade, um dia pode estourar sem colisão nenhuma — e é
+        # justamente o que uma lista de PARES não tem como dizer.
+        router = Perth._build_router()
+        p = create_project("Estouro")
+        add_person!(p, "Ana"; capacity = 8)
+        add_task!(p, "Pesada"; start = Date(2026, 4, 6), duration = 2,
+                  assignee = "Ana", effort = 30)
+        r = JSON3.read(String(router(HTTP.Request(
+            "GET", "/api/projects/$(p.id)/warnings")).body))
+        est = only(filter(w -> w.kind == "overload", r.warnings))
+        @test est.who == "Ana" && est.task == "Pesada"
+        @test est.days == 2 && est.capacity == 8.0 && est.effort == 15.0
+        @test est.at == "2026-04-06"
+        @test isempty(filter(w -> w.kind == "overallocation", r.warnings))
+
+        # sem capacidade o aviso não existe em plano nenhum
+        q = create_project("SemEstouro")
+        add_task!(q, "Pesada"; start = Date(2026, 4, 6), duration = 2,
+                  assignee = "Ana", effort = 30)
+        r2 = JSON3.read(String(router(HTTP.Request(
+            "GET", "/api/projects/$(q.id)/warnings")).body))
+        @test isempty(filter(w -> w.kind == "overload", r2.warnings))
+        delete_project(q.id)
+        delete_project(p.id)
+    end
+
     @testset "duplicar subárvore WBS" begin
         p = create_project("DupWBS")
         pai = add_task!(p, "Bloco"; start = Date(2026, 12, 1), duration = 1)

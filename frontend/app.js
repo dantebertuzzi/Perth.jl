@@ -329,13 +329,93 @@ const MONTHS = new Proxy([], {   // meses no idioma da interface
 });
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
-function taskEnd(t) {
-  const start = parseDate(t.start);
-  return t.milestone ? start : addDays(start, Math.max(t.duration, 1) - 1);
+/* O calendário de dias úteis, do lado do navegador.
+ *
+ * `duration` conta dias ÚTEIS quando o projeto tem calendário — mas aqui ela
+ * era somada como dias corridos, e a barra saía curta: dez dias úteis a
+ * partir de 02/03 terminam em 13/03, e o desenho dizia 11/03. Dois dias por
+ * quinzena, crescendo. Com isso erravam a largura da barra, o vão do projeto
+ * na barra de status, o destaque de "vencida", a derrapagem contra o
+ * baseline, o prazo estourado e a extensão dos resumos — que por isso
+ * discordava da do servidor (12 lá, 10 aqui).
+ *
+ * O que chega do servidor é UM dado: quais dias não se trabalha (`nonworking`
+ * no payload do CPM). Não é a regra duplicada — é o dado de quem conhece os
+ * feriados, e as quatro derivações abaixo saem dele exatamente como saem de
+ * `_workday` em schedule.jl. Mandar o fim de cada tarefa já calculado seria o
+ * contrário: ficaria velho no meio de um arrasto, que é justamente quando a
+ * geometria precisa estar certa.
+ *
+ * Dia fora da janela recebida conta como útil. A janela é o projeto com 90
+ * dias de folga de cada lado, então só um arrasto muito longo sai dela — e a
+ * gravação seguinte devolve a verdade. */
+const temCalendario = () => !!state.cpm?.nonworking?.size;
+const diaUtil = (d) => !state.cpm?.nonworking?.has(fmtISO(d));
+
+// Próximo dia útil a partir de `d` (o `_snap` do motor). Teto de 3660 dias
+// pela mesma razão que lá: um calendário mal formado não trava a tela.
+function snapDiaUtil(d) {
+  if (!temCalendario()) return d;
+  for (let i = 0; i < 3660 && !diaUtil(d); i++) d = addDays(d, 1);
+  return d;
 }
 
+// `n` dias úteis a partir de `s` (inclusive) — o `_end_of` do motor.
+function fimEmDiasUteis(s, n) {
+  if (!temCalendario()) return addDays(s, Math.max(n, 1) - 1);
+  let d = snapDiaUtil(s);
+  for (let resta = Math.max(n, 1) - 1, i = 0; resta > 0 && i < 3660; i++) {
+    d = addDays(d, 1);
+    if (diaUtil(d)) resta--;
+  }
+  return d;
+}
+
+// Quantos dias úteis de `s` até `e`, inclusive — o `_dur_between` do motor, e
+// a inversa de fimEmDiasUteis. É o que traduz um arrasto (que se mede em
+// pixels, logo em dias corridos) para a duração que a tarefa guarda.
+function duracaoEmDiasUteis(s, e) {
+  if (!temCalendario()) return Math.max(diffDays(s, e) + 1, 1);
+  let d = snapDiaUtil(s);
+  if (e <= d) return 1;
+  let n = 1;
+  for (let i = 0; d < e && i < 3660; i++) {
+    d = addDays(d, 1);
+    if (diaUtil(d)) n++;
+  }
+  return n;
+}
+
+const effDur = (t) => (t.milestone ? 1 : Math.max(t.duration, 1));
+
+// Largura da barra em pixels: dias CORRIDOS ocupados (é isso que a linha do
+// tempo desenha), que sob um calendário é maior que a duração em dias úteis.
+const larguraDe = (t, ppd) =>
+  (diffDays(parseDate(t.start), taskEnd(t)) + 1) * ppd;
+
+// Fim de uma FOLHA: a duração dela conta dias úteis.
+const fimDaFolha = (t) =>
+  t.milestone ? parseDate(t.start) : fimEmDiasUteis(parseDate(t.start), effDur(t));
+
+/* Fim de qualquer tarefa.
+ *
+ * Resumo é o caso à parte: a duração dele já É a extensão em dias corridos
+ * (o roll-up a define assim, aqui e em _rollup_summaries!), então contá-la em
+ * dias úteis esticaria o bloco uma segunda vez. */
+function taskEnd(t) {
+  return state.wbs?.summary.has(t.id)
+    ? addDays(parseDate(t.start), Math.max(t.duration, 1) - 1)
+    : fimDaFolha(t);
+}
+
+// baseline_duration foi tirada da duração da tarefa (set_baseline!), então
+// ela conta dias úteis pelo mesmo motivo — e o fim dela se calcula do mesmo
+// jeito, com o mesmo _snap na frente que _baseline_end faz em insights.jl.
+// Deixá-la em dias corridos enquanto taskEnd conta dias úteis faria a
+// derrapagem contra o baseline mentir para os dois lados.
 function baselineEnd(t) {
-  return addDays(parseDate(t.baseline_start), Math.max(t.baseline_duration, 1) - 1);
+  return fimEmDiasUteis(snapDiaUtil(parseDate(t.baseline_start)),
+                        Math.max(t.baseline_duration, 1));
 }
 
 /* Dias de derrapagem vs. baseline (positivo = termina depois do planejado) */
@@ -494,6 +574,9 @@ async function fetchCPM() {
       calendar: r.calendar || "",
       // término probabilístico; null quando ninguém estimou nada
       pert: r.pert || null,
+      // Set de strings ISO: a pergunta é sempre "este dia é útil?", e um Set
+      // responde em O(1) — o gráfico faz isso milhares de vezes por render
+      nonworking: new Set(r.nonworking || []),
       byId: new Map((r.tasks || []).map((t) => [t.id, t])),
     };
   } catch {
@@ -523,13 +606,18 @@ async function fetchWorkload() {
    recursos). O servidor reúne; aqui a gente só mostra. */
 async function fetchWarnings() {
   state.warnings = [];
-  if (!state.current) return;
-  try {
-    const r = await api(`/api/projects/${state.current.id}/warnings`);
-    state.warnings = r.warnings || [];
-  } catch {
-    /* sem avisos é melhor que uma tela quebrada */
+  if (state.current) {
+    try {
+      const r = await api(`/api/projects/${state.current.id}/warnings`);
+      state.warnings = r.warnings || [];
+    } catch {
+      /* sem avisos é melhor que uma tela quebrada */
+    }
   }
+  // Fora do if: sem projeto (ou com a busca falhando) a lista tem de ir para
+  // ZERO nos dois lugares, senão o chip e o destaque continuariam contando
+  // os problemas do projeto anterior.
+  overallocFromWarnings();   // o destaque e a contagem de sobrecarga saem daqui
   renderWarningsChip();
 }
 
@@ -951,7 +1039,6 @@ function renderAll() {
   // máquina — sai da seleção junto, e a contagem na barra de status continua
   // prometendo exatamente o que a próxima ação em lote vai atingir
   pruneHiddenSelection();
-  computeOverallocations();
   renderHighlightSelect();
   renderHeader();
   renderTable();
@@ -962,24 +1049,31 @@ function renderAll() {
 
 /* Pares de tarefas-folha do mesmo responsável com datas sobrepostas.
  * O(n²) nos pares com assignee — barato na escala de um Gantt. */
-function computeOverallocations() {
-  const leaves = state.current.tasks.filter(
-    (t) => !state.wbs.summary.has(t.id) && (t.assignee || "").trim());
+/* Sobrecarga vem do SERVIDOR, junto com os outros avisos.
+ *
+ * Havia aqui uma segunda implementação da regra, em JavaScript, alimentando o
+ * destaque "overallocated", o chip do seletor e a contagem da barra de
+ * status. Duas implementações da mesma pergunta é uma que vai ficar para trás
+ * — e esta já estava: taskEnd() soma a duração em dias CORRIDOS, enquanto o
+ * motor conta dias úteis, então com um calendário de dias úteis ligado o
+ * navegador e o servidor podiam discordar sobre quem está sobrecarregado. Com
+ * capacidade por pessoa a distância viraria abismo: o cliente não sabe a
+ * capacidade de ninguém nem quais dias são feriado.
+ *
+ * O atraso é o mesmo do caminho crítico, que sempre funcionou assim: a
+ * resposta chega no fetchAnalytics() que segue cada gravação (debounce de
+ * 600ms). Um arrasto acende o conflito no ciclo seguinte, não no quadro
+ * seguinte — e em troca ele é a mesma verdade que o painel de avisos, as
+ * estatísticas e o REPL contam. */
+function overallocFromWarnings() {
   const pairs = [];
   const ids = new Set();
-  for (let i = 0; i < leaves.length; i++) {
-    for (let j = i + 1; j < leaves.length; j++) {
-      const a = leaves[i], b = leaves[j];
-      if (a.assignee.trim() !== b.assignee.trim()) continue;
-      const from = a.start > b.start ? a.start : b.start;
-      const ea = fmtISO(taskEnd(a)), eb = fmtISO(taskEnd(b));
-      const to = ea < eb ? ea : eb;
-      if (from <= to) {
-        pairs.push({ assignee: a.assignee.trim(), a: a.id, b: b.id, from, to });
-        ids.add(a.id);
-        ids.add(b.id);
-      }
-    }
+  for (const w of state.warnings) {
+    if (w.kind !== "overallocation") continue;
+    pairs.push({ assignee: w.who, a: w.task_id, b: w.other_id,
+                 from: w.from, to: w.to });
+    w.task_id && ids.add(w.task_id);
+    w.other_id && ids.add(w.other_id);
   }
   state.overalloc = { pairs, ids };
 }
@@ -1113,7 +1207,10 @@ function sortTasks() {
     if (!cs) {
       const w = t.milestone ? 1 : Math.max(t.duration, 1);
       const prog = t.milestone ? (t.progress >= 100 ? 100 : 0) : t.progress;
-      return [parseDate(t.start), taskEnd(t), prog, w];
+      // fimDaFolha e não taskEnd: é este laço que MONTA state.wbs, e taskEnd
+      // consulta state.wbs para saber se a tarefa é resumo — perguntar aqui
+      // leria a resposta do render anterior
+      return [parseDate(t.start), fimDaFolha(t), prog, w];
     }
     let s = null, e = null, wsum = 0, psum = 0;
     for (const c of cs) {
@@ -1157,6 +1254,47 @@ function renderProjectSelect() {
   }
   // repopular não pode derrubar a seleção (chip da menubar ficaria vazio)
   if (state.current) el.projectSelect.value = state.current.id;
+  ajustaChip();
+}
+
+/* O chip do projeto tem a largura do NOME QUE ELE MOSTRA.
+ *
+ * Um <select> se dimensiona pela opção mais LARGA, não pela selecionada — a
+ * caixa tem de caber a lista inteira quando abre. Resultado: um único projeto
+ * de nome comprido ("Learning Perth — the neighbourhood library") empurrava o
+ * chip até o teto de 230px e o deixava lá para todos os outros, com "Div"
+ * boiando num vão de dois centímetros. Não é ajustável por CSS: nem `width:
+ * auto` nem `fit-content` olham para a seleção.
+ *
+ * Então a largura é medida à mão, com uma régua invisível que herda a fonte
+ * do próprio chip — medir com um tamanho de letra chutado erra em qualquer
+ * idioma com acentuação larga, e este texto é nome de projeto de gente. O
+ * max-width do CSS continua valendo: nome muito longo ainda para no teto e
+ * ganha reticências. */
+function ajustaChip() {
+  const s = el.projectSelect;
+  const escolhida = s.options[s.selectedIndex];
+  if (!escolhida) return;
+  const cs = getComputedStyle(s);
+  let regua = document.getElementById("chip-ruler");
+  if (!regua) {
+    regua = document.createElement("span");
+    regua.id = "chip-ruler";
+    regua.setAttribute("aria-hidden", "true");
+    document.body.appendChild(regua);
+  }
+  // position:absolute + visibility:hidden: mede sem entrar no layout e sem
+  // ser lido em voz alta. white-space:pre para espaços contarem.
+  regua.style.cssText = "position:absolute;top:-9999px;left:-9999px;" +
+    "visibility:hidden;white-space:pre;" +
+    `font-family:${cs.fontFamily};font-size:${cs.fontSize};` +
+    `font-weight:${cs.fontWeight};letter-spacing:${cs.letterSpacing}`;
+  regua.textContent = escolhida.textContent;
+  const texto = regua.getBoundingClientRect().width;
+  // o que a moldura come: os dois paddings e as duas bordas do próprio chip
+  const moldura = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) +
+                  parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+  s.style.width = Math.ceil(texto + moldura) + 1 + "px";
 }
 
 function renderStatus() {
@@ -1957,7 +2095,8 @@ function renderChart() {
      */
     if (ui.baseline && t.baseline_start && !isSum && !t.milestone) {
       const bx = xOf(parseDate(t.baseline_start));
-      const bw = Math.max(t.baseline_duration, 1) * ppd;
+      // largura do fantasma: dias CORRIDOS que o plano original ocupava
+      const bw = (diffDays(parseDate(t.baseline_start), baselineEnd(t)) + 1) * ppd;
       const gy = i * ROW_H + ROW_H - 9;
       caixasForma.push({ x0: bx, x1: bx + bw, y0: gy, y1: gy + 4 });
       chart.appendChild(svg("rect", {
@@ -1990,7 +2129,10 @@ function renderChart() {
          trabalho. Agora o traço é neutro e fino — e o pedaço cheio é o
          progresso que já sobe dos filhos, que estava sendo jogado fora: o
          resumo tem esse número e não o mostrava em lugar nenhum do gráfico. */
-      const w = Math.max(t.duration, 1) * ppd;
+      // larguraDe também aqui: num resumo a duração já É a extensão em dias
+      // corridos, então dá no mesmo — mas ter UMA função de largura é o que
+      // impede a próxima barra de ser desenhada com outra régua.
+      const w = larguraDe(t, ppd);
       const alt = 6;
       const sy = i * ROW_H + ROW_H / 2 - alt / 2 - 2;
       caixasForma.push({ x0: x, x1: x + w, y0: sy - 4, y1: sy + alt + 4 });
@@ -2047,12 +2189,12 @@ function renderChart() {
       if (ui.labels) rotuloDaBarra(chart, t, dim, x + r + 6 + folga, cy + 4, caixasRotulo);
     } else {
       const info = state.cpm?.byId.get(t.id);
-      let w = Math.max(t.duration, 1) * ppd;
-      if (state.cpm?.calendar && info && info.early_finish >= t.start &&
-          info.early_start === t.start) {
-        // dias úteis: fim real vem do motor (pula fins de semana/feriados)
-        w = (diffDays(parseDate(t.start), parseDate(info.early_finish)) + 1) * ppd;
-      }
+      // A largura sai do MESMO taskEnd que a tabela, os avisos e o roll-up
+      // usam. Antes havia aqui um remendo que pegava o fim do motor
+      // (early_finish) só quando a tarefa estava exatamente onde o motor a
+      // poria — logo, uma tarefa de data fixa ou movida à mão desenhava com a
+      // largura errada, e as outras leituras erravam sempre.
+      const w = larguraDe(t, ppd);
       caixasForma.push({ x0: x, x1: x + w, y0: y, y1: y + h });
       const bar = svg("rect", {
         class: "bar" + dim, x, y, width: w, height: h,
@@ -2138,7 +2280,7 @@ function renderChart() {
     }
 
     if (escolhida) {
-      const selW = t.milestone ? h + 8 : Math.max(t.duration, 1) * ppd + 6;
+      const selW = t.milestone ? h + 8 : larguraDe(t, ppd) + 6;
       const selX = t.milestone ? x - h / 2 - 4 : x - 3;
       chart.appendChild(svg("rect", {
         class: "bar-sel", x: selX, y: y - 3, width: selW, height: h + 6,
@@ -2866,7 +3008,10 @@ function attachDrag(node, task, mode) {
     const naSelecao = isSelected(task.id) && selCount() > 1 ? selectedTasks() : [task];
     const grupo = mode === "move" ? leafTargets(naSelecao)
       : naSelecao.filter((t) => !(state.wbs?.summary.has(t.id) ?? false));
-    const orig = new Map(grupo.map((t) => [t.id, { start: t.start, duration: t.duration }]));
+    // o fim de cada uma no início do gesto: esticar se mede movendo o FIM, e
+    // o fim mora em dias corridos (é o que o mouse percorre)
+    const orig = new Map(grupo.map((t) => [t.id, {
+      start: t.start, duration: t.duration, end: fimDaFolha(t) }]));
     let moved = false;
 
     const onMove = (mv) => {
@@ -2880,10 +3025,17 @@ function attachDrag(node, task, mode) {
       for (const t of grupo) {
         const o = orig.get(t.id);
         if (mode === "move") {
-          t.start = fmtISO(addDays(parseDate(o.start), deltaDays));
+          // Soltar num dia não útil: o motor empurra para o próximo útil ao
+          // salvar (_snap), e sem fazer o mesmo aqui a barra pularia sozinha
+          // depois da gravação. O que se vê é onde ela vai ficar.
+          t.start = fmtISO(snapDiaUtil(addDays(parseDate(o.start), deltaDays)));
         } else if (!t.milestone) {
-          // marco ocupa o próprio dia: esticar a seleção não estica o losango
-          t.duration = Math.max(1, o.duration + deltaDays);
+          // O ponteiro anda em dias CORRIDOS; a duração conta dias ÚTEIS.
+          // Somar o delta direto na duração fazia um arrasto de sete dias
+          // esticar a tarefa por nove — mede-se onde o fim caiu e converte-se
+          // de volta. (Sem calendário as duas contas coincidem.)
+          const fim = addDays(o.end, deltaDays);
+          t.duration = duracaoEmDiasUteis(parseDate(t.start), fim);
         }
       }
       requestAnimationFrame(() => {
@@ -3024,6 +3176,9 @@ function openModal(id) {
   $("#f-duration").value = t.duration;
   $("#f-progress").value = t.progress;
   $("#f-cost").value = t.cost || 0;
+  // vazio, não zero: zero parece "esta tarefa não dá trabalho", e o que se
+  // quer dizer é "não medi" — que é o que faz o peso cair no cost/duração
+  $("#f-effort").value = t.effort > 0 ? t.effort : "";
   $("#f-color").value = t.color || "";
   $("#f-milestone").checked = !!t.milestone;
   $("#f-deadline").value = t.deadline || "";
@@ -3253,7 +3408,7 @@ function closeModal(discardNew, ask) {
 // campo culpado (que a essa altura já está com a borda vermelha do :invalid)
 // e não salva.
 function badNumberField() {
-  return ["f-duration", "f-progress", "f-cost",
+  return ["f-duration", "f-progress", "f-cost", "f-effort",
           "f-optimistic", "f-most-likely", "f-pessimistic"]
     .map((id) => $("#" + id))
     .find((f) => !f.disabled && f.validity && f.validity.badInput) || null;
@@ -3293,6 +3448,7 @@ function submitModal() {
   }
   t.color = $("#f-color").value;
   t.cost = Math.max(0, parseFloat($("#f-cost").value) || 0);
+  t.effort = Math.max(0, parseFloat($("#f-effort").value) || 0);
   t.dependencies = $$("#f-deps input:checked").map((cb) => {
     const lag = parseInt(cb.parentElement.querySelector(".dep-lag")?.value, 10) || 0;
     const typ = cb.dataset.depType ? cb.dataset.depType + ":" : "";
@@ -3348,8 +3504,12 @@ function fillPeopleList() {
    lista é conveniência, não cerca — o campo responsável continua aceitando
    texto livre, e tirar alguém do cadastro NÃO tira o nome das tarefas dele:
    some da lista, não do trabalho. */
+// O quarto elemento diz que o campo é numérico: capacidade é a única coisa
+// no cadastro que não é texto, e um <input type="text"> aceitando "oito" faria
+// a sobrecarga inteira mudar de resposta por causa de uma letra.
 const PEOPLE_FIELDS = [["role", "Role"], ["team", "Team"],
-                       ["email", "Email"], ["notes", "Notes"]];
+                       ["email", "Email"], ["notes", "Notes"],
+                       ["capacity", "Capacity per day", "number"]];
 
 function showPeople() {
   if (!state.current) return;
@@ -3458,17 +3618,35 @@ function showPeople() {
   function fichaDe(pe, cadastrados) {
     const ficha = document.createElement("div");
     ficha.className = "people-form";
-    for (const [campo, rotulo] of PEOPLE_FIELDS) {
+    for (const [campo, rotulo, tipo] of PEOPLE_FIELDS) {
       const lab = document.createElement("label");
       lab.textContent = T(rotulo);
       const ip = document.createElement("input");
-      ip.type = "text";
+      ip.type = tipo || "text";
       ip.autocomplete = "off";
       ip.dataset.field = campo;
-      ip.value = pe[campo] || "";
+      if (tipo === "number") {
+        ip.min = "0";
+        ip.step = "0.5";
+        // 0 é "não declarada", e um zero escrito no campo diz outra coisa
+        // (parece um limite de nada). Vazio é o jeito de dizer "não sei".
+        ip.value = pe[campo] > 0 ? String(pe[campo]) : "";
+        ip.title = T("How much work this person absorbs in one working day, in the same unit as a task's effort. Empty = not declared.");
+      } else {
+        ip.value = pe[campo] || "";
+      }
       ip.addEventListener("change", () => {
-        if ((pe[campo] || "") === ip.value.trim()) return;
-        pe[campo] = ip.value.trim();
+        if (tipo === "number") {
+          // campo ilegível ("8x", "--3") vale "" em .value com badInput
+          // ligado: cai em 0, que é o mesmo que não declarar
+          const n = ip.value.trim() === "" ? 0 : Number(ip.value);
+          const novo = Number.isFinite(n) && n > 0 ? n : 0;
+          if ((pe[campo] || 0) === novo) return;
+          pe[campo] = novo;
+        } else {
+          if ((pe[campo] || "") === ip.value.trim()) return;
+          pe[campo] = ip.value.trim();
+        }
         gravar(cadastrados);
       });
       lab.append(ip);
@@ -3993,6 +4171,7 @@ const _WARN_LABEL = {
   deadline: "past the deadline",
   overdue: "overdue",
   overallocation: "overallocated",
+  overload: "over capacity",
   slippage: "behind the baseline",
   too_early: "starts before its dependencies allow",
 };
@@ -4013,6 +4192,11 @@ function warningText(w) {
       return `${w.task} · ${T("ended")} ${w.at}`;
     case "overallocation":
       return `${w.who} · "${w.task}" × "${w.other}" · ${w.from} → ${w.to}`;
+    // Uma tarefa sozinha estourando o dia: só existe com capacidade
+    // declarada, e é o caso que uma lista de PARES não tem como dizer
+    case "overload":
+      return `${w.who} · "${w.task}" · ${round1(w.effort)}/${round1(w.capacity)} · ` +
+             `${d(w.days)} · ${T("from")} ${w.at}`;
     case "slippage":
       return `${w.task} · ${d(w.days)}`;
     case "too_early":
@@ -4575,7 +4759,9 @@ function renderResources() {
       (e.over_days ? ` · <b class="res-over">${e.over_days}</b>` : "") +
       `</span>`;
     row.title = `${resLabel(e)} · ${e.busy_days} ${T("busy days")} · ` +
-      `${T("peak")} ${e.peak} · ${e.total_effort.toFixed(1)} ${T("person-days")}`;
+      (e.capacity > 0 ? `${T("capacity")} ${round1(e.capacity)}/${T("day")} · ` : "") +
+      `${T("peak")} ${e.peak} · ${round1(e.total_effort)} ` +
+      T(e.capacity > 0 ? "of work" : "person-days");
     row.addEventListener("click", () => toggleResPerson(e));
     el.resNames.append(row);
 
@@ -4584,20 +4770,25 @@ function renderResources() {
       x2: state.range.days * ppd, y2: (r + 1) * RES_ROW,
     }));
 
-    // Dias vizinhos com a mesma carga viram um bloco só: menos nós no DOM
-    // e, no zoom mês, uma barra contínua em vez de uma fileira de costuras
+    // Dias vizinhos do mesmo TOM viram um bloco só: menos nós no DOM e, no
+    // zoom mês, uma barra contínua em vez de uma fileira de costuras. O
+    // agrupamento é pelo tom e não pela contagem porque é o tom que se vê —
+    // com capacidade declarada, dois dias de contagens diferentes podem
+    // estar igualmente dentro do limite, e uma costura ali não diz nada.
     for (let i = 0; i < e.load.length; ) {
       const v = e.load[i];
       if (!v) { i++; continue; }
+      const nivel = resLevel(e, i);
       let j = i;
-      while (j + 1 < e.load.length && e.load[j + 1] === v) j++;
+      while (j + 1 < e.load.length && e.load[j + 1] &&
+             resLevel(e, j + 1) === nivel) j++;
       const from = addDays(start, i), to = addDays(start, j);
       const cell = svg("rect", {
-        class: `res-cell l${Math.min(v, 3)}` + (resIsOn(e) ? " on" : ""),
+        class: `res-cell l${nivel}` + (resIsOn(e) ? " on" : ""),
         x: xOf(from), y: r * RES_ROW + 3,
         width: Math.max((j - i + 1) * ppd, 2), height: RES_ROW - 7, rx: 3,
       });
-      cell.appendChild(svgTitle(resTitle(e, from, to, v)));
+      cell.appendChild(svgTitle(resTitle(e, from, to, i)));
       cell.addEventListener("click", () => toggleResPerson(e));
       el.resChart.appendChild(cell);
       i = j + 1;
@@ -4607,15 +4798,40 @@ function renderResources() {
 
 // Tooltip do bloco: quem, quando, quantas tarefas e quais — as que
 // interceptam o trecho, já que a carga é igual em todo ele
-function resTitle(e, from, to, v) {
+/* O tom da faixa.
+ *
+ * Quem decide se o dia ESTOUROU é o servidor (o vetor `over`, de _over_day —
+ * uma definição só para o painel, os avisos, as estatísticas e o REPL). Aqui
+ * só se escolhe entre os dois tons de estouro, e por isso a razão aparece: um
+ * dia com o dobro do que cabe não é o mesmo aviso que um dia 10% acima.
+ *
+ * Sem capacidade declarada não há razão que se possa calcular, e o tom volta
+ * a ser o número de tarefas, como sempre foi. */
+function resLevel(e, i) {
+  if (!e.over?.[i]) return 1;
+  return e.capacity > 0
+    ? (e.effort[i] > 2 * e.capacity ? 3 : 2)
+    : Math.min(Math.max(e.load[i], 2), 3);
+}
+
+function resTitle(e, from, to, i) {
   const when = fmtISO(from) === fmtISO(to)
     ? fmtISO(from) : `${fmtISO(from)} → ${fmtISO(to)}`;
+  const v = e.load[i];
   const names = (e.tasks || [])
     .filter((t) => t.from <= fmtISO(to) && t.to >= fmtISO(from))
     .map((t) => "· " + t.name);
-  return `${resLabel(e)} · ${when} · ${v} ${v > 1 ? T("tasks") : T("task")}\n` +
-    names.join("\n");
+  // Com capacidade declarada o número que importa é o trabalho contra o que
+  // o dia aguenta — "2 tarefas" deixou de ser a resposta no dia em que se
+  // disse quanto cabe.
+  const cabeca = e.capacity > 0
+    ? `${resLabel(e)} · ${when} · ${round1(e.effort[i])} / ${round1(e.capacity)}`
+    : `${resLabel(e)} · ${when} · ${v} ${v > 1 ? T("tasks") : T("task")}`;
+  return cabeca + "\n" + names.join("\n");
 }
+
+// uma casa decimal, sem o ".0" quando é inteiro: 7.5 e 8, não 7.5 e 8.0
+const round1 = (n) => String(Math.round(n * 10) / 10);
 
 async function exportChart() {
   if (!state.current) return;
@@ -4660,6 +4876,7 @@ function newTask() {
     notes: "",
     milestone: false,
     cost: 0,
+    effort: 0,
     parent: "",
     baseline_start: null,
     baseline_duration: 0,
@@ -5260,7 +5477,9 @@ const GLOSSARY = [
     ["dependency cycle", "A waits for B and B waits for A. Nothing can be scheduled until the loop is cut — this is the one warning that stops the engine."],
     ["past deadline", "The task finishes after the date it had promised."],
     ["overdue", "The day has passed and the task is not at 100%."],
-    ["overallocation", "The same person on two tasks on the same day."],
+    ["overallocation", "Two tasks of the same person on a day that carries more work than it holds. With a capacity declared for that person, \"more than it holds\" means over the capacity; without one, it falls back to the cruder rule that any two tasks on the same day are too many."],
+    ["Capacity per day", "How much work a person absorbs in one working day, in the same unit as a task's effort — 8 for hours, 1 for a full-time person-day, 0.5 for half time. Declaring it is what lets two one-hour tasks stop counting as an overload. Empty means not declared, and the old rule applies."],
+    ["Effort", "How much work a task is, in the same unit as a person's capacity. It never moves the task: two hours of work inside a task that spans a week is a statement about load, not about dates. Empty falls back to the cost, and then to the duration in person-days."],
     ["behind the baseline", "The task is later than it was in the frozen plan."],
     ["starts before its dependencies allow", "The dates say one thing and the arrows say another: the task begins earlier than its predecessors let it. A dependency never moves anything on its own — auto-schedule (S) is what puts it where it can go, unless the start is pinned."],
   ]],
@@ -5488,7 +5707,10 @@ el.highlightSelect.addEventListener("change", () => {
   renderChart();
 });
 
-el.projectSelect.addEventListener("change", () => openProject(el.projectSelect.value));
+el.projectSelect.addEventListener("change", () => {
+  ajustaChip();                       // o nome mudou: a largura muda com ele
+  openProject(el.projectSelect.value);
+});
 
 $("#modal-save").addEventListener("click", submitModal);
 $("#modal-cancel").addEventListener("click", () => closeModal(true));

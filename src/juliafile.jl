@@ -74,6 +74,8 @@ function _to_julia_source(p::Project)
                 v = getfield(pe, c)
                 isempty(v) || push!(campos, string(c) * " = " * repr(v))
             end
+            # capacity é número: o "vazio" dele é o zero, não o isempty acima
+            pe.capacity > 0 && push!(campos, "capacity = " * repr(pe.capacity))
             println(io, "        Person(", join(campos, ", "), "),")
         end
         println(io, "    ],")
@@ -95,6 +97,12 @@ function _to_julia_source(p::Project)
         isempty(t.color) || println(io, "            color = ", repr(t.color), ",")
         isempty(t.assignee) || println(io, "            assignee = ", repr(t.assignee), ",")
         isempty(t.notes) || println(io, "            notes = ", repr(t.notes), ",")
+        # cost saía do arquivo pelo caminho de nunca ter sido escrito: um
+        # projeto com custos salvo em .perth.jl e recarregado voltava zerado.
+        # O formato é o de intercâmbio para gente e para controle de versão —
+        # campo que ele engole é campo que some no primeiro git pull.
+        t.cost == 0 || println(io, "            cost = ", t.cost, ",")
+        t.effort == 0 || println(io, "            effort = ", t.effort, ",")
         t.milestone && println(io, "            milestone = true,")
         isempty(t.parent) || println(io, "            parent = ", repr(t.parent), ",")
         t.order == 0 || println(io, "            order = ", t.order, ",")

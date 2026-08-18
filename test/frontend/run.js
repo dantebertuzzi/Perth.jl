@@ -2610,8 +2610,12 @@ console.log("gantt · cadastro de colaboradores");
   r = runIn(`document.querySelector(".people-row").click();
     return [...document.querySelectorAll(".people-form input")]
       .map((i) => i.dataset.field + "=" + i.value);`);
-  check(r.join("|") === "role=Eletricista|team=Obra|email=|notes=",
+  check(r.join("|") === "role=Eletricista|team=Obra|email=|notes=|capacity=",
         "gantt: clicar na linha abre a ficha preenchida");
+  // capacidade em branco é "não declarada", e não um limite de zero — zero
+  // escrito no campo diria que a pessoa não absorve nada
+  r = runIn(`return document.querySelector('.people-form input[data-field="capacity"]').type;`);
+  check(r === "number", "gantt: e a capacidade é um campo numérico, não texto");
 
   // grava no change (sair do campo), não a cada tecla: uma letra por PUT
   // seria um PUT por letra
@@ -3651,9 +3655,11 @@ console.log("gantt · painel de recursos");
     document.getElementById("res-pane").hidden = false;
     state.resources = { start: "2026-03-02", days: 6, calendar: "", people: [
       { assignee: "", load: [1, 1, 0, 0, 0, 0], effort: [1, 1, 0, 0, 0, 0],
+        over: [false, false, false, false, false, false], capacity: 0,
         peak: 1, busy_days: 2, over_days: 0, total_effort: 2,
         tasks: [{ id: "t3", name: "C", from: "2026-03-02", to: "2026-03-03" }] },
       { assignee: "Ana", load: [1, 1, 2, 2, 1, 0], effort: [1, 1, 2, 2, 1, 0],
+        over: [false, false, true, true, false, false], capacity: 0,
         peak: 2, busy_days: 5, over_days: 2, total_effort: 7,
         tasks: [{ id: "t1", name: "A", from: "2026-03-02", to: "2026-03-06" },
                 { id: "t2", name: "B", from: "2026-03-04", to: "2026-03-06" }] } ] };
@@ -3717,6 +3723,388 @@ console.log("gantt · painel de recursos");
   r = runIn(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true }));
     return { open: state.resOpen, hidden: document.getElementById("res-pane").hidden };`);
   check(r.open === false && r.hidden === true, "gantt: R fecha o painel");
+
+  close();
+}
+
+console.log("gantt · o chip do projeto tem a largura do nome que ele mostra");
+{
+  // Um <select> se dimensiona pela opção mais LARGA (a caixa precisa caber a
+  // lista aberta), não pela selecionada. Com um projeto de nome comprido no
+  // cadastro, o chip da menubar ficava no teto de 230px para TODOS os outros
+  // — "Div" boiando num vão de dois centímetros. Nada disso é ajustável por
+  // CSS, então a largura é medida e aplicada; estes testes prendem isso.
+  const { w, runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  const montar = (nomes, i) => `{
+    const s = el.projectSelect;
+    s.innerHTML = "";
+    for (const n of ${JSON.stringify(nomes)}) {
+      const o = document.createElement("option");
+      o.textContent = n; s.appendChild(o);
+    }
+    s.selectedIndex = ${i};
+    ajustaChip();
+  }`;
+
+  // jsdom não faz layout: getBoundingClientRect devolve zero para todo mundo.
+  // O que dá para prender aqui é a REGRA — a largura sai do texto da opção
+  // SELECIONADA — e isso se vê na régua, que é onde o texto medido aparece.
+  let r = runIn(`${montar(["Div", "Learning Perth — the neighbourhood library"], 0)}
+    return document.getElementById("chip-ruler").textContent;`);
+  check(r === "Div",
+        "gantt: a medida é feita sobre a opção selecionada, não sobre a mais longa");
+
+  r = runIn(`${montar(["Div", "Learning Perth — the neighbourhood library"], 1)}
+    return document.getElementById("chip-ruler").textContent;`);
+  check(r === "Learning Perth — the neighbourhood library",
+        "gantt: trocar a seleção remede pelo nome novo");
+
+  // a régua não pode entrar no layout nem ser lida em voz alta
+  r = runIn(`${montar(["Div"], 0)}
+    const g = document.getElementById("chip-ruler");
+    return { pos: g.style.position, vis: g.style.visibility,
+             oculta: g.getAttribute("aria-hidden"),
+             fonte: g.style.fontSize === getComputedStyle(el.projectSelect).fontSize };`);
+  check(r.pos === "absolute" && r.vis === "hidden" && r.oculta === "true",
+        "gantt: a régua não ocupa espaço nem é anunciada por leitor de tela");
+  check(r.fonte === true, "gantt: e ela herda a fonte do chip, para medir o que ele desenha");
+
+  // uma régua só, não uma por render
+  r = runIn(`${montar(["Div"], 0)} ${montar(["Outro"], 0)} ${montar(["Mais um"], 0)}
+    return document.querySelectorAll("#chip-ruler").length;`);
+  check(r === 1, "gantt: a régua é criada uma vez e reaproveitada");
+
+  // a largura é escrita no chip, em px
+  r = runIn(`${montar(["Div"], 0)} return /^\\d+px$/.test(el.projectSelect.style.width);`);
+  check(r === true, "gantt: e a largura vai para o chip em pixels");
+
+  // sem opção nenhuma não quebra (projeto novo, lista ainda vazia)
+  r = runIn(`el.projectSelect.innerHTML = ""; ajustaChip();
+    return el.projectSelect.options.length;`);
+  check(r === 0, "gantt: lista vazia não derruba a medição");
+
+  // o teto do CSS continua valendo: nome enorme para no limite, com reticências
+  const css = read("frontend/shared/ui.css");
+  const bloco = css.slice(css.indexOf("select.board-chip"), css.indexOf("}", css.indexOf("select.board-chip")));
+  check(/max-width:\s*230px/.test(bloco) && /text-overflow:\s*ellipsis/.test(bloco),
+        "gantt: e o teto com reticências segue no CSS, para o nome que não cabe");
+  close();
+}
+
+console.log("gantt · o navegador conhece o calendário de dias úteis");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Os dias não úteis chegam do servidor (payload do CPM). Aqui entram os
+  // fins de semana de março/2026 — a mesma lista que _nonworking_days manda.
+  const fds = [];
+  for (let d = new Date(Date.UTC(2026, 1, 1)); d < new Date(Date.UTC(2026, 4, 1));
+       d.setUTCDate(d.getUTCDate() + 1)) {
+    const wd = d.getUTCDay();
+    if (wd === 0 || wd === 6) fds.push(d.toISOString().slice(0, 10));
+  }
+
+  const seed = (cal) => `
+    const mk = (id, name, start, duration, extra) => Object.assign({
+      id, name, start, duration, progress: 0, dependencies: [], color: "",
+      notes: "", milestone: false, parent: "", cost: 0, effort: 0, assignee: "",
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false }, extra || {});
+    state.current = { id: "pcal", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "Obra", "2026-03-02", 10),
+      mk("m", "Marco", "2026-03-20", 1, { milestone: true }) ] };
+    state.cpm = { cycle: false, finish: "2026-03-13", calendar: ${JSON.stringify(cal)},
+                  pert: null, byId: new Map(),
+                  nonworking: new Set(${cal ? JSON.stringify(fds) : "[]"}) };
+    state.highlight = null; state.search = "";
+    state.wbsClosed.clear(); state.lanesClosed.clear();
+    clearSelection();
+    state.undoStack = []; state.redoStack = [];
+    markDirty = () => {};
+    renderAll();`;
+
+  // 10 dias úteis a partir de segunda 02/03 terminam em SEXTA 13/03 — o
+  // motor diz isso; o navegador dizia 11/03 (dois dias a menos, crescendo)
+  let r = runIn(`${seed("Brazil")} return fmtISO(taskEnd(state.current.tasks[0]));`);
+  check(r === "2026-03-13", `gantt: o fim conta dias úteis (${r})`);
+
+  r = runIn(`${seed("")} return fmtISO(taskEnd(state.current.tasks[0]));`);
+  check(r === "2026-03-11",
+        "gantt: sem calendário, a conta é a de sempre — dias corridos");
+
+  // marco ocupa o próprio dia, com ou sem calendário
+  r = runIn(`${seed("Brazil")} return fmtISO(taskEnd(state.current.tasks[1]));`);
+  check(r === "2026-03-20", "gantt: marco termina no próprio dia");
+
+  // a barra desenhada tem de cobrir os dias CORRIDOS ocupados (12), não a
+  // duração em dias úteis (10)
+  r = runIn(`${seed("Brazil")}
+    return { largura: Number(document.querySelector('#chart .bar[data-id="a"]')
+                               .getAttribute("width")) / PPD[state.zoom],
+             dur: state.current.tasks[0].duration };`);
+  check(r.largura === 12 && r.dur === 10,
+        `gantt: a barra cobre os 12 dias corridos que os 10 úteis ocupam (${r.largura})`);
+
+  // e a MOLDURA da seleção acompanha, senão ela sobra ou falta na ponta
+  r = runIn(`${seed("Brazil")} selectOnly("a"); renderChart();
+    return Number(document.querySelector("#chart .bar-sel").getAttribute("width"))
+           / PPD[state.zoom];`);
+  check(Math.abs(r - 12) < 0.5, "gantt: e a moldura da seleção tem a mesma medida");
+
+  // ---------------------------------------------------------- o resumo
+  // extensão do bloco = dias CORRIDOS de ponta a ponta, que é como o
+  // _rollup_summaries! do servidor a define. Com o fim cego dava 10 aqui e
+  // 12 lá — a tabela mostrava um número que o servidor desmentia no salvamento
+  r = runIn(`${seed("Brazil")}
+    state.current.tasks.push({ id: "bloco", name: "Bloco", start: "2026-03-02",
+      duration: 1, progress: 0, dependencies: [], color: "", notes: "",
+      milestone: false, parent: "", cost: 0, effort: 0, assignee: "",
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false });
+    state.current.tasks[0].parent = "bloco";
+    renderAll();
+    const b = state.current.tasks.find((t) => t.id === "bloco");
+    return { dur: b.duration, fim: fmtISO(taskEnd(b)) };`);
+  check(r.dur === 12 && r.fim === "2026-03-13",
+        `gantt: a extensão do resumo bate com a do servidor (${r.dur})`);
+
+  // -------------------------------------------------- as outras leituras
+  // prazo em 12/03: com o fim cego (11/03) o plano parecia em dia
+  r = runIn(`${seed("Brazil")}
+    state.current.tasks[0].deadline = "2026-03-12";
+    return deadlineSlip(state.current.tasks[0]);`);
+  check(r === 1, `gantt: o prazo estourado conta a partir do fim certo (${r} d)`);
+
+  // baseline_duration sai da duração da tarefa, logo também conta dias úteis.
+  // Uma tarefa que NÃO saiu do lugar tem de acusar zero: com o fim do
+  // baseline em dias corridos e o da tarefa em dias úteis, ela acusava dois
+  // dias de atraso que nunca existiram.
+  r = runIn(`${seed("Brazil")}
+    state.current.tasks[0].baseline_start = "2026-03-02";
+    state.current.tasks[0].baseline_duration = 10;
+    return slipDays(state.current.tasks[0]);`);
+  check(r === 0, `gantt: tarefa parada não derrapa contra o próprio baseline (${r})`);
+
+  // e uma que andou de verdade acusa os dias corridos que andou
+  r = runIn(`${seed("Brazil")}
+    const t = state.current.tasks[0];
+    t.baseline_start = "2026-03-02"; t.baseline_duration = 10;
+    t.start = "2026-03-04";
+    return slipDays(t);`);
+  check(r === 4, `gantt: e uma que andou dois dias úteis derrapa quatro corridos (${r})`);
+
+  // o fantasma do baseline cobre os dias corridos que o plano original ocupava
+  r = runIn(`${seed("Brazil")}
+    const t = state.current.tasks[0];
+    t.baseline_start = "2026-03-02"; t.baseline_duration = 10;
+    ui.baseline = true; renderChart();
+    return Number(document.querySelector("#chart .baseline-ghost").getAttribute("width"))
+           / PPD[state.zoom];`);
+  check(r === 12, `gantt: e o fantasma do baseline tem a mesma medida (${r})`);
+
+  r = runIn(`${seed("Brazil")} renderStatus(); return el.statusLeft.textContent;`);
+  check(/2026-03-20/.test(r), "gantt: o vão do projeto na barra de status vai até o fim certo");
+
+  // ------------------------------------------------------- os gestos
+  const arrastar = (id, dias, alvo) => `{
+    const n = document.querySelector('#chart [data-id="${id}"].${alvo}');
+    n.dispatchEvent(new MouseEvent("pointerdown",
+      { button: 0, clientX: 100, clientY: 10, bubbles: true, cancelable: true }));
+    window.dispatchEvent(new MouseEvent("pointermove",
+      { clientX: 100 + ${dias} * PPD[state.zoom], clientY: 10, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+  }`;
+
+  // esticar sete dias no ponteiro tem de esticar SETE dias na tela — a
+  // duração guardada vira o número de dias úteis que couberem neles
+  r = runIn(`${seed("Brazil")} ${arrastar("a", 7, "bar-handle")}
+    const t = state.current.tasks[0];
+    return { dur: t.duration, fim: fmtISO(taskEnd(t)) };`);
+  check(r.fim === "2026-03-20",
+        `gantt: esticar 7 dias no ponteiro move o fim 7 dias (${r.fim})`);
+  check(r.dur === 15, `gantt: e a duração guardada vira 15 dias úteis (${r.dur})`);
+
+  // arrastar para um sábado: o motor empurra para segunda ao salvar, então a
+  // barra tem de mostrar a segunda desde já
+  r = runIn(`${seed("Brazil")} ${arrastar("a", 5, "bar")}
+    return state.current.tasks[0].start;`);
+  check(r === "2026-03-09",
+        `gantt: soltar num sábado encosta na segunda, como o motor fará (${r})`);
+
+  // O caminho crítico desenha por cima da barra e usa a MESMA largura: foi
+  // aqui que a suíte de navegador pegou uma referência que eu tinha apagado
+  // junto com o remendo antigo de largura
+  r = runIn(`${seed("Brazil")}
+    state.cpm.byId = new Map([["a", { id: "a", early_start: "2026-03-02",
+      early_finish: "2026-03-13", slack_days: 0, critical: true }]]);
+    state.showCritical = true;
+    renderChart();
+    const c = document.querySelector("#chart .bar-crit");
+    state.showCritical = false;
+    return c ? Number(c.getAttribute("width")) / PPD[state.zoom] : null;`);
+  check(r === 12, "gantt: o realce do caminho crítico cobre a barra inteira");
+
+  // sem calendário, o gesto é o de sempre
+  r = runIn(`${seed("")} ${arrastar("a", 5, "bar")}
+    return state.current.tasks[0].start;`);
+  check(r === "2026-03-07", "gantt: sem calendário, solta onde soltou");
+
+  r = runIn(`${seed("")} ${arrastar("a", 7, "bar-handle")}
+    return state.current.tasks[0].duration;`);
+  check(r === 17, "gantt: e esticar sete dias soma sete à duração");
+
+  close();
+}
+
+console.log("gantt · sobrecarga vem do servidor, não de uma segunda conta aqui");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Havia uma reimplementação da regra em JS alimentando o destaque, o chip
+  // do seletor e a barra de status — e ela já divergia do motor (taskEnd soma
+  // dias corridos; o motor conta dias úteis). Agora o cliente só LÊ.
+  const seed = `
+    const mk = (id, name, start, extra) => Object.assign({
+      id, name, start, duration: 5, assignee: "", progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0, effort: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false }, extra || {});
+    state.current = { id: "pc", name: "P", people: [], bands: [], markers: [], tasks: [
+      mk("a", "A", "2026-04-06", { assignee: "Ana" }),
+      mk("b", "B", "2026-04-08", { assignee: "Ana" }),
+      mk("c", "C", "2026-04-20", { assignee: "Bruno" }) ] };
+    state.cpm = { cycle: false, finish: "2026-04-24", calendar: "", pert: null, byId: new Map() };
+    state.highlight = null; state.search = "";
+    clearSelection();
+    renderAll();`;
+
+  check(runIn(`${seed} return typeof computeOverallocations;`) === "undefined",
+        "gantt: a conta local de sobrecarga não existe mais");
+
+  // sem aviso nenhum do servidor, ninguém está sobrecarregado — mesmo com
+  // duas tarefas da Ana se cruzando na tela
+  let r = runIn(`${seed} state.warnings = []; overallocFromWarnings();
+    return { pares: state.overalloc.pairs.length, ids: [...state.overalloc.ids] };`);
+  check(r.pares === 0 && r.ids.length === 0,
+        "gantt: sem aviso do servidor, a sobreposição na tela não é sobrecarga");
+
+  const avisar = `state.warnings = [{ kind: "overallocation", severity: "warning",
+      task_id: "a", other_id: "b", who: "Ana", task: "A", other: "B",
+      from: "2026-04-08", to: "2026-04-10" }];
+    overallocFromWarnings();`;
+
+  r = runIn(`${seed} ${avisar} return [...state.overalloc.ids];`);
+  check(r.join() === "a,b",
+        "gantt: o aviso do servidor acende as DUAS tarefas do par (other_id)");
+
+  r = runIn(`${seed} ${avisar} renderStatus(); return el.statusLeft.textContent;`);
+  check(/⚠ 1 overallocation/.test(r), "gantt: e a barra de status conta o par");
+
+  // o destaque "overallocated" do seletor sai da mesma fonte
+  r = runIn(`${seed} ${avisar} renderAll();
+    state.highlight = { kind: "status", value: "overallocated" };
+    renderAll();
+    return [...document.querySelectorAll(".tt-row")]
+      .map((x) => x.dataset.id + ":" + (x.className.includes("dim") ? "off" : "on"));`);
+  check(r.join("|") === "a:on|b:on|c:off",
+        "gantt: e o destaque acende exatamente quem o servidor apontou");
+
+  r = runIn(`${seed} ${avisar} renderAll();
+    return document.getElementById("highlight-select").innerHTML.includes("Overallocated");`);
+  check(r === true, "gantt: o seletor só oferece o status quando há sobrecarga");
+
+  // projeto trocado (ou busca falhando) tem de ZERAR: senão o chip e o
+  // destaque seguem contando o problema do projeto anterior
+  r = runIn(`${seed} ${avisar}
+    state.warnings = []; overallocFromWarnings();
+    return { pares: state.overalloc.pairs.length, ids: state.overalloc.ids.size };`);
+  check(r.pares === 0 && r.ids === 0, "gantt: lista de avisos vazia zera a sobrecarga");
+
+  // o aviso novo: dia estourado por UMA tarefa, que par nenhum descreve
+  r = runIn(`${seed}
+    state.warnings = [{ kind: "overload", severity: "warning", task_id: "a",
+      who: "Ana", task: "A", days: 2, at: "2026-04-06",
+      effort: 15, capacity: 8 }];
+    overallocFromWarnings();
+    showWarnings();
+    return { kind: document.querySelector(".warn-kind").textContent,
+             texto: document.querySelector(".warn-text").textContent,
+             pares: state.overalloc.pairs.length };`);
+  check(/capacity|capacidade/.test(r.kind),
+        "gantt: o dia estourado tem etiqueta própria na lista de avisos");
+  check(/15\/8/.test(r.texto) && /Ana/.test(r.texto),
+        "gantt: e a frase diz o trabalho contra o que o dia aguenta");
+  check(r.pares === 0,
+        "gantt: ele não conta como par — quem conta pares é o outro aviso");
+
+  close();
+}
+
+console.log("gantt · o painel de recursos lê a capacidade");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // O payload traz `over` PRONTO (uma definição só, no motor). O painel só
+  // escolhe o tom — e com capacidade declarada o tom vem da razão, porque um
+  // dia com o dobro do que cabe não é o mesmo aviso que um 10% acima.
+  const seed = (cap, effort, over) => `
+    const mk = (id, name, start, assignee) => ({
+      id, name, start, duration: 3, assignee, progress: 0, dependencies: [],
+      color: "", notes: "", milestone: false, parent: "", cost: 0, effort: 0,
+      baseline_start: null, baseline_duration: 0, deadline: null, pinned: false });
+    state.current = { id: "pr", name: "P", people: [], bands: [], markers: [],
+      tasks: [mk("t1", "A", "2026-03-02", "Ana")] };
+    state.cpm = { cycle: false, finish: "2026-03-06", calendar: "", pert: null, byId: new Map() };
+    state.resOpen = true;
+    document.getElementById("res-pane").hidden = false;
+    state.resources = { start: "2026-03-02", days: 4, calendar: "", people: [
+      { assignee: "Ana", load: [1, 2, 2, 0], effort: ${JSON.stringify(effort)},
+        over: ${JSON.stringify(over)}, capacity: ${cap},
+        peak: 2, busy_days: 3, over_days: ${over.filter(Boolean).length},
+        total_effort: ${effort.reduce((a, b) => a + b, 0)},
+        tasks: [{ id: "t1", name: "A", from: "2026-03-02", to: "2026-03-04" }] } ] };
+    renderAll();`;
+
+  const tons = `[...document.querySelectorAll("#res-chart .res-cell")]
+    .map((c) => c.getAttribute("class").match(/l\\d/)[0])`;
+
+  // sem capacidade: o tom é a contagem de tarefas, como sempre foi
+  let r = runIn(`${seed(0, [1, 2, 2, 0], [false, true, true, false])} return ${tons};`);
+  check(r.join("|") === "l1|l2", "gantt: sem capacidade, o tom continua vindo da contagem");
+
+  // com capacidade e 10% acima: o tom brando do estouro
+  r = runIn(`${seed(8, [8, 9, 9, 0], [false, true, true, false])} return ${tons};`);
+  check(r.join("|") === "l1|l2", "gantt: 8 de 8 não estoura; 9 de 8 estoura no tom brando");
+
+  // com o dobro do que cabe: o tom forte
+  r = runIn(`${seed(8, [8, 20, 20, 0], [false, true, true, false])} return ${tons};`);
+  check(r.join("|") === "l1|l3",
+        "gantt: acima do dobro da capacidade, o tom forte");
+
+  // o tooltip troca "2 tarefas" por trabalho/capacidade no dia em que se diz
+  // quanto cabe — a contagem deixou de ser a resposta
+  r = runIn(`${seed(8, [8, 12, 12, 0], [false, true, true, false])}
+    return [...document.querySelectorAll("#res-chart .res-cell title")]
+      .map((t) => t.textContent.split("\\n")[0]);`);
+  check(/8 \/ 8/.test(r[0]) && /12 \/ 8/.test(r[1]),
+        "gantt: o tooltip diz trabalho / capacidade");
+  r = runIn(`${seed(0, [1, 2, 2, 0], [false, true, true, false])}
+    return document.querySelector("#res-chart .res-cell title").textContent;`);
+  check(/1 task/.test(r), "gantt: e sem capacidade volta a contar tarefas");
+
+  // a linha da pessoa anuncia a capacidade no title
+  r = runIn(`${seed(8, [8, 12, 12, 0], [false, true, true, false])}
+    return document.querySelector("#res-names .res-row").title;`);
+  check(/capacity 8\/day|capacidade 8\/dia/.test(r),
+        "gantt: a linha da pessoa diz a capacidade dela");
+
+  // blocos vizinhos de tons IGUAIS viram um só, mesmo com contagens diferentes
+  r = runIn(`${seed(8, [9, 9, 9, 0], [true, true, true, false])}
+    return [...document.querySelectorAll("#res-chart .res-cell")].length;`);
+  check(r === 1,
+        "gantt: dias de contagem diferente mas mesmo tom viram um bloco só");
 
   close();
 }

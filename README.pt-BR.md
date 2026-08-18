@@ -153,6 +153,7 @@ Planilha não faz isso, e Gantt de mesa exige exportar antes.
 |---|---|
 | **Curva S** | previsto × realizado — a distância é o atraso medido em trabalho, não em dias |
 | **Carga** | quanto cada pessoa tem em cada dia (`workload`, `overallocations`) |
+| **Capacidade** | `add_person!(p, "Ana"; capacity = 8)` e `effort` na tarefa: sobrecarga passa a ser *mais trabalho do que o dia aguenta*, e não *duas tarefas no mesmo dia* |
 | **Estatísticas** | por pessoa e por setor: esforço, feito, dias ocupados, dias em dobro |
 | **Avisos** | ciclo de dependência · prazo estourado · vencida · sobrecarga · atrás do baseline · *começa antes do que a dependência permite* |
 | **Glossário** | Ajuda → *O que as palavras querem dizer*: folga, caminho crítico, baseline, P80 |

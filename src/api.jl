@@ -337,8 +337,16 @@ function _get_cpm(req::HTTP.Request)
                             calendar = p.calendar, tasks = NamedTuple[]))
         try
             c = _cpm(_leaf_view(p))
+            # Os dias não úteis da janela do projeto, com folga dos dois lados
+            # para o arrasto não sair da tabela. É com isto que o navegador
+            # calcula onde uma tarefa termina — antes ele somava dias
+            # CORRIDOS e desenhava uma barra curta demais em todo plano com
+            # calendário de dias úteis.
+            d0, d1 = span(p)
+            folga = Dates.Day(90)
             _json((; cycle = false, finish = c.finish, calendar = p.calendar,
-                     tasks = slack(p), pert = _pert_payload(p)))
+                     tasks = slack(p), pert = _pert_payload(p),
+                     nonworking = _nonworking_days(p, d0 - folga, d1 + folga)))
         catch err
             # Calendário de dias úteis sem BusinessDays carregado no servidor
             err isa ErrorException && return _error(err.msg; status = 409)
@@ -416,12 +424,15 @@ function _export_csv(req::HTTP.Request)
             "\"" * replace(v, "\"" => "\"\"") * "\"" : v
     end
     io = IOBuffer()
+    # effort ao lado de cost: quem exporta para conferir a carga de alguém
+    # numa planilha precisa do número que a carga usa. Coluna nova no fim do
+    # grupo de números, antes das estruturais — quem lê por nome não se mexe.
     println(io, "id,name,start,duration,deadline,pinned,progress,assignee,cost," *
-                "milestone,parent,dependencies,notes")
+                "effort,milestone,parent,dependencies,notes")
     for t in p.tasks
         println(io, join(esc.([t.id, t.name, t.start, t.duration,
                                something(t.deadline, ""), t.pinned, t.progress,
-                               t.assignee, t.cost, t.milestone, t.parent,
+                               t.assignee, t.cost, t.effort, t.milestone, t.parent,
                                join(t.dependencies, " "), t.notes]), ","))
     end
     fname = replace(p.name, r"[^\w-]" => "_") * ".csv"
@@ -520,10 +531,36 @@ function _get_warnings(req::HTTP.Request)
             add!("overdue", "warning"; task_id = t.id, task = t.name, at = string(fim))
         end
 
+        # other_id junto com other: o navegador precisa ACENDER as duas
+        # tarefas do par (destaque "overallocated", contagem na barra de
+        # status), e um nome não serve para achar uma linha — ele tinha uma
+        # cópia própria da regra só por causa disso.
         for r in overallocations(p)
             add!("overallocation", "warning"; task_id = r.task1, who = r.assignee,
-                 task = r.task1_name, other = r.task2_name,
+                 task = r.task1_name, other = r.task2_name, other_id = r.task2,
                  from = string(r.from), to = string(r.to))
+        end
+
+        # Dia estourado por UMA tarefa só. Com capacidade declarada isso
+        # passou a existir — dez horas de trabalho num dia de oito, sem
+        # ninguém para colidir — e é exatamente o que uma lista de PARES não
+        # tem como dizer. Sem capacidade nunca acontece (a regra antiga exige
+        # duas tarefas), então nada aparece em plano nenhum que não tenha
+        # pedido. Agrupado por tarefa: dez dias estourados da mesma tarefa são
+        # um problema, não dez.
+        sozinhas = Dict{String,Vector{Any}}()
+        for r in _workload_rows(p)
+            (r.over && length(r.task_ids) == 1) || continue
+            push!(get!(sozinhas, only(r.task_ids), Any[]), r)
+        end
+        nomes = Dict(t.id => t.name for t in p.tasks)
+        for tid in sort!(collect(keys(sozinhas)))
+            rs = sozinhas[tid]
+            add!("overload", "warning"; task_id = tid, task = get(nomes, tid, ""),
+                 who = first(rs).assignee, days = length(rs),
+                 at = string(minimum(r.date for r in rs)),
+                 effort = round(maximum(r.effort for r in rs); digits = 2),
+                 capacity = first(rs).capacity)
         end
 
         for r in slippage(p)

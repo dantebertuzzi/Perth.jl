@@ -38,6 +38,18 @@ window.PerthI18n = (function () {
 
   const STR = {
     pt: {
+      // capacidade por pessoa e esforço da tarefa
+      "Capacity per day": "Capacidade por dia",
+      "Effort": "Esforço",
+      "capacity": "capacidade",
+      "day": "dia",
+      "of work": "de trabalho",
+      "from": "desde",
+      "over capacity": "acima da capacidade",
+      "How much work this person absorbs in one working day, in the same unit as a task's effort. Empty = not declared.":
+        "Quanto trabalho esta pessoa absorve num dia útil, na mesma unidade do esforço da tarefa. Vazio = não declarada.",
+      "How much work this task is, in the same unit as a person's capacity per day. It never moves the task. Empty falls back to the cost, and then to the duration in person-days.":
+        "Quanto trabalho esta tarefa é, na mesma unidade da capacidade diária da pessoa. Nunca move a tarefa. Vazio cai no custo, e depois na duração em pessoa-dias.",
       // seleção múltipla e ações em lote (gantt e kanban)
       "Select all tasks": "Selecionar todas as tarefas",
       "Select all cards": "Selecionar todos os cards",
@@ -458,8 +470,12 @@ window.PerthI18n = (function () {
         "O dia passou e a tarefa não está em 100%.",
       "overallocation":
         "sobrecarga",
-      "The same person on two tasks on the same day.":
-        "A mesma pessoa em duas tarefas no mesmo dia.",
+      "Two tasks of the same person on a day that carries more work than it holds. With a capacity declared for that person, \"more than it holds\" means over the capacity; without one, it falls back to the cruder rule that any two tasks on the same day are too many.":
+        "Duas tarefas da mesma pessoa num dia que carrega mais trabalho do que cabe nele. Com uma capacidade declarada para essa pessoa, \"mais do que cabe\" quer dizer acima da capacidade; sem ela, vale a regra mais crua de que duas tarefas quaisquer no mesmo dia já são demais.",
+      "How much work a person absorbs in one working day, in the same unit as a task's effort — 8 for hours, 1 for a full-time person-day, 0.5 for half time. Declaring it is what lets two one-hour tasks stop counting as an overload. Empty means not declared, and the old rule applies.":
+        "Quanto trabalho uma pessoa absorve num dia útil, na mesma unidade do esforço da tarefa — 8 para horas, 1 para um pessoa-dia integral, 0.5 para meio período. Declarar isso é o que faz duas tarefas de uma hora deixarem de contar como sobrecarga. Vazio quer dizer não declarada, e vale a regra antiga.",
+      "How much work a task is, in the same unit as a person's capacity. It never moves the task: two hours of work inside a task that spans a week is a statement about load, not about dates. Empty falls back to the cost, and then to the duration in person-days.":
+        "Quanto trabalho uma tarefa é, na mesma unidade da capacidade da pessoa. Nunca move a tarefa: duas horas de trabalho dentro de uma tarefa que ocupa uma semana é uma afirmação sobre carga, não sobre datas. Vazio cai no custo, e depois na duração em pessoa-dias.",
       "The task is later than it was in the frozen plan.":
         "A tarefa está mais tarde do que estava no plano congelado.",
       "On the chart":
@@ -594,6 +610,18 @@ window.PerthI18n = (function () {
     },
 
     es: {
+      // capacidad por persona y esfuerzo de la tarea
+      "Capacity per day": "Capacidad por día",
+      "Effort": "Esfuerzo",
+      "capacity": "capacidad",
+      "day": "día",
+      "of work": "de trabajo",
+      "from": "desde",
+      "over capacity": "sobre la capacidad",
+      "How much work this person absorbs in one working day, in the same unit as a task's effort. Empty = not declared.":
+        "Cuánto trabajo absorbe esta persona en un día hábil, en la misma unidad que el esfuerzo de la tarea. Vacío = no declarada.",
+      "How much work this task is, in the same unit as a person's capacity per day. It never moves the task. Empty falls back to the cost, and then to the duration in person-days.":
+        "Cuánto trabajo es esta tarea, en la misma unidad que la capacidad diaria de la persona. Nunca mueve la tarea. Vacío cae en el costo, y luego en la duración en persona-días.",
       // selección múltiple y acciones en lote (gantt y kanban)
       "Select all tasks": "Seleccionar todas las tareas",
       "Select all cards": "Seleccionar todas las tarjetas",
@@ -980,8 +1008,12 @@ window.PerthI18n = (function () {
         "El peso previsto de la tarea, en la unidad que uses. Dejado en cero, la duración en persona-día es el peso en la curva S.",
       "The position of the row. Drag a row up or down to choose it; where nobody chose, rows come by start date.":
         "La posición de la fila. Arrástrala hacia arriba o abajo para elegirla; donde nadie eligió, las filas van por fecha de inicio.",
-      "The same person on two tasks on the same day.":
-        "La misma persona en dos tareas el mismo día.",
+      "Two tasks of the same person on a day that carries more work than it holds. With a capacity declared for that person, \"more than it holds\" means over the capacity; without one, it falls back to the cruder rule that any two tasks on the same day are too many.":
+        "Dos tareas de la misma persona en un día que carga más trabajo del que cabe. Con una capacidad declarada para esa persona, \"más de lo que cabe\" significa por encima de la capacidad; sin ella, rige la regla más cruda de que dos tareas cualesquiera el mismo día ya son demasiadas.",
+      "How much work a person absorbs in one working day, in the same unit as a task's effort — 8 for hours, 1 for a full-time person-day, 0.5 for half time. Declaring it is what lets two one-hour tasks stop counting as an overload. Empty means not declared, and the old rule applies.":
+        "Cuánto trabajo absorbe una persona en un día hábil, en la misma unidad que el esfuerzo de la tarea — 8 para horas, 1 para una persona-día completa, 0.5 para media jornada. Declararlo es lo que hace que dos tareas de una hora dejen de contar como sobrecarga. Vacío significa no declarada, y rige la regla antigua.",
+      "How much work a task is, in the same unit as a person's capacity. It never moves the task: two hours of work inside a task that spans a week is a statement about load, not about dates. Empty falls back to the cost, and then to the duration in person-days.":
+        "Cuánto trabajo es una tarea, en la misma unidad que la capacidad de la persona. Nunca mueve la tarea: dos horas de trabajo dentro de una tarea que ocupa una semana es una afirmación sobre carga, no sobre fechas. Vacío cae en el costo, y luego en la duración en persona-días.",
       "The task finishes after the date it had promised.":
         "La tarea termina después de la fecha que había prometido.",
       "The task is later than it was in the frozen plan.":
@@ -1142,6 +1174,18 @@ window.PerthI18n = (function () {
     },
 
     fr: {
+      // capacité par personne et charge de la tâche
+      "Capacity per day": "Capacité par jour",
+      "Effort": "Charge",
+      "capacity": "capacité",
+      "day": "jour",
+      "of work": "de travail",
+      "from": "depuis",
+      "over capacity": "au-dessus de la capacité",
+      "How much work this person absorbs in one working day, in the same unit as a task's effort. Empty = not declared.":
+        "Combien de travail cette personne absorbe en un jour ouvré, dans la même unité que la charge d'une tâche. Vide = non déclarée.",
+      "How much work this task is, in the same unit as a person's capacity per day. It never moves the task. Empty falls back to the cost, and then to the duration in person-days.":
+        "Combien de travail représente cette tâche, dans la même unité que la capacité journalière d'une personne. Elle ne déplace jamais la tâche. Vide retombe sur le coût, puis sur la durée en jours-personne.",
       // sélection multiple et actions groupées (gantt et kanban)
       "Select all tasks": "Tout sélectionner",
       "Select all cards": "Sélectionner toutes les cartes",
@@ -1530,8 +1574,12 @@ window.PerthI18n = (function () {
         "Le poids prévu de la tâche, dans l'unité que vous employez. Laissé à zéro, la durée en jours-personne fait office de poids dans la courbe en S.",
       "The position of the row. Drag a row up or down to choose it; where nobody chose, rows come by start date.":
         "La position de la ligne. Faites-la glisser vers le haut ou le bas pour la choisir ; là où personne n'a choisi, les lignes viennent par date de début.",
-      "The same person on two tasks on the same day.":
-        "La même personne sur deux tâches le même jour.",
+      "Two tasks of the same person on a day that carries more work than it holds. With a capacity declared for that person, \"more than it holds\" means over the capacity; without one, it falls back to the cruder rule that any two tasks on the same day are too many.":
+        "Deux tâches de la même personne un jour qui porte plus de travail qu'il n'en contient. Avec une capacité déclarée pour cette personne, \"plus qu'il n'en contient\" veut dire au-dessus de la capacité ; sans elle, c'est la règle plus grossière : deux tâches quelconques le même jour, c'est déjà trop.",
+      "How much work a person absorbs in one working day, in the same unit as a task's effort — 8 for hours, 1 for a full-time person-day, 0.5 for half time. Declaring it is what lets two one-hour tasks stop counting as an overload. Empty means not declared, and the old rule applies.":
+        "Combien de travail une personne absorbe en un jour ouvré, dans la même unité que la charge d'une tâche — 8 pour des heures, 1 pour un jour-personne à plein temps, 0.5 pour un mi-temps. C'est en le déclarant que deux tâches d'une heure cessent de compter comme une surcharge. Vide veut dire non déclarée, et l'ancienne règle s'applique.",
+      "How much work a task is, in the same unit as a person's capacity. It never moves the task: two hours of work inside a task that spans a week is a statement about load, not about dates. Empty falls back to the cost, and then to the duration in person-days.":
+        "Combien de travail représente une tâche, dans la même unité que la capacité d'une personne. Elle ne déplace jamais la tâche : deux heures de travail dans une tâche qui s'étale sur une semaine est une affirmation sur la charge, pas sur les dates. Vide retombe sur le coût, puis sur la durée en jours-personne.",
       "The task finishes after the date it had promised.":
         "La tâche finit après la date qu'elle avait promise.",
       "The task is later than it was in the frozen plan.":
@@ -1692,6 +1740,18 @@ window.PerthI18n = (function () {
     },
 
     zh: {
+      // 每人产能与任务工作量
+      "Capacity per day": "每日产能",
+      "Effort": "工作量",
+      "capacity": "产能",
+      "day": "天",
+      "of work": "的工作量",
+      "from": "自",
+      "over capacity": "超出产能",
+      "How much work this person absorbs in one working day, in the same unit as a task's effort. Empty = not declared.":
+        "此人在一个工作日内能承担多少工作，单位与任务的工作量相同。留空 = 未声明。",
+      "How much work this task is, in the same unit as a person's capacity per day. It never moves the task. Empty falls back to the cost, and then to the duration in person-days.":
+        "这个任务有多少工作量，单位与每人每日产能相同。它从不移动任务。留空则回退到成本，再回退到以人天计的工期。",
       // 多选与批量操作（甘特图与看板）
       "Select all tasks": "选择所有任务",
       "Select all cards": "选择所有卡片",
@@ -2075,8 +2135,12 @@ window.PerthI18n = (function () {
         "任务的计划权重，单位随你。留为零时，以人天工期作为 S 曲线中的权重。",
       "The position of the row. Drag a row up or down to choose it; where nobody chose, rows come by start date.":
         "行的位置。上下拖动一行即可指定；没有人指定的地方，按开始日期排列。",
-      "The same person on two tasks on the same day.":
-        "同一个人同一天被安排了两个任务。",
+      "Two tasks of the same person on a day that carries more work than it holds. With a capacity declared for that person, \"more than it holds\" means over the capacity; without one, it falls back to the cruder rule that any two tasks on the same day are too many.":
+        "同一个人的两个任务落在同一天，而那天承载的工作超过了它容得下的量。若为该成员声明了产能，\"超过容量\"就是指超出产能；未声明时，则退回更粗略的规则：同一天有任意两个任务就算太多。",
+      "How much work a person absorbs in one working day, in the same unit as a task's effort — 8 for hours, 1 for a full-time person-day, 0.5 for half time. Declaring it is what lets two one-hour tasks stop counting as an overload. Empty means not declared, and the old rule applies.":
+        "一个人在一个工作日内能承担多少工作，单位与任务的工作量相同 — 按小时算是 8，全职一人天是 1，半职是 0.5。正是声明了它，两个一小时的任务才不再算作超载。留空表示未声明，沿用旧规则。",
+      "How much work a task is, in the same unit as a person's capacity. It never moves the task: two hours of work inside a task that spans a week is a statement about load, not about dates. Empty falls back to the cost, and then to the duration in person-days.":
+        "一个任务有多少工作量，单位与成员产能相同。它从不移动任务：跨越一周的任务里只有两小时的工作，说的是负荷，不是日期。留空则回退到成本，再回退到以人天计的工期。",
       "The task finishes after the date it had promised.":
         "任务的完成时间晚于它承诺的日期。",
       "The task is later than it was in the frozen plan.":
