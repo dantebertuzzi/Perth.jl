@@ -159,6 +159,15 @@ function _init_kanban!(data_dir::AbstractString; name::AbstractString = "board")
     KANBAN[] = KanbanState(board, 0, file, Dict{Int,KanbanClient}(), 0,
                            ReentrantLock(), log, logfile, chat, chatfile,
                            slug, String(data_dir))
+    # Blob que nenhum card cita mais some ao subir — é o único momento em que
+    # dá para varrer todos os boards de uma vez sem correr atrás de lock. Tem
+    # carência de dias, porque a pilha de desfazer vive no navegador e pode
+    # querer a imagem de volta (ver _asset_gc! em src/assets.jl).
+    try
+        _asset_gc!(String(data_dir))
+    catch err
+        @warn "Perth kanban: image collection failed" error = err
+    end
     return KANBAN[]
 end
 
@@ -271,9 +280,9 @@ end
 # setAutoArchive, setAlias, useBoard/newBoard), que já são só-host
 # independentemente disso.
 const _KANBAN_GATED_ACTIONS = (
-    "addCard", "editCard", "delCard", "moveCard",
+    "addCard", "editCard", "setBody", "delCard", "moveCard",
     "setDone", "archiveCard", "restoreCard", "delArchived",
-    "setAssignee", "setDue", "addCheck", "toggleCheck", "delCheck",
+    "setAssignee", "setDue", "setImages", "addCheck", "toggleCheck", "delCheck",
     "addCol", "renameCol", "delCol", "moveCol", "setWip", "sortCol",
 )
 
@@ -313,6 +322,10 @@ function _kanban_apply!(st::KanbanState, op)::Bool
         for k in ("assignee", "done_at", "task", "project")   # undo/vínculo gantt preserva tudo
             haskey(op, k) && !isempty(String(op[k])) && (card[k] = String(op[k]))
         end
+        b = _cap_body(String(get(op, "body", "")))
+        isempty(strip(b)) || (card["body"] = b)
+        imgs = _asset_names(get(op, "images", nothing))
+        isempty(imgs) || (card["images"] = Any[n for n in imgs])
         haskey(op, "checklist") && (card["checklist"] = Any[c for c in op["checklist"]])
         dest = _kcols(st)[ci]["cards"]
         idx = haskey(op, "index") ?
@@ -321,6 +334,25 @@ function _kanban_apply!(st::KanbanState, op)::Bool
     elseif t == "editCard"
         f = _kfindcard(st, String(op["id"])); f === nothing && return false
         f[1]["cards"][f[2]]["text"] = _cap_text(String(op["text"]))
+    elseif t == "setBody"
+        f = _kfindcard(st, String(op["id"])); f === nothing && return false
+        b = _cap_body(String(get(op, "body", "")))
+        card = f[1]["cards"][f[2]]
+        isempty(strip(b)) ? delete!(card, "body") : (card["body"] = b)
+    elseif t == "setImages"
+        # Nomes de blob são ecoados para dentro de um <img src> em todas as
+        # máquinas do quadro, então a forma é validada AQUI, não no cliente:
+        # o que não casa com <sha256>.<ext> não entra no board (ver
+        # _asset_names em assets.jl). Lista vazia = tirar as imagens.
+        f = _kfindcard(st, String(op["id"])); f === nothing && return false
+        raw = get(op, "images", nothing)
+        names = _asset_names(raw)
+        # Pediu imagens e nenhuma sobreviveu à peneira: é op malformada, não
+        # "tire as imagens". Recusar ressincroniza o cliente em vez de apagar
+        # calado o que ele não pediu para apagar.
+        (isempty(names) && raw !== nothing && !isempty(raw)) && return false
+        card = f[1]["cards"][f[2]]
+        isempty(names) ? delete!(card, "images") : (card["images"] = Any[n for n in names])
     elseif t == "delCard"
         f = _kfindcard(st, String(op["id"])); f === nothing && return false
         deleteat!(f[1]["cards"], f[2])
@@ -482,6 +514,14 @@ function _kanban_describe(st::KanbanState, op)
         return "added \"$(snip(get(op, "text", "")))\" to $(colname(op["col"]))", true
     elseif t == "editCard"
         return "edited \"$(cardtext(op["id"]))\"", false
+    elseif t == "setBody"
+        b = strip(String(get(op, "body", "")))
+        return (isempty(b) ? "cleared the description of \"$(cardtext(op["id"]))\"" :
+                             "wrote the description of \"$(cardtext(op["id"]))\""), false
+    elseif t == "setImages"
+        n = length(_asset_names(get(op, "images", nothing)))
+        return (n == 0 ? "removed the images of \"$(cardtext(op["id"]))\"" :
+                "attached $(n) image$(n == 1 ? "" : "s") to \"$(cardtext(op["id"]))\""), false
     elseif t == "delCard"
         return "deleted \"$(cardtext(op["id"]))\"", true
     elseif t == "moveCard"
@@ -1484,6 +1524,8 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
         path == "/api/key" && req.method == "POST" &&
             return _kanban_key_set(req, ip)
         path == "/api/background" && return _json(_bg_payload())
+        path == "/api/asset" && req.method == "POST" &&
+            return _asset_upload(req, ip)
         path == "/api/boards" && return _kanban_boards_info()
         if path == "/api/apps"
             return _json((; app = "kanban", kanban = KANBAN_PORT[],
@@ -1506,6 +1548,10 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
     # REPL), então não passa pela whitelist de arquivos estáticos — e por
     # isso a chave o protege como um endpoint de dados (_key_protected)
     path == "/background" && return _bg_response(req)
+    # Imagem colada num card: mesma razão do /background para não passar pela
+    # whitelist de estáticos — os bytes vêm do diretório de dados, não do
+    # frontend. Ver src/assets.jl.
+    startswith(path, "/asset/") && return _asset_response(path[length("/asset/") + 1:end])
     entry = get(_KANBAN_FILES, path, nothing)
     entry === nothing && return _error("not found"; status = 404)
     name, origin = entry

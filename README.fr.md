@@ -310,11 +310,16 @@ comme un curseur étiqueté ancré à une *carte*, pas à un pixel — il survit
 tailles de fenêtre et aux niveaux de zoom différents. Les cartes portent des
 `#étiquettes`, du `**markdown**`, des check-lists, des échéances, des responsables,
 des **limites d'en-cours** par colonne et une archive ; une carte liée déposée dans
-*done* termine la tâche dans le Gantt, et réciproquement. `Ctrl+Z` / `Ctrl+Shift+Z`
+*done* termine la tâche dans le Gantt, et réciproquement. Une carte **s'ouvre aussi
+comme un document** (`Shift+Entrée`, ou depuis l'éditeur de la carte — une
+tablette n'a pas de touche Shift) : une description avec listes et blocs
+de code, et des captures collées directement au `Ctrl+V` — réduites dans le
+navigateur, rangées à côté du tableau et adressées par leur contenu, si bien que la
+même image collée cinq fois ne fait qu'un fichier. `Ctrl+Z` / `Ctrl+Shift+Z`
 annulent **vos** actions sans revenir sur ce qu'un collègue a fait ensuite.
 
 L'**hôte** peut restreindre ce qu'une machine a le droit de faire — *Board →
-Permissions…* est une matrice de 19 actions de carte et de colonne face à chaque IP
+Permissions…* est une matrice de 21 actions de carte et de colonne face à chaque IP
 qui s'est connectée. C'est appliqué **côté serveur** : un client ne la contourne pas
 en parlant directement à la WebSocket, et l'interface se contente de masquer ce qui
 est refusé.

@@ -57,6 +57,9 @@ function loadKanbanApp() {
   w.fetch = () => new Promise(() => {});   // nunca resolve: nada depende da rede aqui
   w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   w.structuredClone = structuredClone;     // não existe em window por padrão no jsdom
+  // o jsdom não traz rAF; o editor de card usa um para medir a altura do
+  // textarea, e sem isto abrir o editor num teste explode antes de renderizar
+  w.requestAnimationFrame = (f) => f();
   // o jsdom que o CI instala (sempre o mais novo) não traz o namespace
   // global CSS; some com ele aqui também, senão uma dependência de
   // CSS.escape passa local e quebra só lá — foi o que aconteceu uma vez
@@ -1946,7 +1949,7 @@ console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
              menu: document.querySelector('[data-menu="help"] .menu-title').textContent,
              entrada: document.querySelector('[data-menu="help"] .menu-drop button')
                         .textContent.trim() };`);
-  check(r.linhas === 14, "kanban: o mesmo componente lista as 14 teclas dele");
+  check(r.linhas === 15, "kanban: o mesmo componente lista as 15 teclas dele");
   check(r.barra === "filtrar cards",
         "kanban: inclusive a \"/\", que só existia escondida no placeholder do filtro");
   check(r.menu === "Ajuda" && r.entrada === "Atalhos de teclado",
@@ -4565,7 +4568,6 @@ console.log("kanban · selecionar vários e agir em lote");
   // com o filtro ligado, "tudo" é o que casa: o resto está esmaecido porque
   // não é o assunto (mesma regra do Ctrl+A do gantt com destaque)
   r = runIn(`${seed} setFilter("y"); ${tecla("a", { ctrlKey: true })} return ${sel};`);
-  console.error("DBG filtro:", JSON.stringify(r));
   check(r.join() === "y", "kanban: com filtro ligado, Ctrl+A pega só os que casam");
 
   r = runIn(`${seed} ${tecla("a", { ctrlKey: true })} ${tecla("Escape")} return ${sel};`);
@@ -4690,6 +4692,7 @@ console.log("kanban · selecionar vários e agir em lote");
               findCard("a").col.cards[0], el);
     const out = { conta: document.querySelector(".drag-clone .drag-count")?.textContent,
                   fantasmas: [...document.querySelectorAll(".card.ghost")].map((c) => c.dataset.card),
+                  pilha: document.querySelector(".drag-flier")?.className,
                   lote: state.drag.lote };
     state.drag.target = null; endDrag();
     return out;`);
@@ -4697,6 +4700,367 @@ console.log("kanban · selecionar vários e agir em lote");
         "kanban: o clone do arrasto em lote mostra a contagem");
   check(r.fantasmas.join() === "a,c",
         "kanban: e os dois cards saem do lugar de origem, não só o de baixo do cursor");
+  check(r.pilha === "drag-flier stacked",
+        "kanban: dois cards no lote desenham UMA camada atrás do clone");
+
+  // três ou mais: a segunda camada entra, e a contagem continua sendo quem
+  // diz o número exato. `justDragged` zerado porque o bloco anterior acabou
+  // num endDrag, e por 300ms depois de um arrasto o clique é ignorado de
+  // propósito (clique fantasma) — sem isto a seleção nem chega a existir.
+  r = runIn(`${seed} justDragged = 0; ${clicar("a")} ${clicar("b", { ctrlKey: true })} ${clicar("c", { ctrlKey: true })}
+    const el = document.querySelector('.card[data-card="a"]');
+    document.elementFromPoint = () => null;
+    startDrag(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }),
+              findCard("a").col.cards[0], el);
+    const out = { pilha: document.querySelector(".drag-flier")?.className,
+                  conta: document.querySelector(".drag-clone .drag-count")?.textContent };
+    state.drag.target = null; endDrag();
+    return out;`);
+  check(r.pilha === "drag-flier stacked stacked-3" && r.conta === "3",
+        "kanban: de três para cima entra a segunda camada");
+
+  // um card só continua voando sozinho, sem pilha e sem número
+  r = runIn(`${seed} justDragged = 0; ${clicar("a")}
+    const el = document.querySelector('.card[data-card="a"]');
+    document.elementFromPoint = () => null;
+    startDrag(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }),
+              findCard("a").col.cards[0], el);
+    const out = { pilha: document.querySelector(".drag-flier")?.className,
+                  conta: document.querySelector(".drag-count") ? "sim" : "não" };
+    state.drag.target = null; endDrag();
+    return out;`);
+  check(r.pilha === "drag-flier" && r.conta === "não",
+        "kanban: arrastar um card só não desenha pilha nem contagem");
+
+  // o embrulho sai da tela junto com o gesto — senão sobra um card fantasma
+  // grudado no canto depois de cada arrasto
+  r = runIn(`${seed} justDragged = 0; ${clicar("a")} ${clicar("c", { ctrlKey: true })}
+    const el = document.querySelector('.card[data-card="a"]');
+    document.elementFromPoint = () => null;
+    startDrag(new MouseEvent("pointerdown", { clientX: 5, clientY: 5 }),
+              findCard("a").col.cards[0], el);
+    state.drag.target = null; endDrag();
+    return { sobrou: document.querySelectorAll(".drag-flier, .drag-clone").length };`);
+  check(r.sobrou === 0, "kanban: o embrulho do arrasto é removido no fim do gesto");
+
+  close();
+}
+
+console.log("kanban · o card como documento (corpo, bloco de código, imagem)");
+{
+  const { runIn, close } = loadKanbanApp();
+
+  const seed = `
+    const card = (id, extra) => Object.assign({ id, text: id.toUpperCase(), done: false }, extra || {});
+    state.board = { columns: [
+      { id: "c1", name: "fazendo", cards: [card("a"), card("b")] } ],
+      archive: [], aliases: {}, permissions: {} };
+    state.me = { id: "m", ip: "127.0.0.1", name: "eu", host: true };
+    state.cardDialog = null; state.openModal = null; closeModal();
+    clearCardSelection(); setFilter("");
+    undoStack.length = 0; redoStack.length = 0;
+    window.__enviadas = [];
+    sendOp = (op) => { window.__enviadas.push(op); };
+    render();`;
+
+  // ------------------------------------------------ a camada de bloco
+  // Um renderizador só: a camada de bloco decide ONDE cada linha entra e
+  // devolve cada linha de prosa para o tokenizador de sempre.
+  const renderizar = (txt) => runIn(`${seed}
+    const box = document.createElement("div");
+    PerthInline.renderBlocks(box, ${JSON.stringify(txt)}, {});
+    return { tags: [...box.children].map((n) => n.tagName),
+             code: box.querySelector("pre code")?.textContent ?? null,
+             strong: [...box.querySelectorAll("strong")].map((n) => n.textContent),
+             itens: [...box.querySelectorAll("li")].map((n) => n.textContent),
+             lang: box.querySelector("pre code")?.dataset.lang ?? null };`);
+
+  let r = renderizar("um **negrito** aqui\n\n- primeiro\n- segundo\n\n```julia\nf(x) = 1\n```");
+  check(r.tags.join() === "P,UL,PRE",
+        "kanban: parágrafo, lista e cerca viram três blocos");
+  check(r.strong.join() === "negrito",
+        "kanban: e a linha de prosa continua passando pelo tokenizador de sempre");
+  check(r.itens.join() === "primeiro,segundo", "kanban: os itens da lista saem separados");
+  check(r.code === "f(x) = 1" && r.lang === "julia",
+        "kanban: o bloco de código guarda o texto e a linguagem da cerca");
+
+  // dentro da cerca, marcação é código — não marcação
+  r = renderizar("```\n**não** é negrito, e `crase` é crase\n```");
+  check(r.strong.length === 0 && r.code === "**não** é negrito, e `crase` é crase",
+        "kanban: o conteúdo da cerca não passa pelo tokenizador de linha");
+
+  // cerca aberta: é o estado de quem está digitando o bloco agora
+  r = renderizar("antes\n\n```\nlinha que ainda não fechou");
+  check(r.code === "linha que ainda não fechou",
+        "kanban: cerca sem fechamento vai até o fim, em vez de sumir com o texto");
+
+  // "#" continua sendo etiqueta, não título — por isso títulos ficaram fora
+  r = renderizar("# obra começou");
+  check(r.tags.join() === "P" && r.itens.length === 0,
+        "kanban: '# ' não vira título (o # é etiqueta neste tokenizador)");
+
+  // ----------------------------------------------------- ops do corpo
+  r = runIn(`${seed}
+    commit({ type: "setBody", id: "a", body: "linha um\\nlinha dois" });
+    const f = findCard("a");
+    return { corpo: f.col.cards[f.index].body,
+             enviada: window.__enviadas[0].type,
+             blocos: [...document.querySelector('.card[data-card="a"] .card-body').children]
+                       .map((n) => n.tagName) };`);
+  check(r.corpo === "linha um\nlinha dois" && r.enviada === "setBody",
+        "kanban: o corpo é campo próprio, com op própria");
+  check(r.blocos.join() === "P",
+        "kanban: e a face do card mostra o corpo renderizado");
+
+  // corpo vazio TIRA o campo (não grava string vazia no board)
+  r = runIn(`${seed}
+    commit({ type: "setBody", id: "a", body: "algo" });
+    commit({ type: "setBody", id: "a", body: "" });
+    const f = findCard("a");
+    return { tem: "body" in f.col.cards[f.index],
+             face: !!document.querySelector('.card[data-card="a"] .card-body') };`);
+  check(r.tem === false && r.face === false,
+        "kanban: corpo vazio apaga o campo em vez de guardar vazio");
+
+  // a busca alcança o que está escrito no corpo
+  r = runIn(`${seed}
+    commit({ type: "setBody", id: "a", body: "combina com carburador" });
+    setFilter("carburador");
+    return { a: matchesFilter(findCard("a").col.cards[0]),
+             b: matchesFilter(findCard("b").col.cards[1]) };`);
+  check(r.a === true && r.b === false,
+        "kanban: a busca acha o que só existe no corpo");
+
+  // ------------------------------------------- a caixa grava ao fechar
+  r = runIn(`${seed}
+    openCardDialog("a");
+    document.querySelector(".dlg-title").value = "outro título";
+    document.querySelector(".dlg-title").dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector(".dlg-body").value = "um corpo";
+    document.querySelector(".dlg-body").dispatchEvent(new Event("input", { bubbles: true }));
+    closeModal();
+    const f = findCard("a");
+    return { texto: f.col.cards[f.index].text, corpo: f.col.cards[f.index].body,
+             tipos: window.__enviadas.map((o) => o.type), undo: undoStack.length,
+             dialogo: state.cardDialog };`);
+  check(r.texto === "outro título" && r.corpo === "um corpo",
+        "kanban: fechar a caixa grava o título e o corpo (não existe cancelar)");
+  check(r.tipos.join() === "editCard,setBody" && r.undo === 1,
+        "kanban: duas ops, UM desfazer — fechar a caixa é um gesto só");
+  check(r.dialogo === null, "kanban: e a caixa larga o card ao fechar");
+
+  // um Ctrl+Z devolve os dois campos juntos
+  r = runIn(`${seed}
+    openCardDialog("a");
+    document.querySelector(".dlg-title").value = "trocado";
+    document.querySelector(".dlg-title").dispatchEvent(new Event("input", { bubbles: true }));
+    document.querySelector(".dlg-body").value = "corpo novo";
+    document.querySelector(".dlg-body").dispatchEvent(new Event("input", { bubbles: true }));
+    closeModal();
+    undo();
+    const f = findCard("a");
+    return { texto: f.col.cards[f.index].text, corpo: f.col.cards[f.index].body || "" };`);
+  check(r.texto === "A" && r.corpo === "",
+        "kanban: e um desfazer só devolve os dois campos");
+
+  // Esc dentro do textarea passa pelo mesmo caminho (não perde o texto)
+  r = runIn(`${seed}
+    openCardDialog("a");
+    const ta = document.querySelector(".dlg-body");
+    ta.value = "escrito e escapado";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    const f = findCard("a");
+    return { corpo: f.col.cards[f.index].body, aberto: state.openModal };`);
+  check(r.corpo === "escrito e escapado" && r.aberto === null,
+        "kanban: Esc na caixa grava — não é o botão de jogar fora trinta linhas");
+
+  // título vazio não apaga a linha do card (ela é o nome da tarefa no gantt)
+  r = runIn(`${seed}
+    openCardDialog("a");
+    document.querySelector(".dlg-title").value = "   ";
+    document.querySelector(".dlg-title").dispatchEvent(new Event("input", { bubbles: true }));
+    closeModal();
+    const f = findCard("a");
+    return f.col.cards[f.index].text;`);
+  check(r === "A", "kanban: título apagado na caixa não zera a linha do card");
+
+  // ------------------------------------------------------- os botões
+  r = runIn(`${seed}
+    openCardDialog("a");
+    const ta = document.querySelector(".dlg-body");
+    ta.value = "abc"; ta.setSelectionRange(0, 3);
+    document.querySelectorAll(".dlg-btn")[0].click();     // B
+    const negrito = ta.value;
+    ta.value = ""; ta.setSelectionRange(0, 0);
+    document.querySelectorAll(".dlg-btn")[4].click();     // <>
+    const bloco = ta.value;
+    closeModal();
+    return { negrito, bloco };`);
+  check(r.negrito === "**abc**", "kanban: o botão de negrito envolve a seleção");
+  check(/^```\n.*\n```$/s.test(r.bloco),
+        "kanban: e o bloco de código nasce com cerca em linha própria");
+
+  // Ctrl+B faz o mesmo, e não deixa o atalho vazar para o navegador
+  r = runIn(`${seed}
+    openCardDialog("a");
+    const ta = document.querySelector(".dlg-body");
+    ta.value = "xyz"; ta.setSelectionRange(0, 3);
+    const ev = new KeyboardEvent("keydown", { key: "b", ctrlKey: true,
+                                              bubbles: true, cancelable: true });
+    ta.dispatchEvent(ev);
+    const out = { texto: ta.value, barrado: ev.defaultPrevented };
+    closeModal();
+    return out;`);
+  check(r.texto === "**xyz**" && r.barrado === true,
+        "kanban: Ctrl+B dentro da caixa é do editor, não do navegador");
+
+  // ------------------------------------------------------- imagens
+  r = runIn(`${seed}
+    commit({ type: "setImages", id: "a", images: ["${"a".repeat(64)}.png"] });
+    const f = findCard("a");
+    return { guardado: f.col.cards[f.index].images,
+             src: document.querySelector('.card[data-card="a"] .card-img').getAttribute("src"),
+             quantas: document.querySelectorAll('.card[data-card="a"] .card-img').length };`);
+  check(r.guardado.length === 1 && r.quantas === 1,
+        "kanban: a imagem entra no card e aparece na face dele");
+  check(r.src === "/asset/" + "a".repeat(64) + ".png",
+        "kanban: e a face aponta para a rota do armazém, não para os bytes");
+
+  // lista vazia tira as imagens; a inversa devolve a lista que estava lá
+  r = runIn(`${seed}
+    const nome = "${"b".repeat(64)}.jpg";
+    commit({ type: "setImages", id: "a", images: [nome] });
+    commit({ type: "setImages", id: "a", images: [] });
+    const semImagem = "images" in findCard("a").col.cards[0];
+    undo();
+    const f = findCard("a");
+    return { semImagem, voltou: f.col.cards[f.index].images };`);
+  check(r.semImagem === false && r.voltou.length === 1,
+        "kanban: tirar a imagem é uma edição desfazível, como qualquer outra");
+
+  // apagar o card e desfazer devolve corpo E imagens — a inversa carrega o
+  // card inteiro, não uma versão dele sem o que se escreveu
+  r = runIn(`${seed}
+    commit({ type: "setBody", id: "a", body: "não pode sumir" });
+    commit({ type: "setImages", id: "a", images: ["${"c".repeat(64)}.png"] });
+    commit({ type: "delCard", id: "a" });
+    undo();
+    const f = findCard("a");
+    return { corpo: f.col.cards[f.index].body,
+             imagens: (f.col.cards[f.index].images || []).length };`);
+  check(r.corpo === "não pode sumir" && r.imagens === 1,
+        "kanban: desfazer a exclusão devolve o card inteiro, com corpo e imagem");
+
+  // a colagem de TEXTO segue sendo colagem de texto
+  r = runIn(`${seed}
+    openCardDialog("a");
+    const ta = document.querySelector(".dlg-body");
+    const ev = new Event("paste", { bubbles: true, cancelable: true });
+    ev.clipboardData = { items: [{ kind: "string", type: "text/plain" }] };
+    ta.dispatchEvent(ev);
+    const out = { barrado: ev.defaultPrevented, enviadas: window.__enviadas.length };
+    closeModal();
+    return out;`);
+  check(r.barrado === false && r.enviadas === 0,
+        "kanban: colar texto na caixa não vira upload");
+
+  // máquina restrita não sobe imagem nenhuma (o servidor decide de verdade,
+  // isto é o que evita a viagem)
+  r = runIn(`${seed}
+    state.me = { id: "m", ip: "10.0.0.9", name: "outra", host: false };
+    state.board.permissions = { "10.0.0.9": { setImages: false } };
+    openCardDialog("a");
+    const ta = document.querySelector(".dlg-body");
+    const ev = new Event("paste", { bubbles: true, cancelable: true });
+    ev.clipboardData = { items: [{ kind: "file", type: "image/png",
+                                   getAsFile: () => ({}) }] };
+    ta.dispatchEvent(ev);
+    const out = { barrado: ev.defaultPrevented, enviadas: window.__enviadas.length,
+                  aviso: !!document.querySelector(".toast") };
+    closeModal();
+    return out;`);
+  check(r.barrado === false && r.enviadas === 0 && r.aviso === true,
+        "kanban: sem permissão, colar imagem avisa em vez de subir");
+
+  // ------------------------------------------ concluir: o ✓ e o estouro
+  // Concluir estoura; DESconcluir não — desmarcar não é comemoração. E o
+  // estouro nasce no <body>, senão o repinte do card o mata antes de sair
+  // do lugar.
+  r = runIn(`${seed}
+    document.querySelector('.card[data-card="a"] .card-done').click();
+    const marcou = { pops: document.querySelectorAll("body > .pop").length,
+                     particulas: document.querySelectorAll(".pop i").length,
+                     feito: findCard("a").col.cards[0].done };
+    document.querySelectorAll(".pop").forEach((n) => n.remove());
+    document.querySelector('.card[data-card="a"] .card-done').click();
+    return { marcou, desmarcou: document.querySelectorAll(".pop").length,
+             feitoAgora: findCard("a").col.cards[0].done };`);
+  check(r.marcou.feito === true && r.marcou.pops === 1 && r.marcou.particulas === 9,
+        "kanban: concluir um card estoura, e o estouro nasce fora do card");
+  check(r.desmarcou === 0 && r.feitoAgora === false,
+        "kanban: desmarcar não comemora nada");
+
+  // máquina sem permissão de concluir não ganha o estouro de consolação
+  r = runIn(`${seed}
+    state.me = { id: "m", ip: "10.0.0.9", name: "outra", host: false };
+    state.board.permissions = { "10.0.0.9": { setDone: false } };
+    render();
+    document.querySelector('.card[data-card="a"] .card-done').click();
+    return { pops: document.querySelectorAll(".pop").length,
+             feito: !!findCard("a").col.cards[0].done };`);
+  check(r.pops === 0 && r.feito === false,
+        "kanban: sem permissão não conclui nem estoura");
+
+  // --------------------------- a porta da caixa dentro do editor de linha
+  // Existe por causa do TOQUE: num tablet não há Shift+Enter, o duplo toque
+  // já é este editor e o segurar já é o arrasto do card.
+  r = runIn(`${seed}
+    openEditor("a");
+    const b = document.querySelector(".editor-open");
+    const noEditorDeCard = !!b;
+    cancelEditor();
+    openNewCard("c1");
+    const noEditorDeCriar = !!document.querySelector(".editor-open");
+    cancelEditor();
+    return { noEditorDeCard, noEditorDeCriar };`);
+  check(r.noEditorDeCard === true && r.noEditorDeCriar === false,
+        "kanban: a porta da caixa só existe no editor de um card que já existe");
+
+  // grava o que estava no editor ANTES de trocar de tela — senão o botão
+  // que "só abre outra coisa" come o que a pessoa acabou de digitar
+  r = runIn(`${seed}
+    openEditor("a");
+    const ta = document.querySelector(".card-editor");
+    ta.value = "linha editada antes de abrir";
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    state.editing.due = "2026-11-30";
+    document.querySelector(".editor-open").click();
+    const f = findCard("a");
+    const c = f.col.cards[f.index];
+    const out = { texto: c.text, due: c.due, modal: state.openModal,
+                  alvo: state.cardDialog?.cardId, editor: state.editing,
+                  tipos: window.__enviadas.map((o) => o.type) };
+    closeModal();
+    return out;`);
+  check(r.texto === "linha editada antes de abrir" && r.due === "2026-11-30",
+        "kanban: abrir a caixa grava o que estava no editor de linha");
+  check(r.tipos.join() === "editCard,setDue",
+        "kanban: e manda as ops do editor, não as da caixa");
+  check(r.modal === "card" && r.alvo === "a" && r.editor === null,
+        "kanban: a caixa abre no mesmo card, e o editor de linha se fecha");
+
+  // ------------------------------------ a caixa aberta e o quadro mudando
+  // o card sumiu (outra máquina apagou): a caixa fecha em vez de gravar
+  // num id que não existe mais
+  r = runIn(`${seed}
+    openCardDialog("a");
+    state.board.columns[0].cards.splice(0, 1);
+    syncCardDialog();
+    return { aberto: state.openModal, dialogo: state.cardDialog,
+             enviadas: window.__enviadas.length };`);
+  check(r.aberto === null && r.dialogo === null && r.enviadas === 0,
+        "kanban: card apagado por outra máquina fecha a caixa sem gravar nada");
 
   close();
 }

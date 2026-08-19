@@ -260,8 +260,9 @@ kbd {
 }
 .card:hover { border-color: var(--muted); }
 .card.selected { outline: 2px solid var(--purple); outline-offset: -1px; }
-/* Quantos cards estão voando no arrasto em lote: o clone é um card só, e sem
-   este número o gesto move seis mostrando um. */
+/* Quantos cards estão voando no arrasto em lote. A pilha atrás do clone já
+   diz "vários"; passando de três ela para de dizer QUANTOS, e o número é o
+   que continua dizendo. */
 .drag-count {
   position: absolute;
   top: -7px;
@@ -280,16 +281,42 @@ kbd {
 }
 .card.ghost { opacity: 0.35; }             /* original enquanto eu arrasto  */
 
-/* clone flutuante que segue o ponteiro durante o arrasto */
-.drag-clone {
+/* O que segue o ponteiro durante o arrasto: o embrulho posiciona e gira, o
+   clone é o card de cima da pilha. Ver startDrag — separar os dois é o que
+   permite desenhar camadas ATRÁS do card. */
+.drag-flier {
   position: fixed;
   z-index: 200;
   pointer-events: none;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
   transform: rotate(2deg);
+}
+.drag-clone {
+  position: relative;
+  z-index: 1;                 /* acima das camadas; ver .stacked abaixo */
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
   cursor: grabbing;
   margin: 0;
 }
+
+/* Camadas do arrasto em lote: cards desenhados, não clonados — atrás do
+   clone só aparece a borda que sobra do deslocamento, e clonar dois cards
+   inteiros por gesto seria pagar layout por pixels que ninguém lê.
+   Pintam em ordem de DOM (::before antes de ::after), então a de baixo da
+   pilha é a ::before e a de cima é a ::after. */
+.drag-flier.stacked::after,
+.drag-flier.stacked-3::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: var(--field);
+  /* borda mais forte que a do card: o que se vê de uma camada é uma tira de
+     poucos pixels, e na --line normal ela some contra o fundo do quadro */
+  border: 1px solid var(--muted);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.18);
+}
+.drag-flier.stacked-3::before { transform: translate(13px, 11px) rotate(6deg); }
+.drag-flier.stacked::after    { transform: translate(6px,  5px) rotate(3deg); }
 
 .drop-slot {
   height: 3px;
@@ -299,8 +326,187 @@ kbd {
   flex: none;
 }
 
+/* ---------------------------------------- o card como documento
+   O corpo aparece RECORTADO na face: a coluna tem a largura que tem, e um
+   card de trinta linhas empurra para fora da tela os outros cinco que a
+   coluna existe para mostrar juntos. O esmaecido no pé é o que diz que há
+   mais — sem ele o texto simplesmente acaba no meio de uma frase. */
+.card-body {
+  position: relative;
+  max-height: 132px;
+  overflow: hidden;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.card-body::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  background: linear-gradient(transparent, var(--field));
+}
+.card-body .md-p { margin: 0 0 6px; }
+.card-body .md-p:last-child { margin-bottom: 0; }
+.card-body .md-list { margin: 0 0 6px; padding-left: 18px; }
+.md-code {
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 0 0 6px;
+  overflow-x: auto;              /* código não alarga a coluna */
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.md-code code { white-space: pre; }
+
+.card-images { display: flex; gap: 4px; margin-top: 6px; }
+.card-img {
+  max-width: 100%;
+  max-height: 120px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  object-fit: contain;
+  cursor: zoom-in;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.modal.modal-card { width: min(720px, calc(100vw - 32px)); max-height: 86vh; }
+.card-dialog { display: flex; flex-direction: column; gap: 8px; }
+
+.dlg-peer {
+  background: var(--sel);
+  border: 1px solid var(--purple);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: var(--purple);
+}
+.dlg-title {
+  width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--ink);
+}
+/* Faixa de botões e campo são UM controle: a barra fecha por cima, o campo
+   por baixo, e a costura entre os dois é a borda que eles dividem. Botão sem
+   moldura própria — sete caixinhas enfileiradas competiam com o texto, que é
+   o que a caixa existe para mostrar. */
+.dlg-editor { display: flex; flex-direction: column; }
+.dlg-bar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-wrap: wrap;
+  padding: 3px 4px;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: var(--panel);
+}
+.dlg-btn {
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11.5px;
+  line-height: 1;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+}
+.dlg-btn:hover:not(:disabled) { background: var(--line-soft); color: var(--ink); }
+.dlg-btn:disabled { opacity: 0.35; }
+.dlg-btn svg { display: block; }
+.dlg-btn.b-bold { font-weight: 700; }
+.dlg-btn.b-ital { font-style: italic; }
+.dlg-btn.b-strike { text-decoration: line-through; }
+.dlg-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: var(--line);
+}
+.dlg-body {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
+  background: var(--field);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.dlg-body:focus { outline: none; border-color: var(--purple); }
+.dlg-editor:focus-within .dlg-bar { border-color: var(--purple); }
+.dlg-images { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dlg-images:empty { display: none; }
+.dlg-thumb { position: relative; margin: 0; }
+.dlg-thumb .card-img { max-height: 96px; }
+.dlg-thumb-del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+.dlg-thumb-del:hover { color: var(--red); border-color: var(--red); }
+/* Só o contador, e só perto do teto: um rodapé com dica fixa era uma linha
+   de instrução permanente para uma coisa que se aprende uma vez. */
+.dlg-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.dlg-count { font-variant-numeric: tabular-nums; }
+.dlg-count.over { color: var(--red); }
+
+/* A ampliação é camada própria, acima do modal (z-index 300): a foto abre
+   POR CIMA da caixa expandida sem fechá-la. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--modalbg);
+  cursor: zoom-out;
+}
+.lightbox img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
 /* concluído + arquivo + carimbo do criador */
 .card { padding-right: 30px; }
+/* Só o ✓: sem pastilha, sem moldura. O card concluído já se anuncia pelo
+   texto esmaecido — a bolinha verde repetia a mesma informação com o peso
+   visual de um botão de ação, no canto de todo card do quadro. */
 .card-done {
   position: absolute;
   top: 6px;
@@ -308,25 +514,52 @@ kbd {
   width: 20px;
   height: 20px;
   padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--line);
+  border: none;
+  background: none;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .card:hover .card-done { opacity: 1; }
-.card-done:hover { color: var(--green); border-color: var(--green); background: transparent; }
+.card-done:hover { color: var(--green); background: none; transform: scale(1.15); }
 .card.dimmed { opacity: 0.22; }
 /*.card.done { border-left: 3px solid var(--green); }*/
 .card.done .card-text { color: var(--muted); }
-.card.done .card-done {
-  opacity: 1;
-  background: var(--green);
-  border-color: var(--green);
-  color: #fff;
+.card.done .card-done { opacity: 1; color: var(--green); }
+
+/* O estouro de concluir. Vive no <body> em posição fixa, e não dentro do
+   card, porque o commit repinta o card no mesmo quadro — uma partícula
+   pendurada no botão morreria antes de sair do lugar.
+   Só ao MARCAR concluído: desmarcar não é uma comemoração. */
+.pop {
+  position: fixed;
+  z-index: 250;
+  pointer-events: none;
 }
+.pop i {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  margin-left: calc(var(--s) / -2);
+  margin-top: calc(var(--s) / -2);
+  border-radius: 50%;
+  background: var(--c);
+  animation: pop-out 620ms ease-out forwards;
+}
+/* O movimento é ease-out (sai rápido e desacelera, que é o que faz parecer
+   um estouro) mas a opacidade tem paradas próprias: numa curva só, a
+   partícula já estava a 20% de opacidade em um terço do tempo e o efeito
+   não chegava a ser visto. Sutil é discreto, não invisível. */
+@keyframes pop-out {
+  0%   { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  15%  { transform: translate(calc(var(--dx) * 0.2), calc(var(--dy) * 0.2)) scale(1);
+         opacity: 1; }
+  65%  { opacity: 0.9; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0.55); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .pop { display: none; } }
 .card-meta {
   display: flex;
   align-items: center;
@@ -588,6 +821,21 @@ kbd {
 .card-due.soon { color: var(--amber); border-color: var(--amber); }
 .card-due.overdue { color: #fff; background: var(--red); border-color: var(--red); }
 .card.done .card-due { color: var(--muted); background: transparent; border-color: var(--line); }
+
+/* A porta da caixa expandida, dentro do editor de um card existente.
+   Alinhada à direita e apagada: é saída para outra tela, não a ação
+   principal (a principal é Enter, que grava). Alvo alto o bastante para
+   dedo — ela existe justamente para o tablet. */
+.editor-more { display: flex; justify-content: flex-end; margin-top: 8px; }
+.editor-open {
+  padding: 4px 9px;
+  font-size: 10.5px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+}
+.editor-open:hover { color: var(--purple); border-color: var(--purple); }
 
 .editor-row {
   display: flex;

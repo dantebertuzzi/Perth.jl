@@ -3376,6 +3376,121 @@ end
         @test length(Perth._kaliases(st)["192.168.0.80"]) == Perth._TEXT_CAP
     end
 
+    @testset "kanban: o card como documento (corpo)" begin
+        ktmp = mktempdir()
+        Perth._init_kanban!(ktmp)
+        st = Perth._kanban_state()
+        Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "addCard", "col" => "c1", "id" => "d1", "text" => "titulo"))
+        card() = Perth._kfindcard(st, "d1")[1]["cards"][1]
+
+        # o corpo tem teto PRÓPRIO, maior que o do texto: é prosa, não
+        # identificador (ver o comentário de _BODY_CAP em types.jl)
+        @test Perth._BODY_CAP > Perth._TEXT_CAP
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setBody", "id" => "d1", "body" => "x"^(Perth._BODY_CAP + 500)))
+        @test length(card()["body"]) == Perth._BODY_CAP
+
+        # corpo vazio (ou só espaço) tira o campo, não grava string vazia
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setBody", "id" => "d1", "body" => "   \n  "))
+        @test !haskey(card(), "body")
+
+        # o texto do card continua com o teto de sempre
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "editCard", "id" => "d1", "text" => "y"^5000))
+        @test length(card()["text"]) == Perth._TEXT_CAP
+
+        # addCard leva o corpo junto: é assim que o desfazer de um delCard
+        # devolve o card inteiro, e não uma versão dele sem o que se escreveu
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "addCard", "col" => "c1", "id" => "d2",
+            "text" => "outro", "body" => "com corpo"))
+        @test Perth._kfindcard(st, "d2")[1]["cards"][2]["body"] == "com corpo"
+
+        # card sem corpo não ganha a chave à toa (board menor no disco e no fio)
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "addCard", "col" => "c1", "id" => "d3", "text" => "sem"))
+        @test !haskey(Perth._kfindcard(st, "d3")[1]["cards"][3], "body")
+
+        # ambas as ações novas são restringíveis por IP, como as outras
+        @test "setBody" in Perth._KANBAN_GATED_ACTIONS
+        @test "setImages" in Perth._KANBAN_GATED_ACTIONS
+    end
+
+    @testset "kanban: imagens coladas num card" begin
+        ktmp = mktempdir()
+        Perth._init_kanban!(ktmp)
+        st = Perth._kanban_state()
+        dir = Perth._asset_dir(ktmp)
+
+        # PNG de verdade só pela assinatura: o farejador é o de background.jl,
+        # e é dele que sai a extensão do arquivo (nunca do que o cliente disse)
+        # o sufixo é preenchido porque _bg_sniff exige 12 bytes para
+        # sequer olhar a assinatura — abaixo disso nada é imagem
+        png(sufixo) = vcat(UInt8[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+                           Vector{UInt8}(rpad(sufixo, 8, 'x')))
+        nome(resp) = String(JSON3.read(String(resp.body)).name)
+
+        a = nome(Perth._asset_store(png("um")))
+        @test occursin(r"^[0-9a-f]{64}\.png$", a)
+        @test isfile(joinpath(dir, a))
+
+        # endereçado pelo CONTEÚDO: a mesma captura colada duas vezes é um
+        # arquivo só, com o mesmo nome
+        @test nome(Perth._asset_store(png("um"))) == a
+        b = nome(Perth._asset_store(png("dois")))
+        @test b != a
+        @test length(readdir(dir)) == 2
+
+        # o que não é imagem não entra, mesmo com cara de imagem
+        @test Perth._asset_store(Vector{UInt8}("<svg><script/></svg>")).status == 415
+        @test Perth._asset_store(UInt8[]).status == 400
+        @test Perth._asset_store(rand(UInt8, Perth._ASSET_MAX_BYTES + 1)).status == 413
+
+        # peneira de nomes: caminho, nome inventado e repetição não passam,
+        # e o teto por card é respeitado
+        @test Perth._asset_names(["../../etc/passwd", a, a, "solto.png"]) == [a]
+        @test Perth._asset_names(nothing) == String[]
+        muitos = [nome(Perth._asset_store(png("n$i"))) for i in 1:5]
+        @test length(Perth._asset_names(muitos)) == Perth._ASSET_MAX_PER_CARD
+
+        # a op só aceita nome válido, e uma lista que não sobrou nada é op
+        # malformada — recusar ressincroniza, apagar calado perderia a imagem
+        Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "addCard", "col" => "c1", "id" => "i1", "text" => "com foto"))
+        card() = Perth._kfindcard(st, "i1")[1]["cards"][1]
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setImages", "id" => "i1", "images" => [a, b]))
+        @test card()["images"] == Any[a, b]
+        @test !Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setImages", "id" => "i1", "images" => ["../x.png"]))
+        @test card()["images"] == Any[a, b]
+        # lista vazia continua querendo dizer "tire as imagens"
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setImages", "id" => "i1", "images" => []))
+        @test !haskey(card(), "images")
+
+        # servir: tipo pelos bytes, cache imutável (o nome é o hash), e
+        # caminho de fora do armazém não existe
+        Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "setImages", "id" => "i1", "images" => [a]))
+        resp = Perth._asset_response(a)
+        @test resp.status == 200
+        @test Dict(resp.headers)["Content-Type"] == "image/png"
+        @test occursin("immutable", Dict(resp.headers)["Cache-Control"])
+        @test Perth._asset_response("../../etc/passwd").status == 404
+        @test Perth._asset_response("naoexiste" * "0"^56 * ".png").status == 404
+
+        # coleta: só apaga o que ninguém cita E já passou da carência, porque
+        # a pilha de desfazer vive no navegador e pode querer a foto de volta
+        Perth._kanban_persist(st)
+        @test Perth._asset_gc!(ktmp) == 0                    # carência segura tudo
+        @test Perth._asset_gc!(ktmp; keep_days = 0) == 6     # b + os cinco de teste
+        @test readdir(dir) == [a]
+        @test Perth._asset_response(a).status == 200
+    end
+
     @testset "kanban: matriz de permissões" begin
         ktmp = mktempdir()
         Perth._init_kanban!(ktmp)
