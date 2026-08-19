@@ -5,7 +5,7 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
-## [Unreleased]
+## [0.11.0] - 2026-08-18
 
 ### Added
 - **A card opens as a document.** `Shift+Enter` with the card selected — or
