@@ -297,11 +297,16 @@ cursor etiquetado ancorado a um *cartão*, não a um pixel — então ele sobrev
 tamanhos de janela e níveis de zoom diferentes. Os cartões levam `#etiquetas`,
 `**markdown**`, checklist, prazo, responsável, **limite de WIP** por coluna e
 arquivo; um cartão ligado arrastado para *done* conclui a tarefa no gantt, e
-vice-versa. `Ctrl+Z` / `Ctrl+Shift+Z` desfazem o que **você** fez, sem reverter o que
+vice-versa. Um cartão também **abre como documento** (`Shift+Enter`, ou pelo editor do
+próprio cartão — um tablet não tem Shift): uma
+descrição com listas e blocos de código, e capturas de tela coladas direto com
+`Ctrl+V` — reduzidas no navegador, guardadas ao lado do quadro e endereçadas pelo
+conteúdo, então a mesma imagem colada cinco vezes é um arquivo só.
+`Ctrl+Z` / `Ctrl+Shift+Z` desfazem o que **você** fez, sem reverter o que
 um colega fez depois.
 
 O **host** pode restringir o que cada máquina faz — *Board → Permissions…* é uma
-matriz de 19 ações de cartão e coluna contra cada IP que já se conectou. A restrição
+matriz de 21 ações de cartão e coluna contra cada IP que já se conectou. A restrição
 vale **no servidor**: o cliente não escapa dela falando direto com o WebSocket, e a
 interface apenas esconde o que está negado.
 

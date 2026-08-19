@@ -42,12 +42,13 @@ const _PRESENCE_NCOLORS = 8
 _presence_is_host(ip::AbstractString) = ip in ("127.0.0.1", "::1")
 
 # Rotas que a chave de acesso protege, no gantt e no kanban: os dados
-# (/api/*) e /background — a imagem de fundo é o único conteúdo servido de
-# fora do frontend (caminho apontado pelo REPL), então não pode andar junto
-# com os estáticos públicos. O resto (HTML/JS/CSS) é shell vazio: sem chave
-# não carrega projeto nenhum, e é o que permite a UI pedir a chave.
+# (/api/*), /background e /asset/ — a imagem de fundo e as imagens coladas
+# nos cards são o conteúdo servido de FORA do frontend, então não podem andar
+# junto com os estáticos públicos. O resto (HTML/JS/CSS) é shell vazio: sem
+# chave não carrega projeto nenhum, e é o que permite a UI pedir a chave.
 _key_protected(path::AbstractString) =
-    startswith(path, "/api/") || path == "/background"
+    startswith(path, "/api/") || path == "/background" ||
+    startswith(path, "/asset/")
 
 # Quem pode passar pela chave: todo mundo se não há chave configurada, a
 # máquina do servidor sempre, e quem repetir a chave na query (é assim que

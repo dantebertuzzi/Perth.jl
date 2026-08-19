@@ -5,6 +5,87 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.11.0] - 2026-08-18
+
+### Added
+- **A card opens as a document.** `Shift+Enter` with the card selected — or
+  *descricao...* at the foot of a card's editor — opens a dialog with the title, a
+  description that takes **lists and fenced code blocks**, and a flat strip of
+  formatting buttons (plus `Ctrl+B` / `Ctrl+I`) for what the card face already knew
+  how to render. Double-click still opens the one-line editor it always did: the
+  quick edit of the line, the due date and the assignee is the common gesture, and
+  the dialog does not replace it. The second entry exists for **touch**: a tablet
+  has no `Shift+Enter`, and the two gestures that could have carried it are already
+  spoken for - double-tap is that editor, and press-and-hold is the card drag,
+  which is what rules out a context menu. It appears only on a card that already
+  exists; in the field that *creates* one there would be nothing to open, since a
+  description and an image need a card to belong to. The description is a **new field**, not the card's line, and that
+  is the whole point: the first line of a card is the *name* of the linked Gantt
+  task (`_apply_card_sync`), travels to CSV and iCalendar, and is what the search
+  matches — so a paragraph and a stack trace could never live in it. It has its own
+  cap too (`_BODY_CAP`, 20 000 characters against the 2 000 of every field that is
+  also an identifier), and the dialog counts down to it out loud, because the server
+  truncates in silence.
+- **The block layer is a layer, not a second parser.** `shared/inline.js` still
+  tokenises one line — it is shared with the Gantt's task notes — and
+  `renderBlocks` only decides *where* each line goes (fence, list item, paragraph)
+  before handing every line of prose back to `render`. Inside a fence nothing is
+  tokenised: `**bold**` in a code block is code. Headings were deliberately left
+  out: `#` is already a tag here, and the difference between a heading and a tag
+  would be one space.
+- **Paste a screenshot into a card** (`Ctrl+V` in the dialog). The image is **shrunk in the browser**
+  before it goes anywhere — a 4 MB screenshot arrives as a couple hundred KB, PNG
+  first because screen text blurs in JPEG — and the bytes are stored **outside the
+  board**, content-addressed as `kanban-assets/<sha256>.<ext>`, with the card
+  holding a name and nothing else. Pasting works in the dialog, which is where a
+  card's description lives. Base64 in the card was never an option: the
+  board is rewritten whole on every op and re-sent whole on every connection, so
+  ten pictures would be a 3 MB board on the wire at every reload. Being named by
+  its own hash makes a blob the one thing this server can serve `immutable`, and
+  the same picture pasted in five cards one file. A single click enlarges it —
+  double-click is already "open the editor".
+- **The upload endpoint, and the gate it comes with.** `src/background.jl` says
+  there is deliberately no upload route, because the servers listen on 0.0.0.0 and
+  an upload is a *write* surface on the LAN. The kanban already is one — anyone
+  past the share gate and the key creates and deletes cards — so what actually
+  changes is unbounded *bytes*, and that is what `src/assets.jl` gates: real type
+  by magic bytes (`_bg_sniff`, no SVG), a cap per image and a second cap on the
+  store, the same per-IP permission matrix as every other action, and a name shape
+  (`<64 hex>.<ext>`) validated on write *and* on read — it is the only string in
+  the board that becomes a path on the server. Blobs no card cites are collected at
+  startup, but only after days: the undo stack lives in the browser and may still
+  want the picture back.
+- Two new restrictable actions, **edit card description** and **attach images**, in
+  the host's permission matrix — 21 now, translated in all five languages.
+
+### Changed
+- **Dragging a selection looks like a stack.** The batch drag already moved the
+  whole selection — every source card lifted out of its place, the ops
+  recomputed neighbour by neighbour — but what flew under the cursor was one
+  card with a small badge on it, so the gesture that moves six of them looked
+  like the gesture that moves one. It now carries a drawn stack: one layer
+  behind the card for two, two layers for three or more, with the count staying
+  because a stack stops saying *how many* past three. What follows the pointer
+  is a wrapper rather than the clone itself — the layers are pseudo-elements of
+  the wrapper, and on the clone they could not be, because a negative `z-index`
+  inside a stacking context paints above that element's own background and the
+  layers would cover the card instead of sitting behind it.
+- **The done tick is a tick.** It was a filled green pill with a border in the
+  corner of every card — the weight of an action button spent repeating what the
+  greyed-out text already said. Now it is just the `✓`, muted until you hover
+  it, green once the card is done. Marking one done sets off a small burst of
+  particles from the tick; unmarking does not, because that is not a celebration.
+  The burst lives in the `<body>` at fixed coordinates rather than inside the
+  card: the commit repaints the card in the same frame, and anything parented to
+  the button would die before it moved. It is off entirely under
+  `prefers-reduced-motion`.
+- The kanban search now reaches the description: once a card can hold a paragraph,
+  "where was that written" is a question about it.
+- Closing the card dialog **saves** — Esc, ✕, clicking outside and `Ctrl+Enter` all
+  do the same thing, and the title and the description go in as a *single* undo
+  entry. There is no cancel button: in a field that invites thirty lines, a button
+  that throws them away is a trap, and `Ctrl+Z` already exists for real regret.
+
 ## [0.10.0] - 2026-08-17
 
 ### Breaking

@@ -18,7 +18,7 @@ const PALETTE = ["#9558b2", "#389826", "#cb3c33", "#4063d8",
 const COL_ACCENTS = ["#9558b2", "#4063d8", "#389826", "#b58900",
                      "#cb3c33", "#2aa198", "#d33682", "#6c71c4"];
 
-// As mesmas 19 ações que o servidor sabe restringir por IP (espelha
+// As mesmas 21 ações que o servidor sabe restringir por IP (espelha
 // _KANBAN_GATED_ACTIONS em src/kanban.jl) — colunas da matriz de permissões
 // e rótulo do toast quando uma ação é bloqueada. Fora daqui ficam as ações
 // de administração do board inteiro (reset, auto-archive, apelidos, trocar
@@ -26,6 +26,7 @@ const COL_ACCENTS = ["#9558b2", "#4063d8", "#389826", "#b58900",
 const GATED_ACTIONS = [
   { type: "addCard", label: "add card" },
   { type: "editCard", label: "edit card text" },
+  { type: "setBody", label: "edit card description" },
   { type: "delCard", label: "delete card" },
   { type: "moveCard", label: "move card between columns" },
   { type: "setDone", label: "mark card done" },
@@ -34,6 +35,7 @@ const GATED_ACTIONS = [
   { type: "delArchived", label: "delete archived forever" },
   { type: "setAssignee", label: "set assignee" },
   { type: "setDue", label: "set due date" },
+  { type: "setImages", label: "attach images" },
   { type: "addCheck", label: "add checklist item" },
   { type: "toggleCheck", label: "check/uncheck checklist item" },
   { type: "delCheck", label: "delete checklist item" },
@@ -80,6 +82,7 @@ const state = {
   selection: new Set(),     // a seleção inteira — um id só no caso comum
   selEdge: null,            // ponta longe do intervalo com Shift
   editing: null,            // {cardId | null, colId, draft, isNew}
+  cardDialog: null,         // {cardId, title, body} — o card aberto como documento
   drag: null,               // estado do arrasto local
   pendingBoard: null,       // board recebido durante um arrasto
   filter: "",               // busca ativa (texto/#tag/autor), minúsculas
@@ -243,6 +246,7 @@ function handleMessage(msg) {
         if (state.openModal === "activity") showActivity();
         else if (state.openModal === "archived") showArchived();
         else if (state.openModal === "permissions") showPermissions();
+        else if (state.openModal === "card") syncCardDialog();
       }
       renderStatus();
       break;
@@ -369,8 +373,19 @@ function inverseOf(op) {
                done: !!c.done, by: c.by, at: c.at, due: c.due,
                assignee: c.assignee, done_at: c.done_at,
                task: c.task, project: c.project,
+               body: c.body, images: c.images ? [...c.images] : undefined,
                checklist: c.checklist ? structuredClone(c.checklist) : undefined,
                index: f.index };
+    }
+    case "setBody": {
+      const f = findCard(op.id);
+      return f ? { type: "setBody", id: op.id,
+                   body: f.col.cards[f.index].body || "" } : null;
+    }
+    case "setImages": {
+      const f = findCard(op.id);
+      return f ? { type: "setImages", id: op.id,
+                   images: [...(f.col.cards[f.index].images || [])] } : null;
     }
     case "moveCard": {
       const f = findCard(op.id);
@@ -628,6 +643,8 @@ function applyLocal(op) {
       if (op.due) card.due = op.due;
       if (op.assignee) card.assignee = op.assignee;
       if (op.done_at) card.done_at = op.done_at;
+      if (op.body) card.body = op.body;
+      if (Array.isArray(op.images) && op.images.length) card.images = [...op.images];
       if (Array.isArray(op.checklist)) card.checklist = structuredClone(op.checklist);
       const i = Number.isInteger(op.index)
         ? Math.min(op.index, c.cards.length) : c.cards.length;
@@ -637,6 +654,20 @@ function applyLocal(op) {
     case "editCard": {
       const f = findCard(op.id);
       if (f) f.col.cards[f.index].text = op.text;
+      break;
+    }
+    case "setBody": {
+      const f = findCard(op.id);
+      if (!f) break;
+      const c = f.col.cards[f.index];
+      op.body ? (c.body = op.body) : delete c.body;
+      break;
+    }
+    case "setImages": {
+      const f = findCard(op.id);
+      if (!f) break;
+      const c = f.col.cards[f.index];
+      op.images && op.images.length ? (c.images = [...op.images]) : delete c.images;
       break;
     }
     case "delCard": {
@@ -926,6 +957,20 @@ function cardEl(card) {
   renderCardText(text, card.text);
   el.append(text);
 
+  // As imagens vêm antes do corpo porque é assim que o card é lido: a
+  // captura é a evidência, o texto é o comentário dela.
+  if (card.images && card.images.length) el.append(cardImagesEl(card));
+
+  // O corpo aparece RECORTADO na face (o resto está na caixa expandida): a
+  // coluna tem a largura que tem, e um card de trinta linhas empurra para
+  // fora da tela os outros cinco que a coluna existe para mostrar juntos.
+  if (card.body) {
+    const body = document.createElement("div");
+    body.className = "card-body";
+    PerthInline.renderBlocks(body, card.body, inlineOpts());
+    el.append(body);
+  }
+
   // checklist: itens marcáveis direto no card + barrinha de progresso
   if (card.checklist && card.checklist.length) {
     const list = document.createElement("div");
@@ -1033,6 +1078,9 @@ function cardEl(card) {
   done.addEventListener("pointerdown", (e) => e.stopPropagation());
   done.addEventListener("click", (e) => {
     e.stopPropagation();
+    // o estouro sai ANTES do commit: depois dele o card já foi repintado e
+    // este nó não existe mais para dizer de onde as partículas partem
+    if (!card.done && canDo("setDone")) celebrate(done);
     commit({ type: "setDone", id: card.id, done: !card.done });
   });
   applyRestriction(done, "setDone");
@@ -1064,14 +1112,16 @@ function cardEl(card) {
  * significado não podem ter dois analisadores. O que fica aqui é o que é do
  * kanban: a cor da etiqueta, o clique que filtra o quadro, e a guarda que
  * impede o link de abrir no fim de um arrasto. */
+const inlineOpts = () => ({
+  linkClass: "card-link",
+  tagClass: "tag",
+  tagColor,
+  onTag: setFilter,
+  podeAbrirLink: () => Date.now() - justDragged >= 300,
+});
+
 function renderCardText(container, text) {
-  return PerthInline.render(container, text, {
-    linkClass: "card-link",
-    tagClass: "tag",
-    tagColor,
-    onTag: setFilter,
-    podeAbrirLink: () => Date.now() - justDragged >= 300,
-  });
+  return PerthInline.render(container, text, inlineOpts());
 }
 
 function colMenu(col, ci) {
@@ -1326,6 +1376,39 @@ function editorEl(col, card) {
 
   wrap.append(ta, row, checks);
 
+  /* A porta da caixa expandida para quem não tem teclado.
+   *
+   * Só em card que JÁ existe: no campo de criar ele apareceria vazio e
+   * desabilitado, que é onde ficou feio — e descrição e imagem precisam de
+   * um card a que pertencer, então ali ele não teria o que abrir.
+   *
+   * Existe por causa do TOQUE. Com teclado o caminho é Shift+Enter; num
+   * tablet não há Shift+Enter, e as outras entradas possíveis colidem com
+   * gestos que já têm dono: o duplo toque é este editor, e o segurar é o
+   * arrasto do card (LONGPRESS_MS), que é o que descarta um menu de
+   * contexto. Aqui dentro não colide com nada, porque este editor só existe
+   * depois de alguém pedir por ele.
+   *
+   * Grava o que já está no editor antes de abrir: título, prazo e
+   * responsável são ops daqui, e perdê-los ao trocar de tela seria a
+   * armadilha clássica de um botão que "só abre outra coisa". */
+  if (card) {
+    const more = document.createElement("div");
+    more.className = "editor-more";
+    const open = document.createElement("button");
+    open.className = "editor-open";
+    open.textContent = T("description…") + " ⤢";
+    open.title = T("open card (description, code, images)");
+    open.addEventListener("click", (e) => {
+      e.preventDefault();
+      const id = card.id;
+      commitEditor();
+      openCardDialog(id);
+    });
+    more.append(open);
+    wrap.append(more);
+  }
+
   if (card) sendPresenceNow({ editing: card.id });
   return wrap;
 }
@@ -1366,6 +1449,467 @@ function cancelEditor() {
   state.editing = null;
   sendPresenceNow({});
   render();
+}
+
+
+/* ====================================== o card como documento (caixa expandida)
+ *
+ * A LINHA DO CARD É UM TÍTULO, e continua sendo. Ela vira o nome da tarefa
+ * vinculada no gantt (_apply_card_sync em src/kanban.jl), viaja para o CSV e
+ * para o iCalendar, e é por onde a busca acha as coisas. Por isso o parágrafo
+ * que explica a decisão e o bloco de código que o card existe por causa NÃO
+ * entram nela: `body` é campo próprio, com teto próprio (_BODY_CAP em
+ * src/types.jl), e é o único lugar do card onde cabe mais que uma linha.
+ *
+ * A CAIXA GRAVA AO FECHAR — Esc, ✕, clique fora e Ctrl+Enter fazem a mesma
+ * coisa. Não existe "cancelar": num campo que convida a escrever trinta
+ * linhas, um botão que as joga fora é uma armadilha, e quem se arrependeu de
+ * verdade tem o Ctrl+Z, que aqui é uma entrada de desfazer como qualquer
+ * outra.
+ *
+ * O Enter também é o contrário do editor de uma linha, e tem que ser: lá
+ * Enter grava e Shift+Enter quebra a linha, porque o campo É uma linha; aqui
+ * Enter quebra a linha e Ctrl+Enter grava, porque um bloco de código com
+ * Shift+Enter em cada linha não se escreve.
+ */
+
+const BODY_CAP = 20000;      // espelha _BODY_CAP em src/types.jl
+
+function openCardDialog(id) {
+  const f = findCard(id);
+  if (!f) return;
+  const card = f.col.cards[f.index];
+  state.cardDialog = { cardId: id, title: card.text, body: card.body || "" };
+  state.editing = null;                    // a caixa substitui o editor de linha
+  showModal(T("Card"), cardDialogEl(card), "card");
+  $("#modal-root .modal")?.classList.add("modal-card");
+  sendPresenceNow({ editing: id });
+}
+
+/* Grava o que mudou e larga o card. Chamado por closeModal — ou seja, por
+ * TODO caminho de fechamento, inclusive o Esc global e o clique no fundo. */
+function saveCardDialog() {
+  const d = state.cardDialog;
+  if (!d) return;
+  state.cardDialog = null;
+  sendPresenceNow({});
+  const f = findCard(d.cardId);
+  if (!f) return;
+  const card = f.col.cards[f.index];
+  const title = d.title.trim();
+  const body = d.body.trim();
+  // Fechar a caixa é UM gesto, então é UM desfazer — mesmo tendo mexido no
+  // título e no corpo, que são duas ops (é o servidor que resolve permissão
+  // e conflito campo a campo). Mesma regra das ações em lote.
+  const ops = [];
+  // título vazio não apaga o card: um card sem linha nenhuma não é
+  // editável nem selecionável na tela, e ninguém pediu para excluí-lo
+  if (title && title !== card.text)
+    ops.push({ type: "editCard", id: d.cardId, text: title });
+  if (body !== (card.body || ""))
+    ops.push({ type: "setBody", id: d.cardId, body });
+  if (ops.length) commitMany(ops);
+}
+
+/* O board mudou embaixo da caixa aberta (outra máquina, ou o próprio upload
+ * daqui): as imagens são relidas do card, e um card que deixou de existir
+ * fecha a caixa em vez de gravar num id morto.
+ *
+ * O texto NÃO é relido: quem está com o cursor no meio de um parágrafo
+ * perderia o que digitou por causa de um card qualquer que outra pessoa
+ * mexeu do outro lado do quadro. */
+function syncCardDialog() {
+  const d = state.cardDialog;
+  if (!d) return;
+  if (!findCard(d.cardId)) {
+    state.cardDialog = null;      // o card sumiu: não há o que gravar
+    closeModal();
+    return;
+  }
+  const strip = $("#modal-root .dlg-images");
+  if (strip) renderDialogImages(strip);
+  const warn = $("#modal-root .dlg-peer");
+  if (warn) fillPeerWarning(warn, d.cardId);
+}
+
+function cardDialogEl(card) {
+  const wrap = document.createElement("div");
+  wrap.className = "card-dialog";
+
+  // Quem mais está com este card aberto. Some quando ninguém está, e é
+  // deliberadamente barulhento: duas pessoas no mesmo texto é última
+  // gravação vence (o servidor não funde texto), e perder uma linha é
+  // chateação — perder vinte é parar de confiar no quadro.
+  const peer = document.createElement("div");
+  peer.className = "dlg-peer";
+  fillPeerWarning(peer, card.id);
+  wrap.append(peer);
+
+  const title = document.createElement("input");
+  title.className = "dlg-title";
+  title.value = state.cardDialog.title;
+  title.maxLength = 2000;                 // _TEXT_CAP: o mesmo teto do servidor
+  title.placeholder = T("card title — one line");
+  title.addEventListener("input", () => { state.cardDialog.title = title.value; });
+  title.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Escape" || e.key === "Enter") closeModal();
+  });
+  applyRestriction(title, "editCard");
+  wrap.append(title);
+
+  const ta = document.createElement("textarea");
+  ta.className = "dlg-body";
+  ta.value = state.cardDialog.body;
+  ta.placeholder = T("description — **bold**, `code`, ``` for a block · paste an image");
+  applyRestriction(ta, "setBody");
+
+  // barra e campo num invólucro só: são um controle, e o `gap` do diálogo
+  // não pode abrir uma fresta entre a faixa de botões e o que ela edita
+  const editor = document.createElement("div");
+  editor.className = "dlg-editor";
+  editor.append(toolbarEl(ta), ta);
+  wrap.append(editor);
+
+  const strip = document.createElement("div");
+  strip.className = "dlg-images";
+  renderDialogImages(strip);
+  wrap.append(strip);
+
+  const foot = document.createElement("div");
+  foot.className = "dlg-foot";
+  const count = document.createElement("span");
+  count.className = "dlg-count";
+  const contar = () => {
+    // O teto é do servidor e ele trunca calado (_cap_body). Dizer o número
+    // enquanto ainda dá para editar é a diferença entre um limite e uma
+    // perda: a contagem só aparece perto do fim, para não virar ruído.
+    const n = ta.value.length;
+    count.textContent = n > BODY_CAP * 0.8 ? `${n} / ${BODY_CAP}` : "";
+    count.classList.toggle("over", n >= BODY_CAP);
+  };
+  foot.append(count);
+
+  ta.addEventListener("input", () => {
+    if (ta.value.length > BODY_CAP) ta.value = ta.value.slice(0, BODY_CAP);
+    state.cardDialog.body = ta.value;
+    contar();
+    sendPresenceNow({ editing: card.id });
+  });
+  ta.addEventListener("keydown", (e) => {
+    e.stopPropagation();                  // atalhos globais ficam de fora
+    if (e.key === "Escape") return closeModal();
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) return closeModal();
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k !== "b" && k !== "i") return;
+    e.preventDefault();                   // senão o navegador rouba o Ctrl+B
+    wrapSelection(ta, k === "b" ? "**" : "*");
+  });
+  wireImagePaste(ta, card.id);
+  contar();
+
+  wrap.append(foot);
+  // Foco no começo, não no fim: abrir um texto de trinta linhas já rolado
+  // até o rodapé esconde justamente o que a pessoa veio ler.
+  setTimeout(() => {
+    ta.focus();
+    ta.setSelectionRange(0, 0);
+    ta.scrollTop = 0;
+  }, 0);
+  return wrap;
+}
+
+function fillPeerWarning(el, cardId) {
+  const quem = [...state.peers.values()]
+    .filter((p) => p.presence && p.presence.editing === cardId)
+    .map(peerLabel);
+  el.textContent = quem.length
+    ? quem.join(", ") + " " + T("is editing this card right now") : "";
+  el.hidden = !quem.length;
+}
+
+/* Os botões escrevem MARCAÇÃO no textarea, não formatam texto rico: o que
+ * fica gravado é o que a pessoa poderia ter digitado à mão, e é o mesmo que
+ * a face do card renderiza. Um editor rico aqui seria um segundo formato. */
+function toolbarEl(ta) {
+  const bar = document.createElement("div");
+  bar.className = "dlg-bar";
+  const botao = (conteudo, titulo, fn, cls) => {
+    const b = document.createElement("button");
+    b.className = "dlg-btn" + (cls ? " " + cls : "");
+    b.append(conteudo);
+    b.title = titulo;
+    b.addEventListener("click", (e) => { e.preventDefault(); fn(); });
+    applyRestriction(b, "setBody");
+    bar.append(b);
+    return b;
+  };
+  const separador = () => {
+    const s = document.createElement("span");
+    s.className = "dlg-sep";
+    bar.append(s);
+    return s;
+  };
+  botao("B", T("bold") + " (Ctrl+B)", () => wrapSelection(ta, "**"), "b-bold");
+  botao("I", T("italic") + " (Ctrl+I)", () => wrapSelection(ta, "*"), "b-ital");
+  botao("S", T("strikethrough"), () => wrapSelection(ta, "~~"), "b-strike");
+  separador();
+  botao("`", T("inline code"), () => wrapSelection(ta, "`"));
+  botao("<>", T("code block"), () => wrapBlock(ta, "```\n", "\n```"));
+  separador();
+  botao("•", T("list item"), () => prefixLines(ta, "- "));
+  botao(iconeLink(), T("link"), () => {
+    const url = prompt(T("Link address"), "https://");
+    if (url) wrapSelection(ta, "[", "](" + url + ")", T("text"));
+  });
+  return bar;
+}
+
+/* O ícone do link é desenhado, e não um emoji: 🔗 vem colorido do sistema e
+ * era a única mancha de cor numa faixa que só tem glifos monocromáticos. Um
+ * SVG em currentColor acompanha o tema e o hover como as letras acompanham. */
+function iconeLink() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "12");
+  svg.setAttribute("height", "12");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.5");
+  svg.setAttribute("stroke-linecap", "round");
+  for (const d of ["M6.6 9.4a3 3 0 0 0 4.25 0l2-2a3 3 0 1 0-4.25-4.25l-.7.7",
+                   "M9.4 6.6a3 3 0 0 0-4.25 0l-2 2a3 3 0 1 0 4.25 4.25l.7-.7"]) {
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+/* Envolve a seleção. Sem seleção, escreve o marcador com um texto de exemplo
+ * dentro e deixa ele selecionado — senão o botão só move o cursor e parece
+ * que não fez nada. */
+function wrapSelection(ta, antes, depois = antes, exemplo = "") {
+  const a = ta.selectionStart, b = ta.selectionEnd;
+  const sel = ta.value.slice(a, b) || exemplo || T("text");
+  ta.setRangeText(antes + sel + depois, a, b, "end");
+  ta.selectionStart = a + antes.length;
+  ta.selectionEnd = ta.selectionStart + sel.length;
+  ta.focus();
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+// Bloco quer linha própria dos dois lados: uma cerca colada no fim de um
+// parágrafo não é uma cerca, é três crases no meio do texto.
+function wrapBlock(ta, antes, depois) {
+  const a = ta.selectionStart, b = ta.selectionEnd;
+  const pre = a > 0 && ta.value[a - 1] !== "\n" ? "\n" : "";
+  const pos = b < ta.value.length && ta.value[b] !== "\n" ? "\n" : "";
+  wrapSelection(ta, pre + antes, depois + pos, T("code"));
+}
+
+function prefixLines(ta, prefixo) {
+  const a = ta.selectionStart, b = ta.selectionEnd;
+  const ini = ta.value.lastIndexOf("\n", a - 1) + 1;
+  const trecho = ta.value.slice(ini, b) || "";
+  const novo = trecho.split("\n").map((l) => (l.startsWith(prefixo) ? l : prefixo + l))
+                     .join("\n");
+  ta.setRangeText(novo, ini, b, "end");
+  ta.focus();
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/* --------------------------------------------------------- imagens */
+
+const IMG_MAX_SIDE = 1400;              // lado maior depois de reduzir
+const IMG_MAX_BYTES = 700 * 1024;       // abaixo do teto do servidor (_ASSET_MAX_BYTES)
+const IMG_MAX_PER_CARD = 3;             // espelha _ASSET_MAX_PER_CARD
+
+const toBlob = (canvas, tipo, q) =>
+  new Promise((res) => canvas.toBlob(res, tipo, q));
+
+/* REDUZIR NO NAVEGADOR, ANTES DE SUBIR, é o que torna o endpoint de upload
+ * defensável: uma captura de tela de 4 MB vira duzentos e poucos KB antes de
+ * atravessar a rede, e o teto do servidor deixa de ser o que decide o
+ * tamanho normal das coisas — passa a ser só o porteiro de quem não passou
+ * por aqui.
+ *
+ * PNG primeiro porque captura de tela é texto, e texto em JPEG borra. Se o
+ * PNG não couber, JPEG com qualidade decrescente: uma foto um pouco pior é
+ * melhor que uma foto recusada. */
+async function shrinkImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const escala = Math.min(1, IMG_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * escala));
+  const h = Math.max(1, Math.round(bitmap.height * escala));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  let out = await toBlob(canvas, "image/png");
+  for (const q of [0.85, 0.7, 0.5]) {
+    if (out && out.size <= IMG_MAX_BYTES) break;
+    out = await toBlob(canvas, "image/jpeg", q);
+  }
+  return out;
+}
+
+async function uploadImage(blob) {
+  const r = await fetch(withKey("/api/asset"), { method: "POST", body: blob });
+  let j = {};
+  try { j = await r.json(); } catch { /* resposta sem corpo JSON */ }
+  if (!r.ok || !j.name) throw new Error(j.error || r.statusText || "upload failed");
+  return j.name;
+}
+
+/* Cola uma imagem no card. O upload é imediato (como o item de checklist),
+ * não fica pendurado até fechar a caixa: o blob já está no servidor quando o
+ * op sai, então nenhum cliente recebe um card apontando para um arquivo que
+ * ainda não existe. */
+async function attachPastedImage(cardId, file) {
+  const f = findCard(cardId);
+  if (!f) return;
+  const atuais = f.col.cards[f.index].images || [];
+  if (atuais.length >= IMG_MAX_PER_CARD)
+    return showToast(T("a card holds at most") + " " + IMG_MAX_PER_CARD + " " + T("images"));
+  try {
+    const blob = await shrinkImage(file);
+    if (!blob) throw new Error("could not read the image");
+    const name = await uploadImage(blob);
+    const agora = findCard(cardId);        // o card pode ter mudado no caminho
+    if (!agora) return;
+    const lista = [...(agora.col.cards[agora.index].images || [])];
+    if (lista.includes(name) || lista.length >= IMG_MAX_PER_CARD) return;
+    lista.push(name);
+    commit({ type: "setImages", id: cardId, images: lista });
+    syncCardDialog();
+  } catch (err) {
+    showToast(T("could not attach the image") + ": " + err.message, "toast-error");
+  }
+}
+
+function wireImagePaste(el, cardId) {
+  el.addEventListener("paste", (e) => {
+    const item = [...(e.clipboardData?.items || [])]
+      .find((i) => i.kind === "file" && i.type.startsWith("image/"));
+    if (!item) return;                      // colagem de texto segue normal
+    if (!canDo("setImages")) return deniedToast("setImages");
+    e.preventDefault();
+    const file = item.getAsFile();
+    if (file) attachPastedImage(cardId, file);
+  });
+}
+
+function renderDialogImages(strip) {
+  strip.textContent = "";
+  const d = state.cardDialog;
+  const f = d && findCard(d.cardId);
+  const imagens = (f && f.col.cards[f.index].images) || [];
+  for (const name of imagens) {
+    const fig = document.createElement("figure");
+    fig.className = "dlg-thumb";
+    fig.append(imageEl(name));
+    const del = document.createElement("button");
+    del.className = "dlg-thumb-del";
+    del.textContent = "✕";
+    del.title = T("remove image");
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      commit({ type: "setImages", id: d.cardId,
+               images: imagens.filter((n) => n !== name) });
+      renderDialogImages(strip);
+    });
+    applyRestriction(del, "setImages");
+    fig.append(del);
+    strip.append(fig);
+  }
+}
+
+function cardImagesEl(card) {
+  const box = document.createElement("div");
+  box.className = "card-images";
+  for (const name of card.images) box.append(imageEl(name));
+  return box;
+}
+
+/* Um clique amplia — não dois. O duplo clique num card já abre o editor
+ * (ver cardEl), e uma imagem que precisa ser acertada duas vezes é uma
+ * imagem que abre a coisa errada em metade das tentativas. */
+function imageEl(name) {
+  const img = document.createElement("img");
+  img.className = "card-img";
+  img.loading = "lazy";
+  img.alt = T("attached image");
+  img.src = withKey("/asset/" + encodeURIComponent(name));
+  img.addEventListener("pointerdown", (e) => e.stopPropagation());
+  img.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (Date.now() - justDragged < 300) return;
+    openLightbox(name);
+  });
+  return img;
+}
+
+/* Um estouro pequeno ao concluir um card.
+ *
+ * Mora no <body>, em posição fixa, e não dentro do card: o commit repinta o
+ * card no mesmo quadro, e uma partícula pendurada no botão morreria antes de
+ * sair do lugar. Mesma razão do lightbox estar fora do modal.
+ *
+ * O `-4` no eixo Y é a única licença poética: as partículas saem em círculo
+ * mas sobem um pouco, senão o efeito lê como um respingo em vez de um
+ * estouro. Quem pediu menos movimento no sistema não vê nada (o CSS esconde
+ * .pop inteiro em prefers-reduced-motion) — por isso a decisão está lá e não
+ * aqui: um `matchMedia` no JS teria que ser repetido em cada chamador. */
+function celebrate(el) {
+  const r = el.getBoundingClientRect();
+  const box = document.createElement("div");
+  box.className = "pop";
+  box.style.left = r.left + r.width / 2 + "px";
+  box.style.top = r.top + r.height / 2 + "px";
+  const cores = [getComputedStyle(document.documentElement)
+                   .getPropertyValue("--green").trim() || "#389826",
+                 "#9558b2", "#4063d8", "#b58900"];
+  for (let i = 0; i < 9; i++) {
+    const p = document.createElement("i");
+    const ang = (Math.PI * 2 * i) / 9 + Math.random() * 0.5;
+    const dist = 18 + Math.random() * 16;
+    p.style.setProperty("--dx", (Math.cos(ang) * dist).toFixed(1) + "px");
+    p.style.setProperty("--dy", (Math.sin(ang) * dist - 4).toFixed(1) + "px");
+    p.style.setProperty("--s", (4 + Math.random() * 3).toFixed(1) + "px");
+    p.style.setProperty("--c", cores[i % cores.length]);
+    box.append(p);
+  }
+  document.body.append(box);
+  setTimeout(() => box.remove(), 800);
+}
+
+/* A ampliação é uma camada própria, e não um modal: showModal é o diálogo do
+ * quadro (um de cada vez, com Esc gravando o card aberto), e a foto tem que
+ * poder abrir POR CIMA da caixa expandida sem fechá-la. */
+function openLightbox(name) {
+  const ov = document.createElement("div");
+  ov.className = "lightbox";
+  const img = document.createElement("img");
+  img.src = withKey("/asset/" + encodeURIComponent(name));
+  img.alt = T("attached image");
+  ov.append(img);
+  const fechar = () => {
+    ov.remove();
+    document.removeEventListener("keydown", tecla, true);
+  };
+  const tecla = (e) => {
+    if (e.key !== "Escape") return;
+    e.stopPropagation();          // o Esc fecha a foto, não a caixa atrás dela
+    e.preventDefault();
+    fechar();
+  };
+  ov.addEventListener("click", fechar);
+  document.addEventListener("keydown", tecla, true);
+  document.body.append(ov);
 }
 
 /* ============================================== seleção (uma ou várias) */
@@ -1549,16 +2093,29 @@ function startDrag(e, card, el) {
 
   // Arrastar um da seleção arrasta a seleção inteira. O card sob o cursor é
   // o que voa; os outros saem do lugar de origem junto com ele (.ghost), e o
-  // clone diz quantos são — senão o gesto move seis cards mostrando um.
+  // que voa mostra a PILHA — senão o gesto move seis cards mostrando um.
   const lote = state.selection.has(card.id) && selCount() > 1
     ? selectedCards().map((f) => f.card.id) : [card.id];
+
+  // O que segue o ponteiro é o embrulho, não o card: as camadas de trás são
+  // pseudo-elementos DELE. No próprio clone não daria — o z-index negativo
+  // dentro de um contexto de empilhamento pinta acima do fundo do elemento,
+  // então as camadas apareceriam por CIMA do card em vez de atrás dele.
+  const flier = document.createElement("div");
+  flier.className = "drag-flier";
   if (lote.length > 1) {
+    // uma camada para dois, duas para três ou mais: a pilha diz "vários" de
+    // relance e o número diz quantos, que é o que a pilha para de dizer
+    // sozinha assim que passa de três
+    flier.classList.add("stacked");
+    if (lote.length > 2) flier.classList.add("stacked-3");
     const n = document.createElement("span");
     n.className = "drag-count";
     n.textContent = lote.length;
     clone.append(n);
   }
-  document.body.append(clone);
+  flier.append(clone);
+  document.body.append(flier);
 
   const slot = document.createElement("div");
   slot.className = "drop-slot";
@@ -1567,7 +2124,7 @@ function startDrag(e, card, el) {
     card,
     lote,                  // ids na ordem do quadro (ver selectedCards)
     el,
-    clone,
+    flier,                 // o embrulho que voa (o clone e as camadas de trás)
     slot,
     dx: e.clientX - rect.left,
     dy: e.clientY - rect.top,
@@ -1579,7 +2136,7 @@ function startDrag(e, card, el) {
   }
   document.body.style.cursor = "grabbing";
   sendPresenceNow({ dragging: card.id });
-  positionClone(e);
+  positionFlier(e);
   updateDropTarget(e);
 
   window.addEventListener("pointermove", onDragMove);
@@ -1590,14 +2147,14 @@ function startDrag(e, card, el) {
 }
 
 function onDragMove(e) {
-  positionClone(e);
+  positionFlier(e);
   updateDropTarget(e);
   trackPointer(e);
 }
 
-function positionClone(e) {
+function positionFlier(e) {
   const d = state.drag;
-  d.clone.style.transform =
+  d.flier.style.transform =
     `translate(${e.clientX - d.dx}px, ${e.clientY - d.dy}px) rotate(2deg)`;
   // auto-scroll horizontal perto das bordas do board
   const b = boardEl.getBoundingClientRect();
@@ -1679,7 +2236,7 @@ function endDrag() {
   const d = state.drag;
   state.drag = null;
   document.body.style.cursor = "";
-  d.clone.remove();
+  d.flier.remove();
   d.slot.remove();
   for (const n of $$(".card.ghost", boardEl)) n.classList.remove("ghost");
   sendPresenceNow({});
@@ -1763,7 +2320,9 @@ function colorForIp(ip) {
 
 function matchesFilter(card) {
   if (!state.filter) return true;
-  const hay = (card.text + " " +
+  // o corpo entra na busca: a partir do momento em que dá para escrever um
+  // parágrafo no card, "onde é que estava aquilo" é uma pergunta sobre ele
+  const hay = (card.text + " " + (card.body || "") + " " +
     (card.assignee || "") + " " +
     (card.by ? displayFor(card.by) + " " + card.by : "")).toLowerCase();
   return hay.includes(state.filter);
@@ -2008,6 +2567,8 @@ window.addEventListener("resize", renderCursors);
 /* ==================================================== modais */
 
 function closeModal() {
+  // a caixa do card grava ao fechar, por qualquer caminho de fechamento
+  if (state.cardDialog) saveCardDialog();
   const root = $("#modal-root");
   root.hidden = true;
   root.textContent = "";
@@ -3119,6 +3680,7 @@ function doAction(action) {
       showModal(T("Keyboard shortcuts"), PerthShortcuts.list([
         ["N", "new card"],
         ["Enter", "edit selected card"],
+        ["Shift+Enter", "open card (description, code, images)"],
         ["Ctrl+click", "add or remove one card from the selection"],
         ["Shift+click", "select everything in between (same column)"],
         ["Ctrl+A", "select all — with a filter on, only what it leaves lit"],
@@ -3184,7 +3746,8 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "d" || e.key === "D") doAction("toggle-theme");
   else if (e.key === "p" || e.key === "P") doAction("presentation");
   else if (e.key === "Delete") doAction("delete-card");
-  else if (e.key === "Enter" && state.selected) openEditor(state.selected);
+  else if (e.key === "Enter" && state.selected)
+    e.shiftKey ? openCardDialog(state.selected) : openEditor(state.selected);
   else if (e.key === "Escape") {
     if (state.presenting) { exitPresentation(); return; }
     clearCardSelection();

@@ -295,11 +295,16 @@ animates on everyone's screen, and each machine shows up as a labelled cursor
 anchored to a *card*, not to a pixel — so it survives different window sizes and
 zoom levels. Cards carry `#tags`, `**markdown**`, checklists, due dates, assignees,
 per-column **WIP limits** and an archive; a linked card dragged to *done* completes
-the task in the Gantt, and back. `Ctrl+Z` / `Ctrl+Shift+Z` undo your own actions
-without reverting what a colleague did afterwards.
+the task in the Gantt, and back. A card also **opens as a document**
+(`Shift+Enter`, or from the card's own editor — a tablet has no Shift key): a
+description with lists and fenced code blocks, and screenshots
+pasted straight in with `Ctrl+V` — shrunk in the browser, stored beside the board
+and addressed by content, so the same picture pasted five times is one file.
+`Ctrl+Z` / `Ctrl+Shift+Z` undo your own actions without reverting what a colleague
+did afterwards.
 
 The **host** can restrict what a given machine may do — *Board → Permissions…* is a
-matrix of 19 card and column actions against every IP that has connected. It is
+matrix of 21 card and column actions against every IP that has connected. It is
 enforced **server-side**: a client cannot get around it by talking to the WebSocket
 directly, and the UI merely hides what is denied.
 

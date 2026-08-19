@@ -259,6 +259,20 @@ _short_id() = string(UUIDs.uuid4())[1:8]
 const _TEXT_CAP = 2000
 _cap_text(s::AbstractString) = length(s) > _TEXT_CAP ? first(s, _TEXT_CAP) : String(s)
 
+# Teto separado para a PROSA de um card do kanban — o corpo que a caixa de
+# diálogo edita, e só ele. 2000 continua valendo para tudo que também é
+# identificador: o texto do card é a primeira linha que vira NOME de tarefa no
+# gantt, viaja para CSV e iCalendar e é por onde a busca acha as coisas.
+#
+# O corpo não é nada disso: é o parágrafo que explica a decisão e o bloco de
+# código que o card existe por causa. Um desses passa de 2000 sem esforço, e
+# truncar em silêncio é perder o fim do que alguém escreveu. Vinte mil dá umas
+# trezentas linhas — cabe o que se escreve à mão, e continua sendo um teto,
+# porque o board inteiro é regravado a cada op e retransmitido a cada conexão
+# (ver _kanban_persist e _kanban_init_payload).
+const _BODY_CAP = 20_000
+_cap_body(s::AbstractString) = length(s) > _BODY_CAP ? first(s, _BODY_CAP) : String(s)
+
 """
     end_date(t::GanttTask) -> Date
 

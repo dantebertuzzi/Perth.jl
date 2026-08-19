@@ -26,6 +26,7 @@ using Unicode
 using UUIDs
 
 import HTTP
+import SHA
 import JSON3
 import StructTypes
 import Tables
@@ -92,6 +93,7 @@ include("presence.jl")
 include("server.jl")
 include("kanban.jl")
 include("background.jl")
+include("assets.jl")
 
 # Dica de entrada. Guardas, em ordem: precompilação (jl_generating_output),
 # sessão não-interativa (script, teste, pacote que depende deste) e, dentro

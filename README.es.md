@@ -297,11 +297,16 @@ un cursor etiquetado anclado a una *tarjeta*, no a un píxel — así sobrevive 
 tamaños de ventana y niveles de zoom distintos. Las tarjetas llevan `#etiquetas`,
 `**markdown**`, checklist, fecha límite, responsable, **límite de WIP** por columna y
 archivo; una tarjeta enlazada arrastrada a *done* completa la tarea en el Gantt, y al
-revés. `Ctrl+Z` / `Ctrl+Shift+Z` deshacen lo **tuyo**, sin revertir lo que un colega
+revés. Una tarjeta también **se abre como documento** (`Shift+Enter`, o desde el editor
+de la propia tarjeta — una tableta no tiene Shift): una
+descripción con listas y bloques de código, y capturas pegadas directamente con
+`Ctrl+V` — reducidas en el navegador, guardadas junto al tablero y direccionadas por
+contenido, así que la misma imagen pegada cinco veces es un solo archivo.
+`Ctrl+Z` / `Ctrl+Shift+Z` deshacen lo **tuyo**, sin revertir lo que un colega
 hizo después.
 
 El **anfitrión** puede restringir qué hace cada máquina — *Board → Permissions…* es
-una matriz de 19 acciones de tarjeta y columna contra cada IP que se haya conectado.
+una matriz de 21 acciones de tarjeta y columna contra cada IP que se haya conectado.
 Se aplica **en el servidor**: el cliente no la esquiva hablando directo con el
 WebSocket, y la interfaz solo esconde lo negado.
 
