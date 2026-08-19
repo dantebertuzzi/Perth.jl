@@ -320,14 +320,6 @@ function people!(p::Project, entries)
     return copy(p.people)
 end
 
-"""
-    add_person!(p::Project, name; role = "", team = "", email = "", notes = "")
-
-Register one collaborator. A name already on the list (in any case) is
-*updated*, not duplicated: the spelling you pass wins, and only the keyword
-fields you pass are overwritten — so `add_person!(p, "Ana"; team = "Obra")`
-does not erase her role.
-"""
 # setfield! com o tipo do CAMPO, não String(v) para tudo: capacity é um
 # número, e a versão anterior — que convertia qualquer valor para String —
 # morria em add_person!(p, "Ana"; capacity = 8) antes de chegar no campo.
@@ -341,6 +333,14 @@ function _set_person!(pe::Person, k::Symbol, v)
     setfield!(pe, k, _person_value(fieldtype(Person, k), v))
 end
 
+"""
+    add_person!(p::Project, name; role = "", team = "", email = "", notes = "")
+
+Register one collaborator. A name already on the list (in any case) is
+*updated*, not duplicated: the spelling you pass wins, and only the keyword
+fields you pass are overwritten — so `add_person!(p, "Ana"; team = "Obra")`
+does not erase her role.
+"""
 function add_person!(p::Project, name::AbstractString; kwargs...)
     novo = _as_person(name)
     atual = person(p, name)
