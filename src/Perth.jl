@@ -90,6 +90,7 @@ include("csv.jl")
 include("pert.jl")
 include("show.jl")
 include("splash.jl")
+include("update.jl")
 include("api.jl")
 include("presence.jl")
 include("server.jl")
@@ -106,6 +107,12 @@ function __init__()
     isinteractive() || return nothing
     try
         _pick()          # navegável, mas desiste sozinha (ver _pick)
+    catch
+    end
+    # Depois do _pick, nunca antes: a revalidação carrega Pkg e lê o registro,
+    # e isso não pode disputar o terminal com o desenho (ver update.jl).
+    try
+        _update_refresh_async()
     catch
     end
     return nothing

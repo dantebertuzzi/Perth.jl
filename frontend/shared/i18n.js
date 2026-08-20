@@ -677,6 +677,8 @@ window.PerthI18n = (function () {
         "Desmarcado = bloqueado naquela máquina. A máquina do host sempre tem permissão aqui, independente desta matriz.",
       // etiqueta de versão (barra de status dos dois apps)
       "Perth version": "Versão do Perth",
+      "A newer Perth is out — whoever started the server can update with ] up Perth":
+        "Saiu uma versão nova do Perth — quem subiu o servidor atualiza com ] up Perth",
     },
 
     es: {
@@ -1311,6 +1313,8 @@ window.PerthI18n = (function () {
         "Sin marcar = bloqueado en esa máquina. La máquina del host siempre tiene permiso aquí, sin importar esta matriz.",
       // etiqueta de versão (barra de status dos dois apps)
       "Perth version": "Versión de Perth",
+      "A newer Perth is out — whoever started the server can update with ] up Perth":
+        "Salió una versión nueva de Perth — quien levantó el servidor actualiza con ] up Perth",
     },
 
     fr: {
@@ -1947,6 +1951,8 @@ window.PerthI18n = (function () {
         "Décoché = bloqué sur cette machine. La machine hôte est toujours autorisée ici, quelle que soit cette matrice.",
       // etiqueta de versão (barra de status dos dois apps)
       "Perth version": "Version de Perth",
+      "A newer Perth is out — whoever started the server can update with ] up Perth":
+        "Une nouvelle version de Perth est sortie — celui qui a lancé le serveur met à jour avec ] up Perth",
     },
 
     zh: {
@@ -2578,6 +2584,8 @@ window.PerthI18n = (function () {
         "未勾选 = 在该设备上被阻止。无论此矩阵如何设置，主机设备始终被允许。",
       // etiqueta de versão (barra de status dos dois apps)
       "Perth version": "Perth 版本",
+      "A newer Perth is out — whoever started the server can update with ] up Perth":
+        "Perth 有新版本了 —— 启动服务器的人可以用 ] up Perth 更新",
     },
   };
 

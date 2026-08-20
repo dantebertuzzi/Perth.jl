@@ -47,6 +47,20 @@ Pkg.add("Perth")
 | `QRCoders` | 局域网链接的二维码，终端和界面里都有 |
 | `CairoMakie`（任意 Makie 后端） | `ganttplot` / `save_chart` 输出静态图 |
 
+有新版本时，`using Perth` 会在入口提示下方多出一行淡色提示。版本号来自**本机
+已有的**包注册表，不发起任何网络请求。想当场问一次：
+
+```julia
+Perth.check_update()      # perth v0.12.0 → 0.13.0 available · ] up Perth
+```
+
+状态栏最右边的版本标签在浏览器里说同样的话 —— `0.12.0 → 0.13.0` —— 甘特图和
+看板都有。
+
+它的新鲜程度取决于你上一次 `] up`——本地注册表就是那时刷新的，刚发布几分钟的
+版本要过一阵才会出现。`PERTH_UPDATE_CHECK=0` 会关掉这行提示和后台检查；直接调用
+`Perth.check_update()` 仍然会回答。
+
 ---
 
 ## 六十秒上手

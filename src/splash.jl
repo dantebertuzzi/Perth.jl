@@ -542,7 +542,8 @@ const _VOLTAR = ("Perth.menu()",    "pick one from a list")
 # `sel` = 0 devolve a forma estática (marcadores, sem legenda); 1..3 devolve a
 # forma navegável, com a seta na linha escolhida. As duas têm que caber no
 # mesmo repintar, por isso são o mesmo construtor.
-function _bloco(version::AbstractString, sel::Int)
+function _bloco(version::AbstractString, sel::Int;
+                nova::Union{VersionNumber,Nothing} = _update_available())
     w = maximum(textwidth(p[1]) for p in (_PORTAS..., _SAIDA, _VOLTAR))
     cab = string("  ", _fg(0x95, 0x58, 0xB2), _BOLD, "perth", _RESET,
                  "  ", _GREY, "Julia-native Gantt · Kanban · CPM", _RESET,
@@ -554,6 +555,7 @@ function _bloco(version::AbstractString, sel::Int)
                                  _BOLD, rpad(chamada, w), _RESET, "  ",
                                  _GREY, texto, _RESET))
         end
+        nova === nothing || push!(linhas, _linha_versao(nova, w))
         return linhas
     end
     linhas = [cab, ""]
@@ -567,7 +569,20 @@ function _bloco(version::AbstractString, sel::Int)
     push!(linhas, string("   ", _DIM,
                          "↑↓ move · enter opens · any other key dismisses",
                          _RESET))
+    nova === nothing || push!(linhas, _linha_versao(nova, w))
     return linhas
+end
+
+# A linha do aviso de versão: mesma coluna das portas, para o bloco continuar
+# alinhado, e a seta verde do ✓ do _step em vez do "·" — é notícia, não porta.
+# O comando fica em negrito porque é o que se digita; num checkout de
+# desenvolvimento `] up` não faria nada, então nem aparece.
+function _linha_versao(nova::VersionNumber, w::Int)
+    dev = _dev_checkout()
+    chamada = dev ? "v$nova is out" : "] up Perth"
+    texto   = dev ? "you are on a dev checkout" : "v$nova is out"
+    string("   ", _fg(0x38, 0x98, 0x26), "↑", _RESET, " ",
+           _BOLD, rpad(chamada, w), _RESET, "  ", _GREY, texto, _RESET)
 end
 
 """
@@ -607,7 +622,8 @@ function _pick(io::IO = stdout; version = _version(), timeout::Real = 6)
 
     term  = REPL.Terminals.TTYTerminal(get(ENV, "TERM", "xterm"), stdin, io, stderr)
     sel, escolha, raw = 1, 0, false
-    linhas = length(_bloco(version, sel))
+    nova   = _update_available()      # uma leitura de arquivo, não uma por repintar
+    linhas = length(_bloco(version, sel; nova = nova))
     print(io, "\e[?25l")
     try
         raw = REPL.Terminals.raw!(term, true)
@@ -616,7 +632,7 @@ function _pick(io::IO = stdout; version = _version(), timeout::Real = 6)
             return _hint(io; version)         # sem modo raw não há seta
         end
         Base.start_reading(stdin)
-        print(io, join(_bloco(version, sel), "\n"), "\n")
+        print(io, join(_bloco(version, sel; nova = nova), "\n"), "\n")
         t0 = time()
         while true
             if bytesavailable(stdin) > 0
@@ -638,7 +654,7 @@ function _pick(io::IO = stdout; version = _version(), timeout::Real = 6)
                     break                                    # dispensa
                 end
                 mexeu && print(io, "\e[$(linhas)F\e[J")
-                print(io, join(_bloco(version, sel), "\n"), "\n")
+                print(io, join(_bloco(version, sel; nova = nova), "\n"), "\n")
                 t0 = time()                                  # tecla reinicia a contagem
             end
             time() - t0 >= timeout && break
@@ -653,7 +669,7 @@ function _pick(io::IO = stdout; version = _version(), timeout::Real = 6)
     end
     # o que fica na tela é a dica estática, sem seta nem legenda
     print(io, "\e[$(linhas)F\e[J")
-    print(io, join(_bloco(version, 0), "\n"), "\n")
+    print(io, join(_bloco(version, 0; nova = nova), "\n"), "\n")
     escolha == 1 && return run()
     escolha == 2 && return kanban()
     nothing

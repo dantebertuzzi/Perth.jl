@@ -3405,6 +3405,29 @@ end
             HTTP.Request("GET", "/api/apps"), "127.0.0.1").body))
         @test kb["app"] == "kanban"
         @test kb["version"] == string(pkgversion(Perth))
+
+        # `update` é o aviso de versão nova na mesma etiqueta. Vem do cache
+        # (src/update.jl), então aqui ele é null — a suíte roda num diretório
+        # de dados temporário, onde nada foi checado. O que se testa é o
+        # CONTRATO: o campo existe nas duas pontas, e vale a versão nova ou
+        # null. Esquecer o campo num dos despachos não apareceria no outro.
+        for resposta in (gantt, kb)
+            @test haskey(resposta, "update")
+            @test resposta["update"] === nothing ||
+                  VersionNumber(resposta["update"]) > pkgversion(Perth)
+        end
+
+        # E com uma versão nova no cache, os dois passam a dizer qual é.
+        withenv("PERTH_DATA_DIR" => mktempdir()) do
+            atual = pkgversion(Perth)
+            nova = VersionNumber(atual.major, atual.minor, atual.patch + 1)
+            Perth._update_cache!(nova)
+            g2 = JSON3.read(String(Perth._build_router()(HTTP.Request("GET", "/api/apps")).body))
+            k2 = JSON3.read(String(Perth._kanban_static(
+                HTTP.Request("GET", "/api/apps"), "127.0.0.1").body))
+            @test g2["update"] == string(nova)
+            @test k2["update"] == string(nova)
+        end
     end
 
     @testset "gantt: chat geral" begin
@@ -4209,5 +4232,6 @@ end
     end
 
     include("splash.jl")
+    include("update.jl")
 
 end

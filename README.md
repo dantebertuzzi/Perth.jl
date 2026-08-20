@@ -47,6 +47,22 @@ Optional, and picked up automatically when loaded **before** `Perth.run()`:
 | `QRCoders` | a QR code for the LAN link, in the terminal and in the UI |
 | `CairoMakie` (any Makie backend) | `ganttplot` / `save_chart` for static figures |
 
+`using Perth` says so when a newer release is out — one dim line under the
+entry-point hint, read from the package registry **already on your machine**,
+with no network request of any kind. To ask on the spot:
+
+```julia
+Perth.check_update()      # perth v0.12.0 → 0.13.0 available · ] up Perth
+```
+
+The version tag at the right end of the status bar says the same thing in the
+browser — `0.12.0 → 0.13.0` — in both the Gantt and the Kanban.
+
+The reading is only as fresh as your last `] up`, which is when the local
+registry gets refreshed — a release published minutes ago takes a while to
+show up. `PERTH_UPDATE_CHECK=0` turns off the notice and the background check;
+`Perth.check_update()` still answers when you ask it directly.
+
 ---
 
 ## Sixty seconds

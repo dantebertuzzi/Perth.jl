@@ -617,6 +617,14 @@ button.peer-chip.peer-more:hover { color: var(--ink); }
   user-select: none;
 }
 .version-tag:hover { opacity: 1; }
+/* Saiu versão nova: a etiqueta deixa de ser só informação de rodapé e passa a
+   dizer que existe o que fazer — perde o esmaecido do resto da barra e mostra
+   o número novo depois da seta. Não pisca nem abre nada: continua sendo
+   rodapé, e quem atualiza é quem subiu o servidor, não necessariamente quem
+   está olhando esta tela. */
+.version-tag.has-update { opacity: 1; }
+.version-new { color: var(--green); font-weight: 600; }
+.version-new[hidden] { display: none; }
 .version-tag svg { display: block; flex: none; width: 13px; height: 13px; }
 /* display:inline-flex vence o [hidden] da folha do navegador: enquanto o
    servidor não disse a versão, a etiqueta não pode aparecer vazia */

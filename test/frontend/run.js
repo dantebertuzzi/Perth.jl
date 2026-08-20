@@ -280,9 +280,25 @@ console.log("chrome compartilhado");
     check(tag.hasAttribute("hidden"), p + ": nasce escondida");
     check(tag.querySelector("svg") !== null && tag.querySelector("#version-num"),
           p + ": ícone de etiqueta + número");
+    // o aviso de versão nova mora dentro da mesma etiqueta e nasce escondido:
+    // sem versão nova não pode sobrar seta nem espaço em branco no rodapé
+    const nova = tag.querySelector("#version-new");
+    check(nova !== null && nova.hasAttribute("hidden"),
+          p + ": lugar do aviso de versão nova, escondido até haver uma");
+    check(tag.lastElementChild === nova,
+          p + ": e ele vem depois do número (0.12.0 → 0.13.0)");
     w.PerthI18n.set("pt");
     check(tag.getAttribute("title") === "Versão do Perth",
           p + ": tooltip traduzido");
+    // a dica da versão nova é montada em JS, então nenhum passe do apply()
+    // a encontra no HTML: só o dicionário responde por ela
+    const AVISO =
+      "A newer Perth is out — whoever started the server can update with ] up Perth";
+    for (const l of ["pt", "es", "fr", "zh"]) {
+      w.PerthI18n.set(l);
+      check(w.PerthI18n.t(AVISO) !== AVISO,
+            p + `: dica de versão nova traduzida (${l})`);
+    }
   }
 
   const ui = read("frontend/shared/ui.css");

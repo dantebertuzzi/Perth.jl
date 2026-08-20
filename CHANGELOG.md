@@ -5,6 +5,51 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.13.0] - 2026-08-20
+
+### Added
+- **Perth tells you when a newer Perth is out.** A package that opens a browser
+  tab and a REPL prompt was still leaving "am I on the current version?" as
+  homework — and the answer mattered, because every release so far has moved
+  the plan format forward. `using Perth` now adds one dim line under the
+  entry-point hint when a newer release exists (`↑ ] up Perth · v0.13.0 is
+  out`), and `Perth.check_update()` answers the same question on demand,
+  printing the verdict and returning the newer version (or `nothing` when
+  there is none).
+- **The answer comes from the registry already on your machine — there is no
+  network request.** `~/.julia/registries` holds every published version of
+  Perth, because that is what `Pkg` resolves against; reading it costs no
+  connection, works offline, and sends nothing anywhere. A project-management
+  tool has no business phoning home each time it is loaded. The price is
+  honest and stated in the docstring: the local registry is refreshed by
+  `] up`, so a release published minutes ago takes a while to surface. That is
+  the right trade for a courtesy, which is what this is.
+- **It never happens in front of you.** `__init__` only *reads* an ~80-byte
+  cache (`~/.perth/update-check.json`) — it does not load `Pkg`, does not open
+  a registry and does not block the `using`. Revalidation runs in an `@async`
+  after the entry-point picker has had its say, with a 24 h TTL, and what it
+  learns shows up in the *next* session — the pattern npm and cargo settled
+  on. A failed check writes nothing, so a machine with no registry retries
+  next time instead of caching "I don't know".
+- **The status bar says it too.** The footer's version tag — the one that
+  answers "which Perth is this?" for whoever opened the link and never saw the
+  REPL banner — reads `0.12.0 → 0.13.0` when a newer release exists, in the
+  Gantt and in the Kanban, with a tooltip in all five UI languages. The number
+  rides along on `/api/apps`, the request the tag already makes once at boot,
+  because it is a fact about *this process*, not about the project on screen.
+  The tooltip credits the update to whoever started the server rather than to
+  whoever is reading: with sharing on, the person looking at the tag may be a
+  client on the LAN with no Julia at all. Visiting the route also nudges the
+  background revalidation, which is what makes the notice work at all in a
+  non-interactive session — `julia -e 'Perth.run()'` under systemd never runs
+  the `__init__` path that would otherwise refresh it.
+- **`PERTH_UPDATE_CHECK=0` switches off the notice and the background check**
+  (`Perth.check_update()` still answers when asked directly), and `PERTH_SPLASH=0`
+  already silences the notice along with the rest of the terminal decoration,
+  since the line lives inside the block the hint prints. On a `] dev` checkout
+  the notice drops the `] up Perth` advice — it would not do anything there —
+  and says so instead.
+
 ## [0.12.0] - 2026-08-19
 
 ### Added
