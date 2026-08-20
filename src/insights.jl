@@ -155,28 +155,77 @@ _as_deps(v::AbstractVector) = String.(v)
 _as_deps(v::AbstractString) =
     [String(strip(s)) for s in split(v, r"[;,]") if !isempty(strip(s))]
 
+# Uma referência de dependência com o id trocado, preservando o tipo e o lag:
+# "SS:Projeto+3" com o nome resolvido continua sendo SS com lag 3.
+function _dep_rewrite(d::AbstractString, novo::AbstractString)
+    dep = _parse_dep(d)
+    novo == dep.id && return String(d)
+    pre = dep.type === :SS ? "SS:" : dep.type === :FF ? "FF:" : ""
+    suf = dep.lag == 0 ? "" : (dep.lag > 0 ? "+$(dep.lag)" : string(dep.lag))
+    return pre * novo * suf
+end
+
 """
     add_tasks!(p::Project, table) -> Project
+    add_tasks!(p::Project, csv::AbstractString) -> Project
 
 Append tasks to `p` from any Tables.jl source (`DataFrame`, `CSV.File`,
-a vector of `NamedTuple`s, …). Required column: `name`. Optional
-columns: `start` (`Date` or ISO string), `duration`, `progress`,
-`assignee`, `notes`, `color`, `milestone`, `deadline`, `pinned`,
-`optimistic`, `most_likely`, `pessimistic` (the PERT three-point
-estimate), `parent` and `dependencies` (a vector of ids, or a
-`";"`/`","`-separated string). Persists once at the end — invalid
-parents and dependency references are pruned on save.
+a vector of `NamedTuple`s, …), or from **CSV** given as a file path or as
+the text itself — no CSV package needed, and the reader takes what a
+spreadsheet actually produces: `;` as well as `,`, a UTF-8 BOM, quoted
+fields with separators and line breaks inside them.
+
+Required column: `name`. Optional columns: `id`, `start` (`Date` or ISO
+string), `duration`, `progress`, `assignee`, `notes`, `color`, `cost`,
+`effort`, `status`, `milestone`, `deadline`, `pinned`, `optimistic`,
+`most_likely`, `pessimistic` (the PERT three-point estimate), `parent` and
+`dependencies` (a vector of ids, or a `";"`/`","`/space-separated string).
+Columns Perth does not know are ignored — a real spreadsheet carries
+columns that belong to whoever wrote it.
+
+**`parent` and `dependencies` may name a task by `id` or by `name`.** The
+CSV Perth exports cites ids; the spreadsheet a person writes cites names,
+because nobody types `a3f81c02` into a cell. Both are resolved — tasks
+arriving in this table first, then tasks already in the project — so an
+exported file comes back whole and a hand-made sheet walks in. A reference
+that matches neither is dropped on save, as it always was.
+
+An `id` is honoured when it is free, which is what makes the export
+round-trip: the same file re-imported into a project that already has
+those ids gets fresh ones instead, and its internal references follow the
+new copies rather than pointing back at the old ones.
 
 The estimate is recorded, not applied: `duration` stays whatever the
 table says until [`pert!`](@ref) runs.
 """
-function add_tasks!(p::Project, table)
+add_tasks!(p::Project, table) = (_append_tasks!(p, table);
+                                 _with_state(st -> _save!(st, p)); p)
+
+# O corpo de add_tasks! sem gravar. Existe separado porque a importação de
+# CSV monta um projeto que AINDA não está registrado no estado: gravar aqui
+# escreveria o arquivo de um projeto que o id ainda pode mudar, e deixaria
+# um órfão no diretório de dados quando mudasse.
+function _append_tasks!(p::Project, table)
     Tables.istable(table) ||
         throw(ArgumentError("add_tasks!: argument is not a Tables.jl table"))
-    for row in Tables.rows(table)
+
+    # Mapas do que JÁ está no projeto, feitos antes de anexar nada: uma
+    # referência pode apontar para uma tarefa que já existia (anexar
+    # subtarefas a uma fase que está lá) tanto quanto para uma da tabela.
+    ids_proj = Set(t.id for t in p.tasks)
+    nomes_proj = Dict{String,String}()
+    for t in p.tasks
+        get!(nomes_proj, t.name, t.id)          # nome repetido: vale o primeiro
+    end
+
+    novas = GanttTask[]
+    pedidos = Dict{String,String}()             # id pedido na tabela -> id que ficou
+    nomes = Dict{String,String}()               # nome na tabela      -> id
+    tomados = copy(ids_proj)
+    for (n, row) in enumerate(Tables.rows(table))
         name = _cell(row, :name, nothing)
         (name === nothing || isempty(strip(String(name)))) &&
-            throw(ArgumentError("add_tasks!: every row needs a non-empty `name`"))
+            throw(ArgumentError("add_tasks!: row $(n) has no `name` — every row needs one"))
         t = GanttTask(;
             name = String(name),
             start = _as_date(_cell(row, :start, Dates.today())),
@@ -190,16 +239,51 @@ function add_tasks!(p::Project, table)
             parent = String(_cell(row, :parent, "")),
             deadline = _as_deadline(_cell(row, :deadline, nothing)),
             pinned = Bool(_cell(row, :pinned, false)),
+            cost = Float64(_cell(row, :cost, 0.0)),
+            effort = Float64(_cell(row, :effort, 0.0)),
+            status = String(_cell(row, :status, "")),
             optimistic = Int(_cell(row, :optimistic, 0)),
             most_likely = Int(_cell(row, :most_likely, 0)),
             pessimistic = Int(_cell(row, :pessimistic, 0)),
         )
         _normalize!(t)
-        push!(p.tasks, t)
+        # Id pedido só é atendido se estiver livre. Ocupado, a tarefa fica
+        # com o id gerado e o pedido passa a APONTAR para ela: reimportar o
+        # mesmo arquivo faz cópias novas ligadas entre si, e não cópias
+        # penduradas nas tarefas antigas.
+        pedido = strip(String(_cell(row, :id, "")))
+        isempty(pedido) || (pedido in tomados || (t.id = String(pedido)))
+        push!(tomados, t.id)
+        isempty(pedido) || (pedidos[String(pedido)] = t.id)
+        get!(nomes, t.name, t.id)
+        push!(novas, t)
     end
-    _with_state(st -> _save!(st, p))
+
+    resolve(ref) =
+        get(pedidos, ref) do
+            get(nomes, ref) do
+                ref in ids_proj ? ref : get(nomes_proj, ref, ref)
+            end
+        end
+    for t in novas
+        isempty(t.parent) || (t.parent = resolve(t.parent))
+        t.dependencies = [_dep_rewrite(d, resolve(_parse_dep(d).id))
+                          for d in t.dependencies]
+    end
+
+    append!(p.tasks, novas)
     return p
 end
+
+# CSV como caminho ou como o próprio texto. A ambiguidade é resolvida do
+# jeito que ela se resolve na prática: texto de CSV tem quebra de linha,
+# caminho não — e só se pergunta ao sistema de arquivos quando a string
+# ainda pode ser um nome de arquivo.
+add_tasks!(p::Project, csv::AbstractString) =
+    add_tasks!(p, _csv_task_rows(_csv_looks_path(csv) ? read(csv, String) : csv))
+
+_csv_looks_path(s::AbstractString) =
+    !occursin('\n', s) && ncodeunits(s) < 4096 && isfile(s)
 
 # ---------------------------------------------------------------------------
 # Superalocação de responsáveis

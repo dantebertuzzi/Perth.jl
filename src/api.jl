@@ -155,9 +155,18 @@ end
 
 function _import_project(req::HTTP.Request)
     body = String(req.body)
-    # Sniff do formato: JSON legado começa com '{'; senão, .perth.jl
+    # Sniff do formato: JSON legado começa com '{'; planilha se a primeira
+    # linha for um cabeçalho com a coluna `name`; senão, .perth.jl.
+    #
+    # O nome do projeto vem da QUERY porque o CSV não tem onde carregá-lo: é
+    # uma tabela de tarefas, não um projeto. O navegador manda o nome do
+    # arquivo, que é onde a exportação tinha guardado o nome do projeto — a
+    # volta pega de onde a ida deixou.
+    nome = strip(get(HTTP.URIs.queryparams(HTTP.URI(req.target)), "name", ""))
     p = try
-        startswith(lstrip(body), "{") ? JSON3.read(body, Project) :
+        s = lstrip(body)
+        startswith(s, "{") ? JSON3.read(body, Project) :
+            _csv_looks_like(s) ? _project_from_csv(body, nome) :
             _parse_project_source(body)
     catch err
         msg = err isa ArgumentError ? err.msg : "unrecognized project file"
@@ -370,6 +379,42 @@ function _post_schedule(req::HTTP.Request)
     return _json(p)
 end
 
+# Nivela o projeto (level!) e devolve o estado atualizado. Irmão de
+# _post_schedule: o mesmo motor visto do outro lado — lá a restrição é
+# dependência, aqui é capacidade —, e por isso a mesma forma de resposta.
+function _post_level(req::HTTP.Request)
+    id = HTTP.getparams(req)["id"]
+    p = _with_state(st -> get(st.projects, id, nothing))
+    p === nothing && return _error("not found"; status = 404)
+    antes = Dict(t.id => t.start for t in p.tasks)
+    try
+        level!(p)
+    catch err
+        # Ciclo de dependência e "ninguém declarou capacidade" chegam como
+        # ArgumentError; calendário de dias úteis sem BusinessDays no
+        # servidor, como ErrorException. Os três são coisas que o plano diz,
+        # não falhas — 409 com o texto do motor, como no auto-schedule.
+        err isa ArgumentError && return _error(err.msg; status = 409)
+        err isa ErrorException && return _error(err.msg; status = 409)
+        rethrow()
+    end
+    # Resumo derivam dos filhos: um resumo que andou não é uma tarefa que
+    # alguém moveu, é a consequência de uma que moveu.
+    n = count(t -> !_has_children(p, t.id) && get(antes, t.id, t.start) != t.start,
+              p.tasks)
+    # O que sobrou merece a mesma linha do diário que o que foi resolvido: um
+    # plano com mais trabalho do que capacidade não nivela, e o registro que
+    # só conta o sucesso é o registro que mente. Só conta quem declarou
+    # capacidade — o resto o motor nem tentou.
+    sobra = length(unique((r.assignee, r.date)
+                          for r in workload(p) if r.over && r.capacity > 0))
+    _with_state(st -> _log_activity!(st, _actor(req), "edit",
+        "levelled $(n) task$(n == 1 ? "" : "s")" *
+        (sobra == 0 ? "" : ", $(sobra) day$(sobra == 1 ? "" : "s") still over") *
+        " — $(p.name)"))
+    return _json(p)
+end
+
 # Aplica as estimativas de três pontos (pert!) e devolve o projeto —
 # irmão de _post_schedule: a UI recarrega o resultado do motor em vez de
 # recalcular te no navegador.
@@ -413,32 +458,17 @@ function _launch_kanban(::HTTP.Request)
     end
 end
 
-# Exporta as tarefas como CSV (planilha universal). Escapa aspas/;\n.
+# Exporta as tarefas como CSV (planilha universal). A serialização vive em
+# src/csv.jl, ao lado da leitura: ida e volta no mesmo arquivo é o que
+# mantém as duas de acordo sobre o que é uma coluna.
 function _export_csv(req::HTTP.Request)
     id = HTTP.getparams(req)["id"]
     p = _with_state(st -> get(st.projects, id, nothing))
     p === nothing && return _error("not found"; status = 404)
-    esc(x) = begin
-        v = string(x)
-        (occursin(",", v) || occursin("\"", v) || occursin("\n", v)) ?
-            "\"" * replace(v, "\"" => "\"\"") * "\"" : v
-    end
-    io = IOBuffer()
-    # effort ao lado de cost: quem exporta para conferir a carga de alguém
-    # numa planilha precisa do número que a carga usa. Coluna nova no fim do
-    # grupo de números, antes das estruturais — quem lê por nome não se mexe.
-    println(io, "id,name,start,duration,deadline,pinned,progress,assignee,cost," *
-                "effort,status,milestone,parent,dependencies,notes")
-    for t in p.tasks
-        println(io, join(esc.([t.id, t.name, t.start, t.duration,
-                               something(t.deadline, ""), t.pinned, t.progress,
-                               t.assignee, t.cost, t.effort, t.status, t.milestone,
-                               t.parent, join(t.dependencies, " "), t.notes]), ","))
-    end
     fname = replace(p.name, r"[^\w-]" => "_") * ".csv"
     return HTTP.Response(200, ["Content-Type" => "text/csv; charset=utf-8",
         "Content-Disposition" => "attachment; filename=\"$(fname)\""],
-        take!(io))
+        _to_csv(p))
 end
 
 # Renderiza o chart via extensão Makie (save_chart). Sem a extensão
@@ -693,6 +723,7 @@ function _build_router()
     HTTP.register!(router, "PUT",    "/api/projects/{id}/path",   _handled(_put_path))
     HTTP.register!(router, "GET",    "/api/projects/{id}/cpm",    _handled(_get_cpm))
     HTTP.register!(router, "POST",   "/api/projects/{id}/schedule", _handled(_post_schedule))
+    HTTP.register!(router, "POST",   "/api/projects/{id}/level",   _handled(_post_level))
     HTTP.register!(router, "POST",   "/api/projects/{id}/pert",    _handled(_post_pert))
     HTTP.register!(router, "GET",    "/api/projects",             _handled(_list_projects))
     HTTP.register!(router, "POST",   "/api/projects",             _handled(_create_project))

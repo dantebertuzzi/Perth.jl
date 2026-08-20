@@ -11,58 +11,35 @@ piece of code it should lean on.
 
 ## Next up
 
-### Levelling: doing something about the overload, not just naming it
+### The note the card already got
 
-`schedule!` pushes successors so the plan respects **dependencies**. Nothing
-pushes anything so it respects **capacity** — which now exists, is measured
-per day, and is reported in four places. Perth diagnoses the overload
-precisely and then leaves the person to drag the bar by hand, which is the
-half of "diagnose → act" that never got built.
+A kanban card opens as a document: a description that takes lists and fenced
+code blocks, a pasted screenshot shrunk in the browser and stored by its own
+hash, a dialog that saves on every way out of it. A Gantt task has `notes` —
+one line of inline markdown in a popover — and no way to hold a picture at
+all. That is the wrong way round as often as not: the screenshot of the broken
+build, the paragraph explaining why a task slipped and the three lines of
+config that explain the estimate are about *the plan*, and the plan is the side
+that cannot hold them.
 
-`level!(p)` would move what it is allowed to move until nobody is over
-capacity, and return the project — the same shape `schedule!` and `pert!`
-already established, where the engine proposes and the caller decides.
+*Lean on:* almost none of this is new work. `renderBlocks` in
+`frontend/shared/inline.js` is already shared code — it is the block layer over
+the very tokeniser the note popover calls, and the popover calls `render`
+instead only because nothing asked it not to. `src/assets.jl` addresses blobs
+by content under `_state().data_dir`, which is the same directory the Gantt
+already writes projects into, so the bytes need no second home and no second
+garbage collector. The cap is the one real widening: `t.notes` goes through
+`_cap_text` (2 000 characters, the cap of every field that is also an
+identifier) and would have to reach `_cap_body`'s 20 000, which is the number
+the card's dialog counts down to.
 
-Two decisions come *before* the first line of code, and both are the kind
-that is expensive to rediscover:
-
-- **Which priority rule.** Levelling is NP-hard, so every tool picks a
-  heuristic and lives with it: least slack first, earliest deadline first,
-  longest task first. Perth has to choose one, say which one in the
-  docstring, and never pretend it is the optimum. `slack(p)` already computes
-  the number the most defensible rule needs.
-- **What may move.** `pinned` means a date somebody promised, so it stays —
-  and a plan that cannot be levelled without moving a pin should say so
-  rather than move it. Dependencies still bind. What is left to give is the
-  slack, which is exactly what the CPM already measures.
-
-*Lean on:* `_over_day` in `src/insights.jl` is the single definition of an
-overloaded day, and `_workload_rows` already produces them per person per
-day — levelling is a loop that asks it, moves one task, and asks again. The
-stopping condition is the honest hard part: a plan with more work than
-capacity *cannot* be levelled, and the function has to end saying "these
-three days still do not fit" instead of looping or lying.
-
-*Careful:* it changes dates, so it is one undo entry and one save, like
-auto-schedule. And it only means anything where somebody declared a
-capacity — on a plan with none, the old two-tasks-on-a-day rule has nothing
-to level against, and the honest answer is to do nothing and say why.
-
-### Hide what does not match, not just dim it
-
-The highlight select and the search *dim* the rows that do not match, which is
-the right answer for a plan of thirty tasks: you keep seeing where Ana's work
-sits among everyone else's. At a hundred and forty it stops working — the
-matches are three rows scattered down a screen of grey, and scrolling past what
-you asked to ignore is most of the reading. A "only these" switch next to the
-select is the same question asked with the other answer.
-
-*Lean on:* `taskMatchesHighlight` in `frontend/app.js` is already the single
-predicate the table, the bars and the resource panel consult — hiding is that
-same predicate applied one step earlier, where rows are built. The care is in
-what a hidden row does to what is drawn *between* rows: dependency arrows to a
-task that is no longer on screen, and a summary whose children all vanished
-(hide the parent too, or it becomes a bar with nothing under it).
+*Careful:* the routes are the genuinely kanban-only part. `POST /api/asset` and
+`GET /asset/<name>` are registered by the kanban server, behind the kanban's
+share gate and its per-IP permission matrix; the Gantt server has a gate and a
+matrix of its own. The header of `src/background.jl` says why this is not a
+copy-paste: these servers listen on 0.0.0.0, and an upload is a write surface
+on the LAN, so the question is which gate guards the store when two doors reach
+it — not which handler to duplicate.
 
 ## Also worth doing
 
@@ -72,24 +49,17 @@ PNG export exists, but a plan ends up as an attachment in a report and as paper
 on a meeting table. A print stylesheet — landscape, page breaks between row
 groups, legend, no menubar — is cheap and changes where Perth can go.
 
-### CSV import
-
-CSV export exists; import does not. That is the missing half, and a spreadsheet
-is where almost every plan is born. Name, start, duration, assignee, parent:
-five columns and the project walks in.
-
-*Lean on:* `_import_project` in `src/api.jl` already sniffs JSON vs `.perth.jl`;
-CSV is a third branch. Reuse `add_tasks!`, which already validates rows.
-
 ### What the S-curve already knows, said as numbers
 
 `_scurve` in `src/insights.jl` computes planned and earned work per day, with
 `cost` when it is set and person-days otherwise. Two divisions on numbers that
 are already there — earned over planned, earned over the cost so far — are the
 two readings every report asks for: are we ahead or behind, and is it costing
-what we said. Today the curve says it in a shape, which is honest but has to be
-read; a plan that is 12% behind schedule and 4% under cost deserves the
-sentence, next to the shape.
+what we said. The tile already prints both operands — *planned to date* and
+*earned to date* sit in the legend under the curve — so what is missing is not
+the numbers, it is the division and the sentence it makes: a plan that is 12%
+behind schedule and 4% under cost deserves to be told that, not to have it
+reconstructed by whoever is reading.
 
 *Lean on:* `_scurve` already returns both series — work and cost, each in one
 unit, with `has_cost` saying whether the second means anything — so the tile is
@@ -132,9 +102,11 @@ snapshot needs a source, not a new picture.
 - **A task's own thread** — a task carries `notes`, which is one person's text
   edited over the top of the last person's. The kanban already has a
   conversation that persists and reaches everyone; a note that answers "why did
-  this slip?" wants that shape, not a text field. (`src/presence.jl` for the
-  channel, `shared/inline.js` for the same one-line markdown the note popover
-  now renders.)
+  this slip?" wants that shape, not a text field. Giving the note a document
+  (see *The note the card already got* above) does not answer this and should
+  not be mistaken for it: a field with room for thirty lines is still one
+  person's text overwriting the last person's. (`src/presence.jl` for the
+  channel, `frontend/shared/inline.js` for the markdown both ends render.)
 - **Undo that survives a reload, and other machines** — the stack lives in the
   browser (`pushUndo`), so it is emptied by F5 and knows nothing about the
   change the other machine just made. With sharing on, "undo that" is about

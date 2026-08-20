@@ -23,6 +23,9 @@ Perth.kanban(share = true)  # Kanban shared on your LAN, with a QR code
   you hand to a client.
 - **Real scheduling**: CPM, critical path, slack, dependency lag and
   SS/FF link types, business-day calendars via BusinessDays.jl.
+- **Resource levelling**: [`level!`](@ref) delays what has slack until
+  nobody is over their declared daily `capacity` — least slack first, so the
+  critical path and anything with a deadline give way last.
 - **Commitments vs. plan**: a task's `deadline` never moves it — busting
   one turns the slack of that task and of everything feeding it negative
   ([`deadline_slip`](@ref)); a `pinned` start is left alone by
@@ -32,4 +35,7 @@ Perth.kanban(share = true)  # Kanban shared on your LAN, with a QR code
 - **Analytics**: S-curve (planned vs. earned), daily load per person
   ([`workload`](@ref) and the resource panel), kanban flow metrics,
   activity log, CSV, iCalendar ([`icalendar`](@ref)) and PNG/PDF export.
+- **A spreadsheet walks in**: [`add_tasks!`](@ref) reads CSV from a path or a
+  string — no CSV package needed — and `parent`/`dependencies` may name tasks
+  by name, so a hand-written sheet imports as readily as an exported one.
 - **Five UI languages**: English, Português, Español, Français, 中文.

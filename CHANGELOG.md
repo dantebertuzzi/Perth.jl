@@ -5,6 +5,120 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **`level!` — Perth stops merely naming the overload and does something about
+  it.** `schedule!` pushes successors so the plan respects **dependencies**;
+  `level!` pushes so it respects **capacity**. This was the missing half of
+  0.10.0: that release spent its whole cycle on measuring — `capacity` per
+  person, `effort` per task, one definition of an overloaded day, and
+  `overallocations` rewritten on top of it — and what came out was Perth saying
+  precisely that Ana's Tuesday holds 24 hours in a day of 8, and then leaving
+  the person to drag the bar by hand. *Edit → Level resources*, the **L** key,
+  `POST /api/projects/{id}/level`.
+- **The rule is least slack first**, said out loud in the docstring and never
+  dressed up as the optimum: levelling is NP-hard, so every tool picks a
+  heuristic and lives with it. This is the most defensible of the three usual
+  candidates because the slack is a number the CPM already computes — nothing
+  new to invent or to keep in sync; because a task on the critical path is not
+  delayed on account of one that is not; and because a task with a tight
+  `deadline` already arrives with low or negative slack, the backward pass
+  having lowered its late finish. **A deadline therefore comes out protected
+  for free**, with no second rule saying so. Ties in slack are the common case —
+  parallel tasks all have the same — and there the task carrying no promise is
+  the one that gives way.
+- **Three things never move**, each for a different reason. `pinned` is a date
+  somebody promised. A **milestone** carries no work to redistribute — the
+  weight it appears to have in the load is only the default of a task that never
+  declared `effort` — so moving one would change a date somebody reads without
+  relieving anything. And a task **heavier on its own than the person's whole
+  day** would overload any day it landed on, so pushing it would just walk the
+  problem down the calendar.
+- **Whatever is left over stays in plain sight.** A plan with more work than
+  capacity *cannot* be levelled, and the function does not pretend otherwise:
+  when it returns, every day still `over` in `workload` is a day whose remaining
+  work **cannot move** — the same definition, in the same numbers that reported
+  the overload in the first place, with no second report free to disagree with
+  the first. The toast and the activity log say how many days those are, instead
+  of answering "done" about a plan that is still broken.
+- A day that cannot be saved is still **emptied of everything that can leave
+  it**. If a 40-hour task alone blows up an 8-hour day, that day is lost either
+  way — but the person does not do the other three tasks on it either, and
+  keeping them there only because their neighbour is too big would be a
+  discontinuity with no defence: the same task would leave the day when it
+  shared it with a normal task and stay when it shared it with a monstrous one.
+- **CSV import — the other half of an export that had been there all along.**
+  A spreadsheet is where almost every plan is born, and until now Perth could
+  only read a plan that was already a Perth plan. *File → Import* takes a `.csv`
+  beside the `.perth.jl` it always took, and `add_tasks!(p, "plan.csv")` does the
+  same from the REPL — from a path or from the text itself.
+- **No CSV dependency.** Reading fifteen columns does not pay for one, and the
+  package already wrote its CSV by hand, so the reader is the pair of what was
+  already there rather than an exception to it. It covers what a spreadsheet
+  actually emits: quotes, doubled quotes inside quotes, separators and line
+  breaks *inside* a field, CRLF, a last line with no newline, blank lines in the
+  middle. Plus the two concessions to Excel that are why half the world's CSVs
+  open nowhere: the **UTF-8 BOM** (which would otherwise name the first column
+  `id` with an invisible character glued to the front, and lose it) and the
+  **semicolon** separator it writes in Portuguese, Spanish and French — sniffed
+  from the header, along with the decimal comma that comes with the same file.
+- **`parent` and `dependencies` may name a task by name, not only by id.** The
+  CSV Perth exports cites ids; the spreadsheet a person writes cites names,
+  because nobody types `a3f81c02` into a cell. Both resolve — tasks arriving in
+  the same table first, then tasks already in the project — so an exported file
+  comes back whole *and* a hand-made sheet walks in. The lag and the link type
+  survive the substitution: `SS:Design+3` stays start-to-start with three days
+  of lag once `Design` becomes an id.
+- **An error says which cell.** *CSV row 4, column `duration`: expected a whole
+  number, got "tres"* — in a sheet of two hundred rows, a type name with no
+  address is a treasure hunt. A file with no `name` column is told what it does
+  have, instead of being handed to the `.perth.jl` parser to be answered with a
+  complaint about Julia expressions.
+
+- **Hide what does not match, instead of only dimming it** — *Only these*, next
+  to the highlight select, or the **O** key. Dimming is the right answer for a
+  plan of thirty tasks: you keep seeing where Ana's work sits among everybody
+  else's. At a hundred and forty it stops working — the matches are three rows
+  scattered down a screen of grey, and scrolling past what you asked to ignore
+  becomes most of the reading. The switch is the same question asked with the
+  other answer, and it covers the highlight and the search box together, because
+  those were already two ways of asking it.
+- **Ancestors come along, and nobody else does.** A summary over a task that
+  matched stays on screen — dropping it would take matching children with it,
+  and the indentation left behind would describe a hierarchy that is not there.
+  Nothing is rescued in the other direction: a summary whose children all
+  vanished goes too, which the rule produces without a clause for it, since it
+  is nobody's ancestor any more. A summary that matches *by itself* stays by
+  itself, because revealing its children would break the filter's promise
+  exactly where it matters most — highlighting Ana and being handed Bruno's
+  tasks because the phase carries her name.
+- A lane whose tasks all went away is not drawn as an empty heading, and a
+  filter that leaves nothing says so in the table instead of leaving a blank
+  screen that reads as a bug. Revealing a task the filter is hiding — from a
+  warning, from the search, from a click in the other tool — switches it off,
+  for the same reason collapsing already opens: pointing at a row that is not on
+  screen is worse than not pointing.
+
+### Changed
+- **Levelling only touches people who declared a capacity**, and a plan where
+  nobody declared one now raises `ArgumentError` (409 on the route) instead of
+  rearranging itself. Without a capacity, "overloaded day" means *two tasks on
+  the same day* — levelling against that rule would serialise an entire plan
+  into single file, which is the opposite of what anyone clicking *level* is
+  asking for.
+- **`add_tasks!` now reads `id`, `cost`, `effort` and `status`** — four columns
+  the CSV export had always written and the importer had always dropped, which
+  is what made a round-trip lossy. Preserving the `id` is what keeps the plan's
+  *shape*: without it, `parent` and `dependencies` pointed at tasks that no
+  longer existed and were pruned on the next save. An id already taken yields to
+  a fresh one, and the references in that same table follow the new copies — so
+  importing the same file twice gives two independent plans instead of a second
+  set of tasks hanging off the first.
+- The CSV serialisation moved from `src/api.jl` to a new `src/csv.jl`, next to
+  the reader. Both halves of a round-trip in one file is what keeps them
+  agreeing on what a column is.
+
 ## [0.11.0] - 2026-08-18
 
 ### Added

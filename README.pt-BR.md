@@ -114,6 +114,7 @@ Planilha não faz isso, e Gantt de mesa exige exportar antes.
 | | |
 |---|---|
 | **Motor CPM** | `schedule!`, `critical_path`, `slack`, `project_finish` |
+| **Nivelamento de recursos** | `level!` — adia o que tem folga até ninguém passar da capacidade diária declarada, menor folga primeiro |
 | **Dependências** | fim-início por padrão; `"SS:id"`, `"FF:id"` e defasagem `"id+3"` |
 | **Dias úteis** | `set_calendar!(p, "Brazil")` — fim de semana e feriado deixam de contar |
 | **EAP (WBS)** | dê um pai a uma tarefa; o pai vira resumo e agrega datas e avanço |
@@ -140,7 +141,9 @@ Planilha não faz isso, e Gantt de mesa exige exportar antes.
 - **Faixas do calendário** — sombreie um trecho com nome atrás do gráfico: um sprint,
   uma parada, a estação de chuvas. É anotação, nunca programação.
 - **Raias** por pessoa ou setor, **resumos recolhíveis** (e o que você dobrou
-  sobrevive ao F5), **filtro de destaque** e **modo apresentação**.
+  sobrevive ao F5), **filtro de destaque** — que escurece o que não casa, ou
+  esconde de vez (*Só estes*, `O`) quando o plano já é grande o bastante para
+  rolar pelo cinza ser a maior parte da leitura — e **modo apresentação**.
 - **Notas com markdown**: o pontinho vermelho abre a nota, renderizando `**negrito**`,
   `*itálico*`, `` `código` ``, `~~riscado~~` e links.
 - Nada no gráfico é escrito por cima de nada: as linhas abrem vão onde cruzam um
@@ -164,6 +167,12 @@ Exporte o projeto (`.perth.jl`), as tarefas (**CSV**), os marcos e prazos
 (**iCalendar**), o gráfico (**PNG**) ou uma figura estática pelo Makie (`ganttplot`,
 `save_chart`). E o **espelho em arquivo**: aponte o projeto para um caminho e cada
 salvamento regrava o `.perth.jl` ali — o `git diff` mostra o que mudou no plano.
+
+**E de volta para dentro.** Um CSV também entra — *Arquivo → Importar*, ou
+`add_tasks!(p, "plano.csv")` no REPL, sem pacote de CSV para instalar. Uma linha por
+tarefa, uma coluna `name`, e o que mais você tiver; `parent` e `dependencies` podem
+citar a tarefa pelo **nome**, então a planilha que alguém escreveu de verdade entra
+tão bem quanto o arquivo que o Perth exportou.
 
 ---
 
@@ -401,7 +410,6 @@ Sem framework, sem etapa de build, sem `node_modules`: o frontend é JS e CSS pu
 servidos pelo mesmo processo Julia. Três suítes seguram a barra — Julia
 (`Pkg.test()`), jsdom para lógica de DOM, e um Chrome sem interface de verdade para
 geometria, cadeia de eventos e medição de sobreposição.
-
 ---
 
 ## Limitações conhecidas
@@ -410,8 +418,11 @@ geometria, cadeia de eventos e medição de sobreposição.
   projetos; a chave de acesso é uma porta, não um login.
 - **Local por opção.** Sem nuvem, sem contas, sem sincronização entre máquinas além
   da rede local — o arquivo é a sincronização.
-- **Nivelamento de recursos não é automático.** O Perth aponta a sobrecarga; ele não
-  a resolve por você.
+- **O nivelamento é uma heurística, e precisa de capacidade declarada.** `level!`
+  move primeiro as tarefas com mais folga — uma regra defensável, não o ótimo, porque
+  o ótimo é NP-difícil. Só mexe em quem tem `capacity` declarada, e um plano com mais
+  trabalho do que capacidade volta com os dias que continuam sem caber marcados, em
+  vez de rearranjado caladamente.
 
 O que vem a seguir está no [ROADMAP.md](ROADMAP.md), com o raciocínio de cada item.
 Issues e contribuições são bem-vindas — inclusive me contar que um plano seu quebrou

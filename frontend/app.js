@@ -217,6 +217,7 @@ const el = {
   fbHint: $("#fb-hint"),
   fbChoose: $("#fb-choose"),
   highlightSelect: $("#highlight-select"),
+  onlyMatch: $("#only-match"),
   groupSelect: $("#group-select"),
   taskSearch: $("#task-search"),
   warningsChip: $("#warnings-chip"),
@@ -236,7 +237,7 @@ const el = {
 /* Configurações de interface (painel estilo VitePress na menubar)      */
 /* ------------------------------------------------------------------ */
 
-const UI_DEFAULTS = { density: "cozy", tableWidth: 380, weekends: true, labels: true, baseline: true, hideCursors: false, hideBackground: false };
+const UI_DEFAULTS = { density: "cozy", tableWidth: 380, weekends: true, labels: true, baseline: true, hideCursors: false, hideBackground: false, onlyMatch: false };
 let ui = { ...UI_DEFAULTS };
 try {
   ui = { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem("perth-ui") || "{}") };
@@ -256,6 +257,7 @@ function applyUI() {
   $("#set-hide-cursors").setAttribute("aria-pressed", String(ui.hideCursors));
   document.documentElement.classList.toggle("hide-remote-cursors", ui.hideCursors);
   $("#set-hide-bg").setAttribute("aria-pressed", String(ui.hideBackground));
+  el.onlyMatch.setAttribute("aria-pressed", String(ui.onlyMatch));
   applyBackground();          // sem argumento: só redesenha com o que já se sabe
 }
 
@@ -773,7 +775,7 @@ const WRITE_ACTIONS = new Set([
   "people", "bands", "markers",
   "new-task", "delete-task", "duplicate-task", "bulk-edit",
   "set-baseline", "clear-baseline", "undo", "redo",
-  "auto-schedule", "apply-pert",
+  "auto-schedule", "level", "apply-pert",
 ]);
 
 // Tentativa de edição de quem só pode olhar: recusa dizendo por quê — o
@@ -1548,18 +1550,63 @@ function hiddenByCollapse(t, byId) {
   return false;
 }
 
+/* Existe filtro para "só estes" responder? Destaque e busca são as duas
+ * formas da mesma pergunta, e taskMatchesHighlight já as soma — aqui só
+ * interessa saber se ALGUMA das duas está ligada, porque sem nenhuma o
+ * botão esconderia o vazio e a tela ficaria igual. */
+const temFiltro = () => !!state.highlight || !!state.search;
+
+/* Quem sobrevive ao "só estes": quem casa, mais os ANCESTRAIS de quem casa.
+ *
+ * Os ancestrais entram porque um resumo é contêiner, não trabalho: tirá-lo
+ * levaria junto filhos que casaram, e a indentação restante contaria uma
+ * hierarquia falsa — uma tarefa de terceiro nível encostada na margem, como
+ * se fosse de primeiro. Na direção contrária ninguém é resgatado: um resumo
+ * cujos filhos sumiram todos sai também, e é justamente o que a regra faz
+ * sem precisar de cláusula, porque ele não é ancestral de ninguém que ficou.
+ *
+ * O resumo que casa por si (a busca achou o nome da fase) fica — sozinho, se
+ * for o caso. Não é um agregado sem parcelas por acidente: é a linha que a
+ * pessoa pediu, e revelar os filhos junto quebraria a promessa do filtro no
+ * caso em que ele mais importa (destacar a Ana e receber as tarefas do
+ * Bruno porque a fase tem o nome dela). */
+function idsQueFicam() {
+  const tasks = state.current?.tasks || [];
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const fica = new Set();
+  for (const t of tasks) {
+    if (!taskMatchesHighlight(t)) continue;
+    fica.add(t.id);
+    // parar no primeiro ancestral já dentro é seguro: quem entra traz a
+    // linhagem inteira junto, então acima dele já está tudo lá
+    for (let p = byId.get(t.parent); p && !fica.has(p.id); p = byId.get(p.parent)) {
+      fica.add(p.id);
+    }
+  }
+  return fica;
+}
+
 function displayRows() {
   const tasks = state.current?.tasks || [];
+  // O filtro entra AQUI, uma vez, e não em cada desenho: tabela, barras,
+  // navegação por teclado e seleção leem todos esta lista, então esconder
+  // aqui é esconder em todo lugar — inclusive nas setas de dependência, que
+  // já pulam quem não tem linha (o mesmo caminho de uma raia fechada).
+  const fica = ui.onlyMatch && temFiltro() ? idsQueFicam() : null;
+  const passa = (t) => !fica || fica.has(t.id);
   if (!state.groupBy) {
-    if (!state.wbsClosed.size) return tasks.map((task) => ({ kind: "task", task }));
+    if (!state.wbsClosed.size) {
+      return tasks.filter(passa).map((task) => ({ kind: "task", task }));
+    }
     const byId = new Map(tasks.map((t) => [t.id, t]));
-    return tasks.filter((t) => !hiddenByCollapse(t, byId))
+    return tasks.filter((t) => passa(t) && !hiddenByCollapse(t, byId))
                 .map((task) => ({ kind: "task", task }));
   }
 
   const raias = new Map();
   for (const t of tasks) {
     if (state.wbs?.summary.has(t.id)) continue;
+    if (!passa(t)) continue;      // raia que ficou sem tarefa nem chega a existir
     const k = laneKeyOf(t);
     if (!raias.has(k)) raias.set(k, []);
     raias.get(k).push(t);
@@ -1594,6 +1641,28 @@ function renderTable() {
     el.taskRows.appendChild(row.kind === "lane" ? laneRow(row)
                                                 : taskRow(row.task, ++n));
   }
+  // Tela vazia por causa de um botão é a tela parecendo quebrada: o plano
+  // continua inteiro, é o filtro que não deixou passar ninguém, e quem
+  // desligar precisa saber que é ele.
+  if (!n && ui.onlyMatch && temFiltro() && state.current?.tasks.length) {
+    const vazio = document.createElement("div");
+    vazio.className = "tt-empty";
+    vazio.textContent = T("Nothing matches — the plan is still there, the filter is hiding it.");
+    el.taskRows.appendChild(vazio);
+  }
+}
+
+/* O interruptor. É modo, não ação: fica ligado enquanto a pessoa troca de
+ * filtro, e sobrevive ao F5 como o zoom e o tema — quem trabalha num plano
+ * de cento e quarenta tarefas não quer religá-lo a cada busca. */
+function toggleOnlyMatch() {
+  ui.onlyMatch = !ui.onlyMatch;
+  saveUI();
+  applyUI();
+  pruneHiddenSelection();     // o que sumiu da tela não continua selecionado
+  redrawSelection();
+  renderTable();
+  renderChart();
 }
 
 /* Cabeçalho de raia: quem é, o que faz, quantas tarefas. A linha inteira
@@ -5476,8 +5545,16 @@ el.importFile.addEventListener("change", async () => {
   try {
     const text = await file.text();
     if (!text.trim()) throw new Error("empty file");
-    // .perth.jl ou JSON legado: o servidor detecta e valida (parser restrito)
-    const p = await api("/api/import", { method: "POST", body: text });
+    /* .perth.jl, JSON legado ou planilha: o servidor detecta e valida (o .jl
+     * passa por parser restrito, o CSV por um leitor que só faz células).
+     *
+     * O nome do arquivo viaja junto porque uma tabela de tarefas não carrega
+     * o nome do plano — e é justamente onde a exportação o tinha guardado
+     * ("Obra Norte" vira Obra_Norte.csv). Sem extensão: quem batizou o
+     * projeto não escreveu ".csv" no nome dele. */
+    const nome = file.name.replace(/\.[^.]+$/, "").trim();
+    const p = await api(`/api/import?name=${encodeURIComponent(nome)}`,
+                        { method: "POST", body: text });
     state.knownRev = await fetchRev();
     await loadProjects(p.id);
   } catch (err) {
@@ -5569,6 +5646,56 @@ async function autoSchedule() {
     renderAll();
   } catch (err) {
     PerthToast.error(`${T("Auto-schedule failed")}: ${err.message}`);
+  }
+}
+
+/* Nivelar: o irmão do auto-schedule do outro lado do motor — lá a restrição
+ * é a dependência, aqui é a capacidade de cada pessoa. Mesmo caminho (o
+ * servidor decide e devolve o projeto) e, por mudar muitas datas de uma vez,
+ * a mesma regra: uma entrada de undo e um save.
+ *
+ * O toast diz o que SOBROU, e não só que rodou. Um plano com mais trabalho
+ * do que capacidade não nivela — o motor empurra o que pode e para —, e um
+ * botão que responde "pronto" a um plano que continua estourado é o botão
+ * mentindo. O número sai da mesma rota que alimenta o painel de recursos,
+ * contando só quem declarou capacidade: sem ela o motor nem tenta. */
+async function levelResources() {
+  if (!state.current) return;
+  pushUndo();
+  await saveNow();                       // não perder edições pendentes
+  try {
+    state.current = await api(`/api/projects/${state.current.id}/level`, {
+      method: "POST",
+    });
+    _closeUndoEntry();   // já persistido no servidor: não passa por markDirty()
+    noteBase();
+    state.knownRev = await fetchRev();
+    await fetchAnalytics();
+    renderAll();
+    const n = await diasEstourados();
+    PerthToast.info(
+      n === 0 ? T("Levelled — nobody is over their daily capacity") :
+      n === null ? T("Levelled") :
+      `${T("Levelled")} — ${n} ${T(n === 1 ? "day still does not fit" :
+                                   "days still do not fit")}`);
+  } catch (err) {
+    PerthToast.error(`${T("Level resources failed")}: ${err.message}`);
+  }
+}
+
+/* Quantos dias continuam estourados, na mesma conta do painel de recursos —
+ * `over` vem pronto do servidor (_over_day), então nem o painel nem este
+ * aviso decidem por conta própria o que é um dia cheio. Sem capacidade
+ * declarada não há o que nivelar, e essas pessoas ficam de fora da conta.
+ * Devolve null se a rota falhar: melhor um toast sem número do que um
+ * número inventado. */
+async function diasEstourados() {
+  try {
+    const w = await api(`/api/projects/${state.current.id}/workload`);
+    return (w.people || []).filter((p) => p.capacity > 0)
+      .reduce((n, p) => n + p.over.filter(Boolean).length, 0);
+  } catch {
+    return null;
   }
 }
 
@@ -5670,6 +5797,8 @@ const ACTIONS = {
     window.open(withKey(`/api/projects/${state.current.id}/export.ics`)),
   "export-chart": exportChart,
   "auto-schedule": autoSchedule,
+  "level": levelResources,
+  "only-match": toggleOnlyMatch,
   "apply-pert": applyPert,
   "toggle-critical": toggleCritical,
   "toggle-theme": toggleTheme,
@@ -5700,8 +5829,10 @@ function showShortcuts() {
     ["Ctrl+Z", "undo"],
     ["Ctrl+Shift+Z / Ctrl+Y", "redo"],
     ["S", "auto-schedule"],
+    ["L", "level resources"],
     ["C", "toggle critical path"],
     ["R", "resource load"],
+    ["O", "only what matches the filter"],
     ["D", "toggle dark mode"],
     ["P", "presentation mode"],
     ["1 / 2 / 3 / 4", "zoom day / week / month / fit"],
@@ -5749,6 +5880,7 @@ const GLOSSARY = [
     ["Baseline", "A frozen copy of the plan — what was promised. The ghost bars are the baseline; the difference between them and the bars is the slippage."],
     ["S-curve", "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days."],
     ["Workload", "How much each person has on each day. It is what turns a plan into a question about people."],
+    ["Levelling", "Delaying work until nobody is over their daily capacity. Auto-schedule respects the arrows between tasks; levelling respects the people doing them. It moves the tasks with the most slack first, so the critical path and anything with a deadline give way last, and it never touches a pinned date or a milestone. A plan with more work than capacity cannot be levelled at all — when that happens the days that do not fit stay marked, because they are the answer."],
     ["PERT", "Three estimates instead of one — optimistic, most likely, pessimistic — worth (o + 4m + p) / 6 as the expected duration. It says how uncertain a task is, not only how long it is."],
     ["P80", "The finish date with an 80% chance of being met, from the PERT estimates. The date to promise when the plan has uncertainty in it."],
   ]],
@@ -5905,6 +6037,20 @@ function revealRow(id) {
   for (let pai = t.parent; pai; pai = byId.get(pai)?.parent || "") {
     state.wbsClosed.delete(pai);
   }
+  // ... e o "só estes", pelo mesmo motivo das dobras: apontar para uma
+  // linha que não está na tela é pior do que não apontar. Quem chega aqui
+  // veio de um aviso, de uma busca ou de um clique noutra ferramenta, e
+  // pediu ESTA tarefa — não a lista de quem casa com o filtro.
+  if (ui.onlyMatch && temFiltro() && !idsQueFicam().has(id)) {
+    ui.onlyMatch = false;
+    saveUI();
+    applyUI();
+    // redesenha ANTES de medir: o índice da linha vem de displayRows(), que
+    // já responde sem o filtro, e rolar até ele com a tabela antiga na tela
+    // pararia na linha errada
+    renderTable();
+    renderChart();
+  }
   gravaDobras();   // abrir para revelar também é uma dobra a menos
   redrawSelection();
   const linha = displayRows()
@@ -5941,6 +6087,7 @@ function applySearch() {
   const bruto = el.taskSearch.value.trim();
   state.search = _semAcento(bruto);
   state.searchAt = 0;
+  pruneHiddenSelection();       // mesma razão da troca de destaque, abaixo
   renderAll();
   if (!state.current) return;
   const hits = searchHits();
@@ -5980,12 +6127,18 @@ el.groupSelect.addEventListener("change", () => {
   renderChart();
 });
 
+el.onlyMatch.addEventListener("click", toggleOnlyMatch);
+
 el.highlightSelect.addEventListener("change", () => {
   const v = el.highlightSelect.value;
   const i = v.indexOf(":");
   state.highlight = v ? { kind: v.slice(0, i), value: v.slice(i + 1) } : null;
+  // com "só estes" ligado, trocar de filtro tira linhas da tela — e o que
+  // saiu não continua selecionado, como já vale para uma raia recolhida
+  pruneHiddenSelection();
   renderTable();
   renderChart();
+  redrawSelection();
 });
 
 el.projectSelect.addEventListener("change", () => {
@@ -6068,6 +6221,8 @@ document.addEventListener("keydown", (ev) => {
     case "Enter": if (state.selected) openModal(state.selected); break;
     case "t": case "T": scrollToToday(); break;
     case "s": case "S": canEdit() && autoSchedule(); break;
+    case "l": case "L": canEdit() && levelResources(); break;
+    case "o": case "O": toggleOnlyMatch(); break;
     case "c": case "C": toggleCritical(); break;
     case "r": case "R": toggleResources(); break;
     case "d": case "D": toggleTheme(); break;
