@@ -1530,7 +1530,7 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
         if path == "/api/apps"
             return _json((; app = "kanban", kanban = KANBAN_PORT[],
                           gantt = SERVER[] === nothing ? nothing : PORT[],
-                          version = _version()))
+                          version = _version(), update = _update_payload()))
         end
         if path == "/api/launch/gantt"
             try

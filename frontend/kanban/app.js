@@ -3881,9 +3881,22 @@ hideBgToggle.addEventListener("click", () => {
 function showVersion() {
   fetch(`/api/apps${keyQS()}`)
     .then((r) => r.json())
-    .then(({ version }) => {
+    .then(({ version, update }) => {
       if (!version) return;
       $("#version-num").textContent = version;
+      /* Saiu versão nova (src/update.jl): número em verde depois da seta e a
+       * dica no title. A CHAVE em inglês vai para o dataset porque o apply()
+       * do i18n memoriza a chave no primeiro passe — sem isso a próxima troca
+       * de idioma devolveria "Perth version" por cima desta. */
+      if (update) {
+        $("#version-new").textContent = `→ ${update}`;
+        $("#version-new").hidden = false;
+        $("#version-tag").classList.add("has-update");
+        const dica =
+          "A newer Perth is out — whoever started the server can update with ] up Perth";
+        $("#version-tag").dataset.i18nTitle = dica;
+        $("#version-tag").title = T(dica);
+      }
       $("#version-tag").hidden = false;
     })
     .catch(() => {});

@@ -47,6 +47,23 @@ Optionnels, pris en compte tout seuls s'ils sont chargés **avant** `Perth.run()
 | `QRCoders` | un QR code du lien réseau, dans le terminal et dans l'interface |
 | `CairoMakie` (n'importe quel backend Makie) | `ganttplot` / `save_chart` pour des figures statiques |
 
+`using Perth` le signale quand une nouvelle version est publiée — une ligne
+discrète sous l'indication d'entrée, lue dans le registre de paquets **déjà
+présent sur votre machine**, sans aucune requête réseau. Pour demander sur le
+champ :
+
+```julia
+Perth.check_update()      # perth v0.12.0 → 0.13.0 available · ] up Perth
+```
+
+L'étiquette de version à droite de la barre d'état dit la même chose dans le
+navigateur — `0.12.0 → 0.13.0` — dans le gantt comme dans le kanban.
+
+La réponse est aussi fraîche que votre dernier `] up`, moment où le registre
+local est rafraîchi : une version publiée il y a quelques minutes met du temps
+à apparaître. `PERTH_UPDATE_CHECK=0` désactive l'avis et la vérification en arrière-plan ;
+`Perth.check_update()` répond toujours quand vous le demandez.
+
 ---
 
 ## Soixante secondes

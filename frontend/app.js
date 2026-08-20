@@ -199,6 +199,7 @@ const el = {
   statusSave: $("#status-save"),
   versionTag: $("#version-tag"),
   versionNum: $("#version-num"),
+  versionNew: $("#version-new"),
   progressFill: $("#progress-fill"),
   progressPct: $("#progress-pct"),
   progressWrap: $("#progress-wrap"),
@@ -6561,12 +6562,27 @@ async function bootData() {
  * servir de uma versão anterior), então a resposta vem de /api/apps — a mesma
  * que o botão de troca gantt<->kanban já consulta. Perguntada uma vez, no
  * boot: a versão não muda com o servidor de pé. Falhou, a etiqueta continua
- * escondida: dizer a versão errada é pior do que não dizer nenhuma. */
+ * escondida: dizer a versão errada é pior do que não dizer nenhuma.
+ *
+ * `update` vem do mesmo lugar e é a versão nova, quando o registro local diz
+ * que saiu uma (ver src/update.jl). A CHAVE em inglês da dica vai para o
+ * dataset, e não só o texto traduzido: o apply() do i18n memoriza a chave no
+ * primeiro passe, e sem isso a próxima troca de idioma devolveria o título
+ * antigo ("Perth version") por cima deste. */
 async function showVersion() {
   try {
-    const { version } = await api("/api/apps");
+    const { version, update } = await api("/api/apps");
     if (!version) return;
     el.versionNum.textContent = version;
+    if (update) {
+      el.versionNew.textContent = `→ ${update}`;
+      el.versionNew.hidden = false;
+      el.versionTag.classList.add("has-update");
+      const dica =
+        "A newer Perth is out — whoever started the server can update with ] up Perth";
+      el.versionTag.dataset.i18nTitle = dica;
+      el.versionTag.title = T(dica);
+    }
     el.versionTag.hidden = false;
   } catch {
     /* sem versão na barra; nada mais depende disso */

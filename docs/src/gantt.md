@@ -6,6 +6,7 @@ Project
 Person
 Perth.run
 Perth.stop
+Perth.check_update
 Perth.share!
 Perth.key!
 Perth.view_key!

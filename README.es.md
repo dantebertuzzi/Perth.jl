@@ -47,6 +47,22 @@ Opcionales, reconocidos solos si se cargan **antes** de `Perth.run()`:
 | `QRCoders` | código QR del enlace de red, en la terminal y en la interfaz |
 | `CairoMakie` (cualquier backend Makie) | `ganttplot` / `save_chart` para figuras estáticas |
 
+`using Perth` avisa cuando sale una versión nueva — una línea discreta debajo
+de la pista de entrada, leída del registro de paquetes que **ya está en tu
+máquina**, sin ninguna petición de red. Para preguntar en el momento:
+
+```julia
+Perth.check_update()      # perth v0.12.0 → 0.13.0 available · ] up Perth
+```
+
+La etiqueta de versión en el extremo derecho de la barra de estado dice lo
+mismo en el navegador — `0.12.0 → 0.13.0` — en el gantt y en el kanban.
+
+La respuesta es tan reciente como tu último `] up`, que es cuando se actualiza
+el registro local: una versión publicada hace minutos tarda en aparecer.
+`PERTH_UPDATE_CHECK=0` desactiva el aviso y la comprobación en segundo plano;
+`Perth.check_update()` sigue respondiendo cuando preguntas.
+
 ---
 
 ## Sesenta segundos
