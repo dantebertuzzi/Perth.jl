@@ -113,6 +113,7 @@ A spreadsheet cannot do that, and a desktop Gantt makes you export first.
 | | |
 |---|---|
 | **CPM engine** | `schedule!`, `critical_path`, `slack`, `project_finish` |
+| **Resource levelling** | `level!` — delays what has slack until nobody is over their declared daily capacity, least slack first |
 | **Dependencies** | finish-to-start by default; `"SS:id"`, `"FF:id"`, and lag `"id+3"` |
 | **Business days** | `set_calendar!(p, "Brazil")` — weekends and holidays stop counting |
 | **WBS** | give a task a parent; the parent becomes a summary that rolls up dates and progress |
@@ -139,7 +140,10 @@ A spreadsheet cannot do that, and a desktop Gantt makes you export first.
 - **Calendar bands** — shade a named stretch behind the chart: a sprint, a shutdown,
   the rainy season. Annotation, never scheduling.
 - **Swimlanes** by person or team, **collapsible WBS summaries** (and what you
-  folded survives the reload), a **highlight filter**, and **presentation mode**.
+  folded survives the reload), a **highlight filter** — which dims what does not
+  match, or hides it outright (*Only these*, `O`) once the plan is long enough
+  that scrolling past the grey is most of the reading — and **presentation
+  mode**.
 - **Notes with markdown**: the red dot opens the note, rendering `**bold**`,
   `*italic*`, `` `code` ``, `~~strike~~` and links.
 - Nothing on the chart is written on top of anything else: lines open a gap where
@@ -164,6 +168,12 @@ Export the project (`.perth.jl`), the tasks (**CSV**), the milestones and deadli
 (`ganttplot`, `save_chart`). And a **file mirror**: point a project at a path and
 every save also rewrites the `.perth.jl` there, so `git diff` shows what changed in
 the plan.
+
+**And back in.** A CSV walks in too — *File → Import*, or `add_tasks!(p, "plan.csv")`
+in the REPL, with no CSV package to install. One row per task, a `name` column, and
+whatever else you have; `parent` and `dependencies` may name a task by **name**, so
+the spreadsheet somebody actually wrote imports as readily as the file Perth
+exported.
 
 ---
 
@@ -407,8 +417,11 @@ chains and overlap measurement.
   the access key is a door, not a login.
 - **Local-first by design.** No cloud, no accounts, no sync between machines beyond
   the LAN — the file is the sync.
-- **Resource levelling is not automatic.** Perth reports overallocation; it does not
-  resolve it for you.
+- **Resource levelling is a heuristic, and needs a capacity.** `level!` moves the
+  tasks with the most slack first — a defensible rule, not the optimum, because the
+  optimum is NP-hard. It only touches people with a declared `capacity`, and a plan
+  carrying more work than capacity comes back with the days that still do not fit
+  left marked rather than silently rearranged.
 
 What comes next lives in [ROADMAP.md](ROADMAP.md), with the reasoning for each item.
 Issues and contributions are welcome — including telling me that a plan of yours

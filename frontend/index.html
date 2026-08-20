@@ -43,7 +43,8 @@
           <button data-action="markers">Marked days…</button>
           <button data-action="month-marks">Marked months…</button>
           <hr>
-          <button data-action="import">Import project (.jl)…</button>
+          <button data-action="import"
+                  title="A .perth.jl, or a spreadsheet saved as CSV — one row per task, a `name` column, and whatever else you have">Import project (.jl, .csv)…</button>
           <button data-action="export">Export project (.jl)</button>
           <button data-action="export-csv">Export tasks (CSV)</button>
           <button data-action="export-ics" title="Milestones and deadlines as an .ics file for your calendar app">Export calendar (.ics)</button>
@@ -72,6 +73,8 @@
           <button data-action="redo">Redo <kbd>Ctrl+Shift+Z</kbd></button>
           <hr>
           <button data-action="auto-schedule">Auto-schedule (push successors) <kbd>S</kbd></button>
+          <button data-action="level"
+                  title="Delays what has slack until nobody is over their declared daily capacity. Dependencies still hold; pinned dates and milestones stay where they are">Level resources (fit capacity) <kbd>L</kbd></button>
           <button data-action="apply-pert" title="Every three-point estimate becomes a duration: (optimistic + 4×most likely + pessimistic) / 6">Apply PERT estimates</button>
           <hr>
           <button data-action="set-baseline">Set baseline (snapshot plan)</button>
@@ -88,6 +91,8 @@
           <button data-action="zoom-fit">Zoom: fit <kbd>4</kbd></button>
           <hr>
           <button data-action="toggle-critical">Critical path <kbd>C</kbd></button>
+          <button data-action="only-match"
+                  title="Hide what does not match instead of dimming it. Applies to the highlight and to the search box, together">Only what matches <kbd>O</kbd></button>
           <button data-action="scurve">S-curve…</button>
           <button data-action="resources">Resources <kbd>R</kbd></button>
           <button data-action="stats">Statistics…</button>
@@ -234,6 +239,8 @@
   <div class="toolbar">
     <button id="btn-new-task" class="primary">+ Task</button>
     <select id="highlight-select" title="Highlight tasks by assignee, status or type"></select>
+    <button id="only-match" aria-pressed="false"
+            title="Hide what does not match instead of dimming it. Applies to the highlight and to the search box, together">Only these</button>
     <select id="group-select" title="Group tasks into swimlanes by assignee or team">
       <option value="">Lanes: none</option>
       <option value="assignee">Lanes: assignee</option>
@@ -427,7 +434,7 @@
     </div>
   </div>
 
-  <input type="file" id="import-file" accept=".jl,.json" hidden>
+  <input type="file" id="import-file" accept=".jl,.json,.csv" hidden>
 
   <div id="cursors"></div>
 

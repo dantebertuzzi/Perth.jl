@@ -1210,6 +1210,166 @@ end
         delete_project(p.id)
     end
 
+    @testset "CSV: ida e volta" begin
+        # A metade que faltava: exportar existia, importar não. E a volta só
+        # vale se voltar INTEIRA — inclusive o que o CSV tem de mais chato,
+        # que é vírgula, aspas e quebra de linha dentro da célula.
+        p = create_project("Origem")
+        a = add_task!(p, "Estudo, com vírgula"; start = Date(2026, 5, 4),
+                      duration = 3, assignee = "Ana", cost = 1200.5, effort = 24,
+                      status = "hold", notes = "linha 1\nlinha 2 com \"aspas\"")
+        b = add_task!(p, "Obra"; start = Date(2026, 5, 11), duration = 10,
+                      dependencies = ["SS:$(a.id)+2"], deadline = Date(2026, 6, 1),
+                      pinned = true, progress = 30)
+        set_parent!(p, b.id, a.id)
+
+        q = create_project("Volta")
+        add_tasks!(q, Perth._to_csv(p))
+        @test length(q.tasks) == 2
+        for (o, n) in zip(p.tasks, q.tasks)
+            @test o.id == n.id && o.name == n.name && o.start == n.start
+            @test o.duration == n.duration && o.progress == n.progress
+            @test o.cost == n.cost && o.effort == n.effort && o.status == n.status
+            @test o.notes == n.notes && o.assignee == n.assignee
+            @test o.deadline == n.deadline && o.pinned == n.pinned
+            @test o.dependencies == n.dependencies && o.parent == n.parent
+        end
+        # o id preservado é o que faz a estrutura sobreviver: sem ele,
+        # `parent` e `dependencies` apontariam para tarefas que não existem
+        # mais e o save podaria as duas
+        @test only(filter(t -> t.name == "Obra", q.tasks)).parent == a.id
+
+        # o MESMO arquivo entrando de novo: os ids estão ocupados, então as
+        # cópias ganham ids novos — e a dependência da cópia aponta para a
+        # cópia, não para a tarefa antiga
+        add_tasks!(q, Perth._to_csv(p))
+        @test length(q.tasks) == 4
+        copias = filter(t -> t.name == "Obra", q.tasks)
+        @test length(copias) == 2 && copias[2].id != copias[1].id
+        @test Perth._dep_id(only(copias[2].dependencies)) ==
+              filter(t -> t.name == "Estudo, com vírgula", q.tasks)[2].id
+        delete_project(q.id)
+        delete_project(p.id)
+    end
+
+    @testset "CSV: a planilha que uma pessoa escreve" begin
+        # Ninguém digita "a3f81c02" numa célula: numa planilha feita à mão a
+        # coluna `parent` traz o NOME da fase, e `dependencies` o nome da
+        # tarefa anterior. As duas formas são a mesma coluna vista de dois
+        # lugares.
+        p = create_project("Da planilha")
+        add_tasks!(p, """
+            name;start;duration;assignee;parent;dependencies
+            Fase 1;2026-04-06;1;;;
+            Levantamento;2026-04-06;5;Ana;Fase 1;
+            Projeto;2026-04-13;8;Ana;Fase 1;Levantamento
+            Aprovação;2026-04-23;1;Bruno;;Projeto+2
+            """)
+        byname = Dict(t.name => t for t in p.tasks)
+        @test length(p.tasks) == 4
+        @test byname["Levantamento"].parent == byname["Fase 1"].id
+        @test byname["Projeto"].dependencies == [byname["Levantamento"].id]
+        # o lag sobrevive à troca do nome pelo id
+        @test byname["Aprovação"].dependencies == ["$(byname["Projeto"].id)+2"]
+        # e a fase virou resumo, com as datas roladas dos filhos
+        @test is_summary(p, byname["Fase 1"]) && byname["Fase 1"].duration == 15
+        delete_project(p.id)
+
+        # O que o Excel de meio mundo grava: BOM na frente, ponto e vírgula
+        # separando, vírgula decimal, e uma célula com quebra de linha dentro
+        q = create_project("Excel")
+        add_tasks!(q, "﻿name;duration;cost;notes\r\n" *
+                      "Obra;3;1500,50;\"linha 1\nlinha 2\"\r\n")
+        t = only(q.tasks)
+        @test t.name == "Obra" && t.duration == 3 && t.cost == 1500.5
+        @test t.notes == "linha 1\nlinha 2"
+        delete_project(q.id)
+
+        # Cabeçalho com maiúscula, espaço e hífen; coluna que o Perth não
+        # conhece; linha em branco no meio; linha curta; e uma célula com o
+        # separador dentro das aspas
+        r = create_project("Tolerância")
+        add_tasks!(r, "Name, Start ,DURATION,Most Likely,centro-de-custo\n" *
+                      "\"Obra, fase 2\",2026-07-01,4,6,CC-31\n" *
+                      "\n" *
+                      "Rascunho\n")
+        @test [t.name for t in r.tasks] == ["Obra, fase 2", "Rascunho"]
+        @test r.tasks[1].duration == 4 && r.tasks[1].most_likely == 6
+        @test r.tasks[1].start == Date(2026, 7, 1)
+        @test r.tasks[2].duration == 1          # célula ausente = o default
+        delete_project(r.id)
+
+        # Caminho de arquivo em vez do texto — a mesma função, porque um CSV
+        # quase sempre está num arquivo
+        arq = joinpath(mktempdir(), "plano.csv")
+        write(arq, "name,duration\nDo arquivo,7\n")
+        s = create_project("Do disco")
+        add_tasks!(s, arq)
+        @test only(s.tasks).name == "Do arquivo" && only(s.tasks).duration == 7
+        delete_project(s.id)
+    end
+
+    @testset "CSV: erro que diz onde" begin
+        # Numa planilha de duzentas linhas, "expected a whole number" sem
+        # endereço é uma caça ao tesouro.
+        p = create_project("Erros")
+        err = try; add_tasks!(p, "name,duration\nObra,três\n"); catch e; e; end
+        @test err isa ArgumentError
+        @test occursin("row 2", err.msg) && occursin("duration", err.msg)
+        err = try; add_tasks!(p, "name,pinned\nObra,talvez\n"); catch e; e; end
+        @test err isa ArgumentError && occursin("true or false", err.msg)
+        # sem a coluna obrigatória, a mensagem diz o que o arquivo TEM
+        err = try; add_tasks!(p, "titulo,duration\nObra,3\n"); catch e; e; end
+        @test err isa ArgumentError && occursin("titulo", err.msg)
+        # nome vazio é linha sem tarefa, e o erro diz qual linha
+        err = try; add_tasks!(p, "name,duration\n,3\n"); catch e; e; end
+        @test err isa ArgumentError && occursin("row 1", err.msg)
+        @test_throws ArgumentError add_tasks!(p, "\n\n")
+        # e nenhuma delas deixou tarefa pela metade no projeto
+        @test isempty(p.tasks)
+        delete_project(p.id)
+    end
+
+    @testset "CSV: rota de importação" begin
+        router = Perth._build_router()
+        csv = "name,start,duration,assignee\nLevantamento,2026-04-06,5,Ana\n" *
+              "Projeto,2026-04-13,8,Ana\n"
+        imp(body; q = "") = router(HTTP.Request("POST", "/api/import" * q, [], body))
+
+        # o nome do projeto vem do nome do ARQUIVO: é onde a exportação o
+        # tinha guardado, e uma tabela de tarefas não tem onde carregá-lo
+        resp = imp(csv; q = "?name=Obra%20Norte")
+        @test resp.status == 201
+        novo = JSON3.read(String(resp.body))
+        @test novo.name == "Obra Norte" && length(novo.tasks) == 2
+        @test Perth.project(novo.id).tasks[1].assignee == "Ana"   # persistido
+        delete_project(novo.id)
+
+        sem = JSON3.read(String(imp(csv).body))
+        @test sem.name == "Imported"
+        delete_project(sem.id)
+
+        # os dois formatos que já entravam continuam entrando
+        p = create_project("Fonte")
+        add_task!(p, "T"; start = Date(2026, 1, 5), duration = 2)
+        for texto in (Perth._to_julia_source(p), JSON3.write(p))
+            r = imp(texto)
+            @test r.status == 201
+            outro = JSON3.read(String(r.body))
+            @test outro.name == "Fonte"
+            delete_project(outro.id)
+        end
+        delete_project(p.id)
+
+        # planilha quebrada devolve o texto do leitor, não "unrecognized
+        # project file" nem uma reclamação sobre expressões de Julia
+        ruim = imp("name,duration\nObra,três\n")
+        @test ruim.status == 400
+        @test occursin("row 2", String(ruim.body))
+        semnome = imp("titulo,duration\nObra,3\n")
+        @test semnome.status == 400 && occursin("`name` column", String(semnome.body))
+    end
+
     @testset "cadastro de colaboradores" begin
         p = create_project("Time")
         a = add_task!(p, "A"; start = Date(2026, 3, 2), duration = 1,
@@ -1695,6 +1855,182 @@ end
         # capacidade negativa é erro de digitação, não plano
         add_person!(p, "Bruno"; capacity = -3)
         @test Perth.person(p, "Bruno").capacity == 0.0
+        delete_project(p.id)
+    end
+
+    @testset "nivelamento (level!)" begin
+        # A metade que faltava do "diagnosticar → agir": desde que capacity
+        # existe, o Perth sabia dizer que a terça da Ana tem 24h num dia de 8
+        # e não sabia fazer nada a respeito.
+        p = create_project("Nivelar")
+        add_person!(p, "Ana"; capacity = 8)
+        d0 = Date(2026, 3, 2)                    # segunda
+        ts = [add_task!(p, "T$i"; start = d0, duration = 1,
+                        assignee = "Ana", effort = 8) for i in 1:3]
+        @test count(r -> r.over, workload(p)) == 1
+        level!(p)
+        @test isempty(filter(r -> r.over, workload(p)))
+        @test sort([t.start for t in ts]) == [d0, d0 + Day(1), d0 + Day(2)]
+        # nivelar de novo não mexe em nada: o plano já cabe
+        antes = [t.start for t in ts]
+        level!(p)
+        @test [t.start for t in ts] == antes
+        delete_project(p.id)
+
+        # MENOR FOLGA PRIMEIRO. Empate de folga é o caso comum (tarefas
+        # paralelas têm todas a mesma), e no empate cede quem não tem
+        # promessa: a tarefa com prazo fica.
+        q = create_project("Folga")
+        add_person!(q, "Ana"; capacity = 8)
+        livre = add_task!(q, "Livre"; start = d0, duration = 1,
+                          assignee = "Ana", effort = 8)
+        prazo = add_task!(q, "Prazo"; start = d0, duration = 1,
+                          assignee = "Ana", effort = 8, deadline = d0)
+        level!(q)
+        @test prazo.start == d0
+        @test livre.start > d0
+        delete_project(q.id)
+
+        # O que NÃO se move: data prometida, marco, e a tarefa que sozinha
+        # não cabe no dia da pessoa (empurrá-la só faria o problema passear
+        # pelo calendário).
+        r = create_project("Imóveis")
+        add_person!(r, "Ana"; capacity = 8)
+        fixa = add_task!(r, "Fixa"; start = d0, duration = 1, assignee = "Ana",
+                         effort = 8, pinned = true)
+        marco = add_task!(r, "Entrega"; start = d0, assignee = "Ana",
+                          milestone = true, effort = 8)
+        level!(r)
+        @test fixa.start == d0 && marco.start == d0
+        @test count(r2 -> r2.over, workload(r)) == 1   # o dia continua estourado
+        delete_project(r.id)
+
+        # Uma tarefa maior que o dia inteiro fica — mas o dia insalvável não
+        # é motivo para prender o que ainda tem para onde ir: a pessoa também
+        # não faz as outras naquele dia.
+        s = create_project("Gorda")
+        add_person!(s, "Ana"; capacity = 8)
+        gorda = add_task!(s, "Gorda"; start = d0, duration = 1,
+                          assignee = "Ana", effort = 99)
+        leve = add_task!(s, "Leve"; start = d0, duration = 1,
+                         assignee = "Ana", effort = 4)
+        level!(s)
+        @test gorda.start == d0
+        @test leve.start > d0
+        # e o que sobrou continua aparecendo, na mesma conta de sempre
+        sobra = filter(r2 -> r2.over, workload(s))
+        @test length(sobra) == 1 && only(sobra).date == d0
+        delete_project(s.id)
+
+        # Dependência continua valendo: quem espera pela que se moveu vai
+        # junto, e a cadeia inteira atrás dela.
+        t = create_project("Cadeia")
+        add_person!(t, "Ana"; capacity = 8)
+        fica = add_task!(t, "Fica"; start = d0, duration = 1, assignee = "Ana",
+                         effort = 8, deadline = d0)
+        cede = add_task!(t, "Cede"; start = d0, duration = 1,
+                         assignee = "Ana", effort = 8)
+        s1 = add_task!(t, "S1"; start = d0, duration = 1, dependencies = [cede.id])
+        s2 = add_task!(t, "S2"; start = d0, duration = 1, dependencies = [s1.id])
+        level!(t)
+        @test fica.start == d0
+        @test cede.start > d0
+        @test s1.start > end_date(t, cede)
+        @test s2.start > end_date(t, s1)
+        delete_project(t.id)
+
+        # O empurrão vai para o primeiro dia em que a tarefa cabe INTEIRA, e
+        # não um dia de cada vez: três tarefas de três dias empurradas de um
+        # em um continuariam as três juntas no dia seguinte, e o bloco
+        # marcharia pelo calendário sem nunca se separar.
+        u = create_project("Bloco")
+        add_person!(u, "Ana"; capacity = 8)
+        bs = [add_task!(u, "B$i"; start = d0, duration = 3,
+                        assignee = "Ana", effort = 12) for i in 1:3]
+        level!(u)
+        @test isempty(filter(r2 -> r2.over, workload(u)))
+        @test maximum(t2.start for t2 in bs) == d0 + Day(3)   # duas ficam, uma anda
+        delete_project(u.id)
+
+        # Calendário de dias úteis: a sexta lotada empurra para a segunda,
+        # não para o sábado.
+        v = create_project("Semana")
+        set_calendar!(v, "WeekendsOnly")
+        add_person!(v, "Ana"; capacity = 8)
+        sexta = Date(2026, 3, 6)
+        x = add_task!(v, "X"; start = sexta, duration = 1, assignee = "Ana", effort = 8)
+        y = add_task!(v, "Y"; start = sexta, duration = 1, assignee = "Ana", effort = 8)
+        level!(v)
+        @test sort([x.start, y.start]) == [sexta, Date(2026, 3, 9)]
+        delete_project(v.id)
+
+        # SEM capacidade declarada não há contra o que nivelar: a regra crua
+        # ("duas tarefas no mesmo dia") enfileiraria o plano inteiro, então o
+        # motor recusa em vez de rearranjar tudo caladamente.
+        w = create_project("SemCapacidade")
+        a1 = add_task!(w, "A"; start = d0, duration = 3, assignee = "Zé")
+        a2 = add_task!(w, "B"; start = d0, duration = 3, assignee = "Zé")
+        @test_throws ArgumentError level!(w)
+        @test a1.start == d0 && a2.start == d0
+        # e quem não declarou capacidade fica de fora mesmo quando OUTRO
+        # declarou: a Ana nivela, o Zé continua onde estava
+        add_person!(w, "Ana"; capacity = 8)
+        n1 = add_task!(w, "A1"; start = d0, duration = 1, assignee = "Ana", effort = 8)
+        n2 = add_task!(w, "A2"; start = d0, duration = 1, assignee = "Ana", effort = 8)
+        level!(w)
+        @test a1.start == d0 && a2.start == d0
+        @test sort([n1.start, n2.start]) == [d0, d0 + Day(1)]
+        delete_project(w.id)
+
+        # Ciclo erra antes de mover qualquer coisa — o plano volta intacto,
+        # não meio nivelado.
+        z = create_project("Ciclo")
+        add_person!(z, "Ana"; capacity = 8)
+        c1 = add_task!(z, "C1"; start = d0, duration = 1, assignee = "Ana", effort = 8)
+        c2 = add_task!(z, "C2"; start = d0, duration = 1, assignee = "Ana",
+                       effort = 8, dependencies = [c1.id])
+        update_task!(z, c1.id; dependencies = [c2.id])
+        @test_throws ArgumentError level!(z)
+        @test c1.start == d0 && c2.start == d0
+        delete_project(z.id)
+    end
+
+    @testset "nivelamento: rota REST" begin
+        router = Perth._build_router()
+        p = create_project("Nivelar web")
+        add_person!(p, "Ana"; capacity = 8)
+        d0 = Date(2026, 3, 2)
+        for i in 1:3
+            add_task!(p, "T$i"; start = d0, duration = 1, assignee = "Ana", effort = 8)
+        end
+        gorda = add_task!(p, "Gorda"; start = d0, duration = 1,
+                          assignee = "Ana", effort = 40)
+
+        resp = router(HTTP.Request("POST", "/api/projects/$(p.id)/level"))
+        @test resp.status == 200
+        back = JSON3.read(String(resp.body))
+        @test length(unique(t.start for t in back.tasks)) == 4      # cada uma no seu dia
+        @test gorda.start == d0            # maior que o dia inteiro: não passeia
+        # o que voltou é o que ficou gravado, não só o que o motor calculou
+        @test [t.start for t in Perth.project(p.id).tasks] ==
+              [Date(t.start) for t in back.tasks]
+
+        # o diário conta o que sobrou, e não só o que foi resolvido: um botão
+        # que responde "pronto" a um plano ainda estourado é o botão mentindo
+        log = JSON3.read(String(router(HTTP.Request("GET", "/api/activity")).body))
+        @test any(e -> occursin("levelled 3 tasks, 1 day still over", e.text), log)
+
+        # sem capacidade o motor recusa, e a recusa chega como 409 com o
+        # texto do motor (não como "internal error")
+        q = create_project("Nivelar sem capacidade")
+        add_task!(q, "A"; start = d0, duration = 3, assignee = "Zé")
+        add_task!(q, "B"; start = d0, duration = 3, assignee = "Zé")
+        resp = router(HTTP.Request("POST", "/api/projects/$(q.id)/level"))
+        @test resp.status == 409
+        @test occursin("declared capacity", String(resp.body))
+
+        @test router(HTTP.Request("POST", "/api/projects/naoexiste/level")).status == 404
+        delete_project(q.id)
         delete_project(p.id)
     end
 

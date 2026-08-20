@@ -1915,8 +1915,8 @@ console.log("atalhos · a lista existe, fala o idioma e cobre os dois apps");
              duasTeclas: linhas.find((l) => l.textContent.includes("Ctrl+Y"))
                                .querySelectorAll("kbd").length,
              fechar: document.querySelector("#perth-overlay .modal-actions button").textContent };`);
-  check(r.titulo === "Atalhos de teclado" && r.linhas === 24,
-        "gantt: Atalhos abre um overlay com as 24 teclas");
+  check(r.titulo === "Atalhos de teclado" && r.linhas === 26,
+        "gantt: Atalhos abre um overlay com as 26 teclas");
   check(r.primeira === "N" && r.descricao === "nova tarefa",
         "gantt: tecla de um lado, descrição traduzida do outro");
   check(r.duasTeclas === 2, "gantt: \"Ctrl+Shift+Z / Ctrl+Y\" vira dois <kbd>, não um");
@@ -3171,6 +3171,112 @@ console.log("gantt · recolher um resumo de WBS");
     return { antes, depois: state.wbsClosed.size };`);
   check(r.antes === 1 && r.depois === 0,
         "gantt: o que está recolhido é sobre AQUELE projeto");
+
+  await new Promise((ok) => setTimeout(ok, 0));
+  close();
+}
+
+console.log("gantt · esconder o que não casa, não só escurecer");
+{
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+
+  // Estrutura (resumo, sem dono) > Fundação (Ana) + Sapata (Bruno);
+  // Pintura (Ana) depende de Projeto (Bruno) — a seta cruza o filtro
+  const seed = `
+    const mk = (id, name, start, dur, assignee = "", parent = "", deps = []) => ({
+      id, name, start, duration: dur, assignee, progress: 0,
+      dependencies: deps, color: "", notes: "", milestone: false, parent,
+      baseline_start: null, baseline_duration: 0, cost: 0, deadline: null,
+      pinned: false });
+    state.current = { id: "p1", name: "P", people: [], bands: [], markers: [],
+      tasks: [
+        mk("t0", "Projeto", "2026-03-02", 5, "Bruno"),
+        mk("pai", "Estrutura", "2026-03-09", 1),
+        mk("meio", "Fundação", "2026-03-09", 8, "Ana", "pai"),
+        mk("irma", "Sapata", "2026-03-09", 3, "Bruno", "pai"),
+        mk("fim", "Pintura", "2026-04-17", 4, "Ana", "", ["t0"])] };
+    state.cpm = { cycle: false, finish: "2026-04-20", calendar: "", pert: null,
+                  byId: new Map() };
+    renderAll();`;
+
+  const nomes = `[...document.querySelectorAll("#task-rows .tt-row .c-name")]
+    .map((x) => x.textContent.trim())`;
+
+  // Como sempre foi, e continua sendo o padrão: escurecer, não esconder
+  let r = runIn(`${seed}
+    state.highlight = { kind: "assignee", value: "Ana" };
+    renderAll();
+    return { nomes: ${nomes},
+             apagadas: document.querySelectorAll("#task-rows .tt-row.dim").length,
+             ligado: el.onlyMatch.getAttribute("aria-pressed") };`);
+  check(r.nomes.length === 5 && r.apagadas === 3,
+        "gantt: por padrão o filtro escurece as cinco linhas, sem tirar nenhuma");
+  check(r.ligado === "false", "gantt: e o botão começa desligado");
+
+  // O mesmo filtro com a outra resposta
+  r = runIn(`el.onlyMatch.click();
+    return { nomes: ${nomes}, ligado: el.onlyMatch.getAttribute("aria-pressed"),
+             barras: document.querySelectorAll("#chart .bar").length };`);
+  check(r.nomes.join("|") === "▾Estrutura|Fundação|Pintura",
+        "gantt: fica quem casa — e o resumo por cima de quem casou");
+  check(r.ligado === "true", "gantt: o botão diz que está ligado");
+  check(!r.nomes.some((n) => /Sapata|Projeto/.test(n)),
+        "gantt: quem não casa sai da tela, não fica cinza");
+
+  // A seta para uma tarefa que não está mais na tela não é desenhada — o
+  // mesmo caminho que uma raia fechada já usava
+  r = runIn(`return document.querySelectorAll("#chart .dep").length;`);
+  check(r === 0, "gantt: seta para tarefa escondida não é desenhada");
+
+  // Um resumo que casa por si fica sozinho: é a linha que a pessoa pediu
+  r = runIn(`state.highlight = null;
+    el.taskSearch.value = "estrutura";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    return ${nomes};`);
+  check(r.join("|") === "▾Estrutura",
+        "gantt: resumo que casa sozinho fica — sem arrastar os filhos junto");
+
+  // Busca e destaque se somam, escondendo como já se somavam escurecendo
+  r = runIn(`el.taskSearch.value = "pintura";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    state.highlight = { kind: "assignee", value: "Bruno" };
+    renderAll();
+    return { nomes: ${nomes},
+             vazio: !!document.querySelector("#task-rows .tt-empty") };`);
+  check(r.nomes.length === 0 && r.vazio,
+        "gantt: filtro que não deixa nada avisa em vez de deixar a tela em branco");
+
+  // Revelar uma tarefa escondida desliga o filtro: apontar para uma linha
+  // que não está na tela é pior do que não apontar
+  r = runIn(`el.taskSearch.value = "";
+    el.taskSearch.dispatchEvent(new Event("input"));
+    state.highlight = { kind: "assignee", value: "Ana" };
+    renderAll();
+    const antes = ${nomes}.length;
+    revealTask("irma");
+    return { antes, depois: ${nomes}.length, sel: state.selected,
+             ligado: el.onlyMatch.getAttribute("aria-pressed") };`);
+  check(r.antes === 3 && r.depois === 5 && r.sel === "irma",
+        "gantt: revelar o que o filtro escondeu traz a linha de volta");
+  check(r.ligado === "false", "gantt: e o botão volta a dizer que está desligado");
+
+  // Raia sem ninguém que case não vira cabeçalho vazio
+  r = runIn(`el.onlyMatch.click();
+    state.groupBy = "assignee";
+    state.highlight = { kind: "assignee", value: "Ana" };
+    renderAll();
+    return { raias: [...document.querySelectorAll("#task-rows .tt-lane .lane-name")]
+                      .map((x) => x.textContent.trim()),
+             nomes: ${nomes} };`);
+  check(r.raias.join("|") === "Ana",
+        "gantt: com raias, a do Bruno some inteira em vez de ficar vazia");
+  check(r.nomes.join("|") === "Fundação|Pintura",
+        "gantt: e dentro dela só as tarefas que casam");
+
+  // É modo, não ação: sobrevive ao F5 como o zoom e o tema
+  r = runIn(`return JSON.parse(localStorage.getItem("perth-ui")).onlyMatch;`);
+  check(r === true, "gantt: o interruptor fica gravado para a próxima sessão");
 
   await new Promise((ok) => setTimeout(ok, 0));
   close();

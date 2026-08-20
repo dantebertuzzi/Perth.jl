@@ -110,7 +110,9 @@ window.PerthI18n = (function () {
       "Home screen": "Tela inicial",
       "New project…": "Novo projeto…",
       "Rename project…": "Renomear projeto…",
-      "Import project (.jl)…": "Importar projeto (.jl)…",
+      "Import project (.jl, .csv)…": "Importar projeto (.jl, .csv)…",
+      "A .perth.jl, or a spreadsheet saved as CSV — one row per task, a `name` column, and whatever else you have":
+        "Um .perth.jl, ou uma planilha salva como CSV — uma linha por tarefa, uma coluna `name`, e o que mais você tiver",
       "Export project (.jl)": "Exportar projeto (.jl)",
       "Delete project…": "Excluir projeto…",
       "New task": "Nova tarefa", "Edit task": "Editar tarefa",
@@ -129,6 +131,12 @@ window.PerthI18n = (function () {
       "Find a task by name": "Buscar tarefa pelo nome",
       "Import failed": "Falha ao importar",
       "Auto-schedule failed": "Falha ao reprogramar",
+      "Level resources failed": "Falha ao nivelar",
+      "Levelled": "Nivelado",
+      "Levelled — nobody is over their daily capacity":
+        "Nivelado — ninguém passa da capacidade diária",
+      "day still does not fit": "dia continua sem caber",
+      "days still do not fit": "dias continuam sem caber",
       "could not open the gantt": "não deu para abrir o gantt",
       "new task": "nova tarefa",
       "edit task": "editar tarefa",
@@ -137,6 +145,14 @@ window.PerthI18n = (function () {
       "undo": "desfazer",
       "redo": "refazer",
       "auto-schedule": "reprogramar automaticamente",
+      "level resources": "nivelar recursos",
+      "Only these": "só estes",
+      "Only what matches": "Apenas o que casa",
+      "Hide what does not match instead of dimming it. Applies to the highlight and to the search box, together":
+        "Esconde o que não casa em vez de escurecer. Vale para o destaque e para a busca, juntos",
+      "Nothing matches — the plan is still there, the filter is hiding it.":
+        "Nada casa — o plano continua aí, é o filtro que está escondendo.",
+      "only what matches the filter": "só o que casa com o filtro",
       "toggle critical path": "alternar o caminho crítico",
       "resource load": "carga de recursos",
       "toggle dark mode": "alternar o modo escuro",
@@ -198,6 +214,9 @@ window.PerthI18n = (function () {
       "Delete selected task": "Excluir tarefa selecionada",
       "Undo": "Desfazer", "Redo": "Refazer",
       "Auto-schedule (push successors)": "Auto-agendar (empurrar sucessoras)",
+      "Level resources (fit capacity)": "Nivelar recursos (caber na capacidade)",
+      "Delays what has slack until nobody is over their declared daily capacity. Dependencies still hold; pinned dates and milestones stay where they are":
+        "Adia o que tem folga até ninguém passar da capacidade diária declarada. As dependências continuam valendo; datas fixas e marcos ficam onde estão",
       "Set baseline (snapshot plan)": "Definir linha de base (foto do plano)",
       "Clear baseline": "Limpar linha de base",
       // PERT (estimativa de três pontos)
@@ -475,6 +494,10 @@ window.PerthI18n = (function () {
         "Carga",
       "How much each person has on each day. It is what turns a plan into a question about people.":
         "Quanto cada pessoa tem em cada dia. É o que transforma um plano numa pergunta sobre gente.",
+      "Levelling":
+        "Nivelamento",
+      "Delaying work until nobody is over their daily capacity. Auto-schedule respects the arrows between tasks; levelling respects the people doing them. It moves the tasks with the most slack first, so the critical path and anything with a deadline give way last, and it never touches a pinned date or a milestone. A plan with more work than capacity cannot be levelled at all — when that happens the days that do not fit stay marked, because they are the answer.":
+        "Adiar trabalho até ninguém passar da capacidade diária. O auto-agendamento respeita as setas entre as tarefas; o nivelamento respeita as pessoas que as fazem. Move primeiro as tarefas com mais folga, então o caminho crítico e o que tem prazo cedem por último, e nunca toca numa data fixa nem num marco. Um plano com mais trabalho do que capacidade não nivela — e quando isso acontece os dias que não cabem continuam marcados, porque são eles a resposta.",
       "Three estimates instead of one — optimistic, most likely, pessimistic — worth (o + 4m + p) / 6 as the expected duration. It says how uncertain a task is, not only how long it is.":
         "Três estimativas em vez de uma — otimista, mais provável, pessimista — que valem (o + 4m + p) / 6 como duração esperada. Diz o quanto uma tarefa é incerta, não só o quanto ela dura.",
       "P80":
@@ -728,7 +751,9 @@ window.PerthI18n = (function () {
       "Home screen": "Pantalla de inicio",
       "New project…": "Nuevo proyecto…",
       "Rename project…": "Renombrar proyecto…",
-      "Import project (.jl)…": "Importar proyecto (.jl)…",
+      "Import project (.jl, .csv)…": "Importar proyecto (.jl, .csv)…",
+      "A .perth.jl, or a spreadsheet saved as CSV — one row per task, a `name` column, and whatever else you have":
+        "Un .perth.jl, o una planilla guardada como CSV — una fila por tarea, una columna `name`, y lo demás que tengas",
       "Export project (.jl)": "Exportar proyecto (.jl)",
       "Delete project…": "Eliminar proyecto…",
       "New task": "Nueva tarea", "Edit task": "Editar tarea",
@@ -747,6 +772,12 @@ window.PerthI18n = (function () {
       "Find a task by name": "Buscar tarea por el nombre",
       "Import failed": "Error al importar",
       "Auto-schedule failed": "Error al reprogramar",
+      "Level resources failed": "Error al nivelar",
+      "Levelled": "Nivelado",
+      "Levelled — nobody is over their daily capacity":
+        "Nivelado — nadie supera su capacidad diaria",
+      "day still does not fit": "día sigue sin caber",
+      "days still do not fit": "días siguen sin caber",
       "could not open the gantt": "no se pudo abrir el gantt",
       "new task": "nueva tarea",
       "edit task": "editar tarea",
@@ -755,6 +786,14 @@ window.PerthI18n = (function () {
       "undo": "deshacer",
       "redo": "rehacer",
       "auto-schedule": "reprogramar automáticamente",
+      "level resources": "nivelar recursos",
+      "Only these": "solo estos",
+      "Only what matches": "Solo lo que coincide",
+      "Hide what does not match instead of dimming it. Applies to the highlight and to the search box, together":
+        "Oculta lo que no coincide en vez de atenuarlo. Vale para el resaltado y para la búsqueda, juntos",
+      "Nothing matches — the plan is still there, the filter is hiding it.":
+        "Nada coincide — el plan sigue ahí, es el filtro que lo esconde.",
+      "only what matches the filter": "solo lo que coincide con el filtro",
       "toggle critical path": "alternar la ruta crítica",
       "resource load": "carga de recursos",
       "toggle dark mode": "alternar el modo oscuro",
@@ -816,6 +855,9 @@ window.PerthI18n = (function () {
       "Delete selected task": "Eliminar tarea seleccionada",
       "Undo": "Deshacer", "Redo": "Rehacer",
       "Auto-schedule (push successors)": "Autoprogramar (empujar sucesoras)",
+      "Level resources (fit capacity)": "Nivelar recursos (ajustar a la capacidad)",
+      "Delays what has slack until nobody is over their declared daily capacity. Dependencies still hold; pinned dates and milestones stay where they are":
+        "Retrasa lo que tiene holgura hasta que nadie supere su capacidad diaria declarada. Las dependencias siguen valiendo; las fechas fijadas y los hitos no se mueven",
       "Set baseline (snapshot plan)": "Fijar línea base (instantánea del plan)",
       "Clear baseline": "Borrar línea base",
       // PERT (estimación de tres puntos)
@@ -1032,6 +1074,10 @@ window.PerthI18n = (function () {
         "Cuántos días puede atrasarse una tarea antes de empujar el término. Holgura cero es la ruta crítica; holgura negativa es una promesa ya rota.",
       "How much each person has on each day. It is what turns a plan into a question about people.":
         "Cuánto tiene cada persona cada día. Es lo que convierte un plan en una pregunta sobre gente.",
+      "Levelling":
+        "Nivelación",
+      "Delaying work until nobody is over their daily capacity. Auto-schedule respects the arrows between tasks; levelling respects the people doing them. It moves the tasks with the most slack first, so the critical path and anything with a deadline give way last, and it never touches a pinned date or a milestone. A plan with more work than capacity cannot be levelled at all — when that happens the days that do not fit stay marked, because they are the answer.":
+        "Retrasar trabajo hasta que nadie supere su capacidad diaria. La autoprogramación respeta las flechas entre tareas; la nivelación respeta a las personas que las hacen. Mueve primero las tareas con más holgura, así la ruta crítica y lo que tiene fecha límite ceden al final, y nunca toca una fecha fijada ni un hito. Un plan con más trabajo que capacidad no se puede nivelar — y cuando pasa, los días que no caben siguen marcados, porque son la respuesta.",
       "How much of the task is done, in percent. A summary averages its children, weighted by duration.":
         "Cuánto de la tarea está hecho, en porcentaje. Un resumen promedia sus hijas, ponderado por duración.",
       "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days.":
@@ -1341,7 +1387,9 @@ window.PerthI18n = (function () {
       "Home screen": "Écran d'accueil",
       "New project…": "Nouveau projet…",
       "Rename project…": "Renommer le projet…",
-      "Import project (.jl)…": "Importer un projet (.jl)…",
+      "Import project (.jl, .csv)…": "Importer un projet (.jl, .csv)…",
+      "A .perth.jl, or a spreadsheet saved as CSV — one row per task, a `name` column, and whatever else you have":
+        "Un .perth.jl, ou un tableur enregistré en CSV — une ligne par tâche, une colonne `name`, et tout ce que vous avez d'autre",
       "Export project (.jl)": "Exporter le projet (.jl)",
       "Delete project…": "Supprimer le projet…",
       "New task": "Nouvelle tâche", "Edit task": "Modifier la tâche",
@@ -1360,6 +1408,12 @@ window.PerthI18n = (function () {
       "Find a task by name": "Chercher une tâche par son nom",
       "Import failed": "Échec de l'importation",
       "Auto-schedule failed": "Échec de la replanification",
+      "Level resources failed": "Échec du nivellement",
+      "Levelled": "Nivelé",
+      "Levelled — nobody is over their daily capacity":
+        "Nivelé — personne ne dépasse sa capacité journalière",
+      "day still does not fit": "jour ne rentre toujours pas",
+      "days still do not fit": "jours ne rentrent toujours pas",
       "could not open the gantt": "impossible d'ouvrir le gantt",
       "new task": "nouvelle tâche",
       "edit task": "modifier la tâche",
@@ -1368,6 +1422,14 @@ window.PerthI18n = (function () {
       "undo": "annuler",
       "redo": "rétablir",
       "auto-schedule": "replanifier automatiquement",
+      "level resources": "niveler les ressources",
+      "Only these": "ceux-ci seuls",
+      "Only what matches": "Seulement ce qui correspond",
+      "Hide what does not match instead of dimming it. Applies to the highlight and to the search box, together":
+        "Masque ce qui ne correspond pas au lieu de l'estomper. Vaut pour le surlignage et pour la recherche, ensemble",
+      "Nothing matches — the plan is still there, the filter is hiding it.":
+        "Rien ne correspond — le plan est toujours là, c'est le filtre qui le cache.",
+      "only what matches the filter": "seulement ce qui correspond au filtre",
       "toggle critical path": "afficher le chemin critique",
       "resource load": "charge des ressources",
       "toggle dark mode": "basculer le mode sombre",
@@ -1429,6 +1491,9 @@ window.PerthI18n = (function () {
       "Delete selected task": "Supprimer la tâche sélectionnée",
       "Undo": "Annuler", "Redo": "Rétablir",
       "Auto-schedule (push successors)": "Planification auto (décaler les successeurs)",
+      "Level resources (fit capacity)": "Niveler les ressources (tenir dans la capacité)",
+      "Delays what has slack until nobody is over their declared daily capacity. Dependencies still hold; pinned dates and milestones stay where they are":
+        "Retarde ce qui a de la marge jusqu'à ce que personne ne dépasse sa capacité journalière déclarée. Les dépendances restent valables ; les dates fixées et les jalons ne bougent pas",
       "Set baseline (snapshot plan)": "Définir la référence (instantané du plan)",
       "Clear baseline": "Effacer la référence",
       // PERT (estimation à trois points)
@@ -1645,6 +1710,10 @@ window.PerthI18n = (function () {
         "Combien de jours une tâche peut glisser avant de pousser la fin. Marge nulle, c'est le chemin critique ; marge négative, c'est une promesse déjà rompue.",
       "How much each person has on each day. It is what turns a plan into a question about people.":
         "Ce que chaque personne a chaque jour. C'est ce qui transforme un plan en une question sur les gens.",
+      "Levelling":
+        "Nivellement",
+      "Delaying work until nobody is over their daily capacity. Auto-schedule respects the arrows between tasks; levelling respects the people doing them. It moves the tasks with the most slack first, so the critical path and anything with a deadline give way last, and it never touches a pinned date or a milestone. A plan with more work than capacity cannot be levelled at all — when that happens the days that do not fit stay marked, because they are the answer.":
+        "Retarder le travail jusqu'à ce que personne ne dépasse sa capacité journalière. La planification auto respecte les flèches entre les tâches ; le nivellement respecte les personnes qui les font. Il déplace d'abord les tâches qui ont le plus de marge, donc le chemin critique et ce qui porte une échéance cèdent en dernier, et il ne touche jamais à une date fixée ni à un jalon. Un plan qui contient plus de travail que de capacité ne se nivelle pas — et dans ce cas les jours qui ne rentrent pas restent marqués, car ce sont eux la réponse.",
       "How much of the task is done, in percent. A summary averages its children, weighted by duration.":
         "Quelle part de la tâche est faite, en pourcentage. Un récapitulatif fait la moyenne de ses enfants, pondérée par la durée.",
       "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days.":
@@ -1950,7 +2019,9 @@ window.PerthI18n = (function () {
       "Home screen": "主屏幕",
       "New project…": "新建项目…",
       "Rename project…": "重命名项目…",
-      "Import project (.jl)…": "导入项目 (.jl)…",
+      "Import project (.jl, .csv)…": "导入项目 (.jl、.csv)…",
+      "A .perth.jl, or a spreadsheet saved as CSV — one row per task, a `name` column, and whatever else you have":
+        "一个 .perth.jl，或另存为 CSV 的表格——每行一个任务，一列 `name`，其余列有什么算什么",
       "Export project (.jl)": "导出项目 (.jl)",
       "Delete project…": "删除项目…",
       "New task": "新建任务", "Edit task": "编辑任务",
@@ -1969,6 +2040,12 @@ window.PerthI18n = (function () {
       "Find a task by name": "按名称查找任务",
       "Import failed": "导入失败",
       "Auto-schedule failed": "自动排程失败",
+      "Level resources failed": "资源平衡失败",
+      "Levelled": "已平衡",
+      "Levelled — nobody is over their daily capacity":
+        "已平衡 — 没有人超出每日产能",
+      "day still does not fit": "天仍然放不下",
+      "days still do not fit": "天仍然放不下",
       "could not open the gantt": "无法打开甘特图",
       "new task": "新建任务",
       "edit task": "编辑任务",
@@ -1977,6 +2054,14 @@ window.PerthI18n = (function () {
       "undo": "撤销",
       "redo": "重做",
       "auto-schedule": "自动排程",
+      "level resources": "资源平衡",
+      "Only these": "只看这些",
+      "Only what matches": "只看匹配的",
+      "Hide what does not match instead of dimming it. Applies to the highlight and to the search box, together":
+        "把不匹配的隐藏起来，而不是变暗。对高亮和搜索框同时生效",
+      "Nothing matches — the plan is still there, the filter is hiding it.":
+        "没有匹配项 —— 计划还在，是过滤器把它藏起来了。",
+      "only what matches the filter": "只看匹配过滤器的任务",
       "toggle critical path": "切换关键路径",
       "resource load": "资源负载",
       "toggle dark mode": "切换深色模式",
@@ -2038,6 +2123,9 @@ window.PerthI18n = (function () {
       "Delete selected task": "删除所选任务",
       "Undo": "撤销", "Redo": "重做",
       "Auto-schedule (push successors)": "自动排程（顺延后继任务）",
+      "Level resources (fit capacity)": "资源平衡（适配产能）",
+      "Delays what has slack until nobody is over their declared daily capacity. Dependencies still hold; pinned dates and milestones stay where they are":
+        "推迟有浮时的任务，直到没有人超出所声明的每日产能。依赖关系依然有效；固定日期和里程碑不会移动",
       "Set baseline (snapshot plan)": "设定基线（计划快照）",
       "Clear baseline": "清除基线",
       // PERT（三点估算）
@@ -2253,6 +2341,10 @@ window.PerthI18n = (function () {
         "任务可以拖延几天而不推迟完工。浮时为零就是关键路径；浮时为负说明承诺已经落空。",
       "How much each person has on each day. It is what turns a plan into a question about people.":
         "每个人每天有多少活。它把一份计划变成一个关于人的问题。",
+      "Levelling":
+        "资源平衡",
+      "Delaying work until nobody is over their daily capacity. Auto-schedule respects the arrows between tasks; levelling respects the people doing them. It moves the tasks with the most slack first, so the critical path and anything with a deadline give way last, and it never touches a pinned date or a milestone. A plan with more work than capacity cannot be levelled at all — when that happens the days that do not fit stay marked, because they are the answer.":
+        "推迟工作，直到没有人超出每日产能。自动排程尊重任务之间的箭头，资源平衡尊重做这些任务的人。它先移动浮时最多的任务，因此关键路径和带截止日期的任务最后才让步，并且从不触碰固定日期或里程碑。工作量超过产能的计划根本无法平衡——出现这种情况时，放不下的天数会继续标记出来，因为它们就是答案。",
       "How much of the task is done, in percent. A summary averages its children, weighted by duration.":
         "任务完成的百分比。摘要任务按工期加权取子任务的平均值。",
       "How much of the work was planned to be done by each date, drawn against how much is done. The gap between the two curves is the delay, in work rather than in days.":

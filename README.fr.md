@@ -116,6 +116,7 @@ d'abord.
 | | |
 |---|---|
 | **Moteur CPM** | `schedule!`, `critical_path`, `slack`, `project_finish` |
+| **Nivellement des ressources** | `level!` — retarde ce qui a de la marge jusqu'à ce que personne ne dépasse sa capacité journalière déclarée, la plus faible marge d'abord |
 | **Dépendances** | fin-début par défaut ; `"SS:id"`, `"FF:id"` et décalage `"id+3"` |
 | **Jours ouvrés** | `set_calendar!(p, "Brazil")` — week-ends et jours fériés cessent de compter |
 | **WBS (OTP)** | donnez un parent à une tâche ; le parent devient un récapitulatif qui agrège dates et avancement |
@@ -146,8 +147,10 @@ d'abord.
   sprint, un arrêt, la saison des pluies. C'est une annotation, jamais de la
   planification.
 - **Couloirs** par personne ou par équipe, **récapitulatifs repliables** (et ce que
-  vous avez replié survit au rechargement), **filtre de mise en évidence** et **mode
-  présentation**.
+  vous avez replié survit au rechargement), **filtre de mise en évidence** — qui
+  estompe ce qui ne correspond pas, ou le masque carrément (*Ceux-ci seuls*, `O`)
+  dès que le plan est assez long pour que défiler dans le gris soit l'essentiel
+  de la lecture — et **mode présentation**.
 - **Notes en markdown** : le point rouge ouvre la note et rend `**gras**`,
   `*italique*`, `` `code` ``, `~~barré~~` et les liens.
 - Rien sur le graphique n'est écrit par-dessus autre chose : les lignes ouvrent un
@@ -173,6 +176,13 @@ Exportez le projet (`.perth.jl`), les tâches (**CSV**), les jalons et échéanc
 (`ganttplot`, `save_chart`). Et le **miroir fichier** : pointez un projet vers un
 chemin et chaque enregistrement y réécrit le `.perth.jl` — `git diff` montre alors ce
 qui a changé dans le plan.
+
+**Et le chemin du retour.** Un CSV entre aussi — *Fichier → Importer*, ou
+`add_tasks!(p, "plan.csv")` dans le REPL, sans aucun paquet CSV à installer. Une
+ligne par tâche, une colonne `name`, et tout ce que vous avez d'autre ; `parent` et
+`dependencies` peuvent désigner une tâche par son **nom**, si bien que le tableur
+que quelqu'un a réellement écrit s'importe aussi bien que le fichier exporté par
+Perth.
 
 ---
 
@@ -426,8 +436,12 @@ pour la géométrie, les chaînes d'événements et la mesure des chevauchements
   mêmes projets ; la clé d'accès est une porte, pas une authentification.
 - **Local par choix.** Pas de cloud, pas de comptes, pas de synchronisation entre
   machines au-delà du réseau local — le fichier est la synchronisation.
-- **Le lissage des ressources n'est pas automatique.** Perth signale la surcharge ;
-  il ne la résout pas à votre place.
+- **Le nivellement est une heuristique, et exige une capacité déclarée.** `level!`
+  déplace d'abord les tâches qui ont le plus de marge — une règle défendable, pas
+  l'optimum, car l'optimum est NP-difficile. Il ne touche qu'aux personnes ayant une
+  `capacity` déclarée, et un plan qui contient plus de travail que de capacité revient
+  avec les jours qui ne rentrent toujours pas signalés, plutôt que réarrangé en
+  silence.
 
 La suite est dans [ROADMAP.md](ROADMAP.md), avec le raisonnement de chaque point. Les
 issues et les contributions sont bienvenues — y compris me dire qu'un de vos plans a

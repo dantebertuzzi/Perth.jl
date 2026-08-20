@@ -40,7 +40,8 @@ export GanttTask, Project,
     Marker, markers, markers!, add_marker!, remove_marker!,
     MonthMark, month_marks, month_marks!, add_month_mark!, remove_month_mark!,
     end_date, span,
-    schedule!, critical_path, slack, project_finish, has_cycle, set_calendar!,
+    schedule!, level!, critical_path, slack, project_finish, has_cycle,
+    set_calendar!,
     deadline_slip,
     set_parent!, move_task!, subtasks, is_summary, ordered_tasks,
     set_baseline!, clear_baseline!, has_baseline, slippage,
@@ -85,6 +86,7 @@ include("icalendar.jl")
 include("schedule.jl")
 include("wbs.jl")
 include("insights.jl")
+include("csv.jl")
 include("pert.jl")
 include("show.jl")
 include("splash.jl")

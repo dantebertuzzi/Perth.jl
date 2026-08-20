@@ -293,6 +293,39 @@ input[type="date"], input[type="number"] { font-family: var(--mono); }
   color: var(--muted);
 }
 
+/* "Só estes" — a mesma pergunta do seletor ao lado, com a outra resposta:
+   em vez de escurecer o que não casa, tirar da tela. Por isso ele mora
+   colado nele, e não no menu de configurações: é filtro, não preferência de
+   desenho. Ligado, fica roxo cheio, como o zoom ativo — o estado tem de
+   saltar aos olhos, porque enquanto ele estiver ligado o que está na tela
+   NÃO é o plano inteiro. */
+#only-match {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+#only-match:hover { color: var(--ink); border-color: var(--muted); }
+#only-match[aria-pressed="true"] {
+  background: var(--purple);
+  border-color: var(--purple);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Filtro que não deixou nada: a tabela vazia sozinha parece defeito, e o
+   botão que a esvaziou está a uma linha de distância dela. */
+.tt-empty {
+  padding: 14px 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 /* Modo apresentação: some com a toolbar e a tabela de tarefas — sobra só
    a timeline do gráfico, em tela cheia */
 body.presenting .toolbar,

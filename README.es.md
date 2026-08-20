@@ -115,6 +115,7 @@ primero.
 | | |
 |---|---|
 | **Motor CPM** | `schedule!`, `critical_path`, `slack`, `project_finish` |
+| **Nivelación de recursos** | `level!` — retrasa lo que tiene holgura hasta que nadie supere su capacidad diaria declarada, primero la menor holgura |
 | **Dependencias** | fin-inicio por defecto; `"SS:id"`, `"FF:id"` y desfase `"id+3"` |
 | **Días hábiles** | `set_calendar!(p, "Brazil")` — fines de semana y feriados dejan de contar |
 | **EDT (WBS)** | dale un padre a una tarea; el padre se vuelve resumen y agrega fechas y avance |
@@ -141,7 +142,10 @@ primero.
 - **Bandas de calendario** — sombrea un tramo con nombre detrás del gráfico: un
   sprint, una parada, la temporada de lluvias. Es anotación, nunca programación.
 - **Carriles** por persona o equipo, **resúmenes plegables** (y lo que plegaste
-  sobrevive a la recarga), **filtro de resaltado** y **modo presentación**.
+  sobrevive a la recarga), **filtro de resaltado** — que atenúa lo que no
+  coincide, o lo oculta del todo (*Solo estos*, `O`) cuando el plan ya es lo
+  bastante largo como para que pasar por el gris sea la mayor parte de la
+  lectura — y **modo presentación**.
 - **Notas con markdown**: el punto rojo abre la nota y renderiza `**negrita**`,
   `*cursiva*`, `` `código` ``, `~~tachado~~` y enlaces.
 - Nada en el gráfico se escribe encima de nada: las líneas abren un hueco donde
@@ -165,6 +169,12 @@ Exporta el proyecto (`.perth.jl`), las tareas (**CSV**), los hitos y plazos
 (**iCalendar**), el gráfico (**PNG**) o una figura estática con Makie (`ganttplot`,
 `save_chart`). Y el **espejo en archivo**: apunta el proyecto a una ruta y cada
 guardado reescribe el `.perth.jl` allí — `git diff` muestra qué cambió en el plan.
+
+**Y de vuelta hacia dentro.** Un CSV también entra — *Archivo → Importar*, o
+`add_tasks!(p, "plan.csv")` en el REPL, sin ningún paquete de CSV que instalar. Una
+fila por tarea, una columna `name`, y lo demás que tengas; `parent` y `dependencies`
+pueden citar la tarea por **nombre**, así que la planilla que alguien escribió de
+verdad entra tan bien como el archivo que Perth exportó.
 
 ---
 
@@ -411,8 +421,11 @@ geometría, cadenas de eventos y medición de superposiciones.
   proyectos; la clave de acceso es una puerta, no un inicio de sesión.
 - **Local por diseño.** Sin nube, sin cuentas, sin sincronización entre máquinas más
   allá de la LAN — el archivo es la sincronización.
-- **La nivelación de recursos no es automática.** Perth informa la sobrecarga; no la
-  resuelve por ti.
+- **La nivelación es una heurística, y necesita capacidad declarada.** `level!` mueve
+  primero las tareas con más holgura — una regla defendible, no el óptimo, porque el
+  óptimo es NP-difícil. Solo toca a quien tiene `capacity` declarada, y un plan con más
+  trabajo que capacidad vuelve con los días que siguen sin caber marcados, en lugar de
+  reordenado en silencio.
 
 Lo que viene está en [ROADMAP.md](ROADMAP.md), con el razonamiento de cada punto.
 Issues y contribuciones son bienvenidas — incluso contarme que un plan tuyo rompió

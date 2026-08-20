@@ -1,8 +1,8 @@
 # Motor de scheduling: é aqui que o Perth deixa de ser uma view e passa a
 # ser um pacote de verdade. Ordenação topológica (Kahn), detecção de ciclos,
 # CPM (Critical Path Method) com forward/backward pass sobre datas, folga
-# (slack) e reprogramação automática de sucessoras. Tudo puro Julia,
-# utilizável sem navegador.
+# (slack), reprogramação automática de sucessoras e nivelamento de recursos
+# por capacidade. Tudo puro Julia, utilizável sem navegador.
 
 # Duração efetiva em dias (marcos ocupam o próprio dia)
 _effdur(t::GanttTask) = t.milestone ? 1 : max(t.duration, 1)
@@ -293,6 +293,269 @@ function schedule!(p::Project)
     for (i, t) in enumerate(lv.tasks)
         t.pinned && continue           # data fixa: o motor calcula, não grava
         t.start = cpm.es[i]
+    end
+    _with_state(st -> _save!(st, p))   # _save! refaz o rollup dos resumos
+    return p
+end
+
+# ---------------------------------------------------------------------------
+# Nivelamento de recursos (levelling).
+#
+# schedule! empurra sucessoras para o plano respeitar DEPENDÊNCIA. Aqui ele é
+# empurrado para respeitar CAPACIDADE — o outro lado do mesmo motor, e a
+# metade que faltava do "diagnosticar → agir": desde que `capacity` existe, o
+# Perth sabia dizer com precisão que a terça da Ana tem 12h num dia de 8, e
+# não sabia fazer nada a respeito.
+#
+# Nivelar é NP-difícil, então toda ferramenta escolhe uma heurística e vive
+# com ela. A daqui é MENOR FOLGA PRIMEIRO: fica quem tem menos folga, cede
+# quem tem mais. É a mais defensável das três candidatas usuais (menor folga,
+# prazo mais próximo, tarefa mais longa) por três motivos que valem juntos:
+# a folga já é calculada pelo CPM, então não há número novo a inventar nem a
+# manter; quem está no caminho crítico não é adiado por causa de quem não
+# está; e uma tarefa com prazo apertado já chega aqui com folga baixa ou
+# negativa, porque o backward pass usa o `deadline` — prazo sai protegido de
+# graça, sem uma segunda regra dizendo isso.
+#
+# Não é o ótimo, e não finge ser.
+# ---------------------------------------------------------------------------
+
+# Teto de sanidade do laço, na mesma família do 3660 de _dur_between. O laço
+# termina sozinho (ver o comentário do alvo, mais abaixo); o teto existe para
+# que um plano patológico não segure o servidor enquanto termina.
+const _LEVEL_MAX_MOVES = 5_000
+
+# Quanto a tarefa pesa em CADA dia que ocupa: a mesma divisão que
+# _workload_rows faz para montar a carga do dia, feita para uma tarefa só.
+function _daily_share(cal::AbstractCalendar, t::GanttTask)
+    days = _task_days(cal, t)
+    return isempty(days) ? 0.0 : _work_weight(t) / length(days)
+end
+
+# O que o nivelamento tem permissão para mover.
+#
+# `pinned` é uma data que alguém prometeu. Um marco não carrega trabalho para
+# redistribuir — o peso que ele aparenta ter na carga é só o default de quem
+# não declarou `effort` —, então movê-lo mudaria uma data que alguém lê sem
+# aliviar nada. A terceira é a menos óbvia, e é ela que impede o laço de
+# andar para sempre: uma tarefa que SOZINHA já estoura o dia da pessoa vai
+# estourar qualquer dia em que caia, então empurrá-la só faz o problema
+# passear pelo calendário. Ela fica, e o dia dela é relatado pelo que é — um
+# dia que remanejamento nenhum conserta.
+_levelable(cal::AbstractCalendar, t::GanttTask, cap::Float64) =
+    !t.pinned && !t.milestone && !_over_day(1, _daily_share(cal, t), cap)
+
+# A primeira data a partir de `de` em que a tarefa cabe INTEIRA no dia da
+# pessoa: um trecho de _effdur(t) dias úteis seguidos em que o peso diário
+# dela somado ao de todo o resto não estoura a capacidade. `sem` é a carga da
+# pessoa sem esta tarefa, dia a dia.
+#
+# É aqui que mora a diferença entre nivelar e empurrar. Adiar um dia de cada
+# vez parece o movimento mínimo e é o que não termina: três tarefas de três
+# dias no mesmo dia continuam as três no dia seguinte, e o bloco marcha pelo
+# calendário sem nunca se separar. Procurar o primeiro encaixe move a tarefa
+# uma vez, para onde ela de fato cabe.
+#
+# A busca sempre acha: passado o último dia com carga da pessoa, o dia está
+# vazio, e uma tarefa que não cabe sozinha nem no dia vazio já foi barrada
+# por _levelable. `teto` é rede de segurança, não a resposta esperada.
+function _first_fit(cal::AbstractCalendar, t::GanttTask, share::Float64,
+                    cap::Float64, de::Date,
+                    sem::Dict{Date,Tuple{Int,Float64}}, teto::Date)
+    need = _effdur(t)
+    d = _snap(cal, de)
+    inicio, seguidos = d, 0
+    while d <= teto
+        n, e = get(sem, d, (0, 0.0))
+        if _over_day(n + 1, e + share, cap)
+            seguidos = 0
+        else
+            seguidos == 0 && (inicio = d)
+            seguidos += 1
+            seguidos >= need && return inicio
+        end
+        d = _day_after(cal, d)
+    end
+    return nothing
+end
+
+# Sucessoras diretas e indiretas (BFS). Só elas são reacomodadas depois de um
+# empurrão: nivelar não é reprogramar o plano inteiro, e uma tarefa que não
+# depende da que se moveu não tem por que mudar de lugar.
+function _downstream(succs::Vector{Vector{Int}}, i::Int)
+    out, seen, fila = Int[], Set{Int}(), copy(succs[i])
+    while !isempty(fila)
+        j = popfirst!(fila)
+        j in seen && continue
+        push!(seen, j)
+        push!(out, j)
+        append!(fila, succs[j])
+    end
+    return out
+end
+
+"""
+    level!(p::Project) -> Project
+
+Resource-level the plan: push work forward until nobody with a declared
+`capacity` is left with an overloaded day. Dependencies still bind, and
+successors follow what moves. Persists the result.
+
+The priority rule is **least slack first**: the task with the least slack
+keeps its place and the one with the most slack gives way. Levelling is
+NP-hard, so this is a heuristic and not the optimum — it is the most
+defensible one available here, because [`slack`](@ref) is a number the CPM
+already computes, and because a `deadline` comes out protected without a
+second rule: the backward pass already gives a task with a tight deadline
+low (or negative) slack, so it is among the last to be asked to move.
+
+Three things never move:
+
+- tasks marked `pinned` — a date somebody promised;
+- **milestones**, which carry no work to redistribute: moving one would
+  only change a date somebody reads;
+- a task whose own daily share is heavier than the assignee's whole
+  `capacity`. It overloads any day it lands on, so pushing it would just
+  walk the problem down the calendar.
+
+Everything else is only ever pushed **later**, and to the first day where
+it fits *whole* — never pulled back, never split in two. Tasks with no
+assignee are never moved: there is nobody to overload.
+
+**Levelling needs a declared capacity, and only touches people who have
+one.** Without a capacity an "overloaded day" is just two tasks on the same
+day (see [`workload`](@ref)), and levelling against that rule would
+serialise the whole plan into single file — so people with no declared
+capacity are left exactly where they are, and a plan where nobody declared
+one throws `ArgumentError` instead of quietly rearranging itself.
+
+**What is left over stays visible.** A plan with more work than capacity
+*cannot* be levelled, and this does not pretend otherwise: when it returns,
+any day still `over` in [`workload`](@ref) is a day whose remaining work
+*cannot move* (the three cases above), or a day belonging to somebody who
+never declared a capacity. A day that stays overloaded is still emptied of
+everything that could leave it — the day is beyond help, the tasks that can
+find room are not. Ask [`workload`](@ref) or
+[`people_stats`](@ref) again afterwards; the overload that survives is the
+answer, in the same numbers that reported it before.
+
+Throws `ArgumentError` if the dependency graph has a cycle, or if no
+assignee in the plan has a declared capacity.
+
+# Example
+
+```julia
+add_person!(p, "Ana"; capacity = 8)      # 8 hours a day
+update_task!(p, "t1"; assignee = "Ana", effort = 8)
+update_task!(p, "t2"; assignee = "Ana", effort = 8)   # same day: 16 in an 8
+level!(p)                                # t2 moves to the first day that fits
+filter(r -> r.over, workload(p))         # what levelling could not solve
+```
+"""
+function level!(p::Project)
+    lv = _leaf_view(p)
+    isempty(lv.tasks) && return p
+    _, succs = _toposort(lv)          # ciclo: erra aqui, antes de mover nada
+    cal = _cal(lv)
+    idx = Dict(t.id => i for (i, t) in enumerate(lv.tasks))
+
+    any(r -> r.capacity > 0, _workload_rows(p)) || throw(ArgumentError(
+        "levelling needs a declared capacity, and nobody with work in this " *
+        "plan has one (see `add_person!`). Without a capacity an overloaded " *
+        "day is just two tasks on the same day, and levelling against that " *
+        "would serialise the whole plan."))
+
+    # Quantas tarefas esperam por esta (fan-out direto), para desempatar duas
+    # folgas iguais: entre elas, cede a que trava menos gente.
+    fan = zeros(Int, length(lv.tasks))
+    for t in lv.tasks, d in t.dependencies
+        j = get(idx, _parse_dep(d).id, 0)
+        j == 0 || (fan[j] += 1)
+    end
+
+    travados = Set{Tuple{String,Date}}()   # dias que este motor não conserta
+    for _ in 1:_LEVEL_MAX_MOVES
+        # O dia sobrecarregado MAIS ANTIGO ainda em aberto. Atacar sempre o
+        # mais antigo é o que faz o laço terminar: nada aqui move nada para
+        # trás, então um dia já resolvido não pode estourar de novo, e o
+        # ponteiro do "mais antigo em aberto" só anda para a frente.
+        #
+        # As linhas vêm de `p`, não de `lv`: a capacidade está no cadastro de
+        # pessoas, e a visão de folhas não o carrega.
+        rows = _workload_rows(p)
+        alvo = nothing
+        for r in rows
+            (r.over && r.capacity > 0 &&
+             !((r.assignee, r.date) in travados) &&
+             (alvo === nothing || r.date < alvo.date)) && (alvo = r)
+        end
+        alvo === nothing && break
+
+        movs = Int[]
+        for id in alvo.task_ids
+            i = get(idx, id, 0)
+            i == 0 && continue
+            _levelable(cal, lv.tasks[i], alvo.capacity) && push!(movs, i)
+        end
+        # Só o que não pode sair continua no dia: o dia é o que é, e nenhum
+        # remanejamento o conserta. Marca e segue.
+        #
+        # Um dia insalvável NÃO é motivo para deixar quieto o que ainda pode
+        # sair dele. Se uma tarefa de 40h sozinha estoura o dia de 8, o dia
+        # está perdido de qualquer jeito — mas a pessoa também não faz as
+        # outras três naquele dia, e mantê-las ali só porque a vizinha é
+        # grande demais criaria uma descontinuidade sem defesa: a mesma
+        # tarefa sai do dia quando divide com uma tarefa normal e fica
+        # quando divide com uma monstruosa. O dia continua estourado no
+        # relatório de qualquer maneira, e é lá que ele deve aparecer.
+        if isempty(movs)
+            push!(travados, (alvo.assignee, alvo.date))
+            continue
+        end
+
+        cpm = _cpm(lv)
+        # Menor folga primeiro: fica quem tem menos, cede quem tem mais.
+        #
+        # O prazo entra como PRIMEIRO desempate, e não como segunda regra: a
+        # folga já protege quem tem prazo apertado (o backward pass baixa o
+        # late finish), mas empate de folga é o caso comum — num plano de
+        # tarefas paralelas todas têm a mesma —, e entre duas tarefas
+        # igualmente folgadas quem carrega uma promessa cede por último. O
+        # id fecha a lista para o resultado não depender da ordem em que as
+        # tarefas foram criadas.
+        i = argmax(k -> (cpm.slack[k], lv.tasks[k].deadline === nothing,
+                         -fan[k], lv.tasks[k].start, lv.tasks[k].id), movs)
+
+        # A carga da pessoa sem a tarefa que vai sair. O esforço é uma soma,
+        # então tirar a parte dela é uma subtração — não há por que recontar
+        # o dia inteiro, e a tolerância de _over_day já cobre o resíduo de
+        # ponto flutuante que a subtração deixa.
+        t = lv.tasks[i]
+        share = _daily_share(cal, t)
+        sem = Dict{Date,Tuple{Int,Float64}}()
+        ultimo = alvo.date
+        for r in rows
+            r.assignee == alvo.assignee || continue
+            n, e = r.tasks, r.effort
+            t.id in r.task_ids && ((n, e) = (n - 1, e - share))
+            sem[r.date] = (n, e)
+            r.date > ultimo && (ultimo = r.date)
+        end
+        novo = _first_fit(cal, t, share, alvo.capacity, _day_after(cal, alvo.date),
+                          sem, _shift(cal, ultimo, _effdur(t) + 1))
+        if novo === nothing            # a rede de segurança de _first_fit
+            push!(travados, (alvo.assignee, alvo.date))
+            continue
+        end
+        t.start = novo
+
+        # Dependência continua valendo: quem espera por ela vai junto. `es` é
+        # sempre ≥ o start atual (a data da tarefa é um "não antes de" no
+        # forward pass), então isto empurra para a frente e nunca puxa.
+        pos = _cpm(lv)
+        for j in _downstream(succs, i)
+            lv.tasks[j].pinned || (lv.tasks[j].start = pos.es[j])
+        end
     end
     _with_state(st -> _save!(st, p))   # _save! refaz o rollup dos resumos
     return p

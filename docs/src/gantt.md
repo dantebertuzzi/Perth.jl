@@ -17,6 +17,7 @@ create_project
 add_task!
 update_task!
 schedule!
+level!
 critical_path
 slack
 deadline_slip
@@ -59,6 +60,7 @@ month_marks!
 add_month_mark!
 remove_month_mark!
 tasktable
+add_tasks!
 icalendar
 overallocations
 workload
