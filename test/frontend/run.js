@@ -4248,6 +4248,109 @@ console.log("gantt · a curva-S diz de que régua está falando");
   close();
 }
 
+console.log("gantt · a curva-S diz a divisão que já continha");
+{
+  // planned_today e earned_today já vinham prontos e ficavam lado a lado na
+  // legenda, esperando que quem lesse fizesse a divisão de cabeça.
+
+  // ── a aritmética, isolada: é a parte que tem regra, não pixel ──────────
+  {
+    const { runIn, close } = loadGanttApp();
+    await new Promise((r) => setTimeout(r, 0));
+    const ler = (p, e) => runIn(`return scLeitura(${p}, ${e});`);
+
+    check(ler(32, 8).lado === "below" && Math.round(ler(32, 8).pct) === 75,
+          "gantt: 8 feitos de 32 previstos são 75% abaixo");
+    check(ler(100, 150).lado === "above" && Math.round(ler(100, 150).pct) === 50,
+          "gantt: e 150 de 100, 50% acima");
+    check(ler(100, 100).lado === "on" && ler(100, 100.4).lado === "on",
+          "gantt: meio por cento é ruído do rateio diário, não notícia");
+    // 0/0 não é "em dia": é pergunta sem resposta, e um "0%" ali seria
+    // afirmação inventada sobre um projeto que ainda não começou
+    check(ler(0, 0) === null && ler(0, 5) === null,
+          "gantt: sem nada previsto até hoje, não há leitura nenhuma");
+    close();
+  }
+
+  // ── as duas leituras na tela ──────────────────────────────────────────
+  const { runIn, close } = loadGanttApp();
+  await new Promise((r) => setTimeout(r, 0));
+  // trabalho 8 de 32 (75% abaixo) e dinheiro 10000 de 6666 (50% acima): é o
+  // caso que justifica mostrar as duas juntas — as réguas discordam, e um
+  // número só, misturando as unidades, apagaria a discordância
+  const abrir = (has_cost) => `
+    state.current = { id: "psc", name: "P", people: [], bands: [], markers: [], tasks: [] };
+    api = async () => ({
+      dates: ["2026-04-06", "2026-04-07", "2026-04-08"],
+      today: "2026-04-07",
+      work: { planned: [16, 32, 48], actual: [4, 8], total: 48,
+              planned_today: 32, earned_today: 8 },
+      cost: { planned: [3333, 6666, 10000], actual: [5000, 10000], total: 10000,
+              planned_today: 6666, earned_today: 10000 },
+      has_cost: ${has_cost} });
+    showSCurve();
+    return 1;`;
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const linhas = `
+    return [...document.querySelectorAll("#perth-overlay .sc-line")].map((l) => ({
+      texto: l.textContent.replace(/\\s+/g, " ").trim(),
+      classe: l.className, dica: l.getAttribute("title") || "" }));`;
+
+  runIn(abrir(true)); await tick();
+  let r = runIn(linhas);
+  check(r.length === 2, "gantt: com custo informado, as duas leituras aparecem");
+  check(/75%/.test(r[0].texto) && r[0].classe.includes("below"),
+        "gantt: o trabalho está 75% abaixo do previsto");
+  check(/50%/.test(r[1].texto) && r[1].classe.includes("above"),
+        "gantt: e o dinheiro, 50% acima — as réguas discordam, e as duas falam");
+  check(!/atras|behind|late/i.test(r.map((l) => l.texto).join(" ")),
+        "gantt: nenhuma leitura diz 'atrasado' (isto é trabalho, não dias)");
+  check(/spent|gast/i.test(r[1].dica),
+        "gantt: a régua de dinheiro avisa que é valor entregue, não gasto");
+
+  // trocar de régua muda a curva, não as leituras: elas são dois fatos sobre
+  // o plano, não a legenda da linha que está desenhada
+  const antes = JSON.stringify(r);
+  r = runIn(`document.querySelector('#perth-overlay [data-unit="cost"]').click();` + linhas);
+  check(JSON.stringify(r) === antes,
+        "gantt: e trocar de régua não mexe nelas");
+
+  // sem custo, sobra a leitura que existe sempre
+  runIn(abrir(false)); await tick();
+  r = runIn(linhas);
+  check(r.length === 1 && /75%/.test(r[0].texto),
+        "gantt: sem custo informado, só a leitura do trabalho");
+
+  // ── réguas idênticas: uma leitura, não duas ───────────────────────────
+  // Sem `effort` declarado o peso de trabalho cai no cost (_work_weight), e
+  // as duas séries ficam iguais. Repetir o número pareceria duas medidas
+  // independentes concordando — a mais cara das ilusões que um painel vende.
+  runIn(`
+    state.current = { id: "pig", name: "P", people: [], bands: [], markers: [], tasks: [] };
+    const s = { planned: [10, 20], actual: [5, 10], total: 20,
+                planned_today: 20, earned_today: 10 };
+    api = async () => ({ dates: ["2026-04-06", "2026-04-07"], today: "2026-04-07",
+                         work: { ...s }, cost: { ...s }, has_cost: true });
+    showSCurve();
+    return 1;`);
+  await tick();
+  r = runIn(linhas);
+  check(r.length === 1, "gantt: réguas idênticas rendem UMA leitura, não duas");
+  check(/50%/.test(r[0].texto) && !/trabalho|work|custo|cost/i.test(r[0].texto),
+        "gantt: e sem rótulo de unidade — não há outra régua da qual separá-la");
+
+  // a frase é traduzida, e a ressalva do dinheiro também
+  runIn(`PerthI18n.set("pt"); return 1;`);
+  runIn(abrir(true)); await tick();
+  r = runIn(linhas);
+  check(/abaixo do previsto/.test(r[0].texto) && /acima do previsto/.test(r[1].texto),
+        "gantt: as leituras saem no idioma da tela");
+  check(/gasto real/.test(r[1].dica), "gantt: e a ressalva do dinheiro também");
+  runIn(`PerthI18n.set("en"); return 1;`);
+
+  close();
+}
+
 console.log("gantt · o chip do projeto tem a largura do nome que ele mostra");
 {
   // Um <select> se dimensiona pela opção mais LARGA (a caixa precisa caber a

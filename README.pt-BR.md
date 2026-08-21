@@ -170,7 +170,7 @@ Planilha não faz isso, e Gantt de mesa exige exportar antes.
 
 | | |
 |---|---|
-| **Curva S** | previsto × realizado — a distância é o atraso medido em trabalho, não em dias |
+| **Curva S** | previsto × realizado, dito em número: *13% abaixo do previsto até hoje*, em trabalho e em dinheiro |
 | **Carga** | quanto cada pessoa tem em cada dia (`workload`, `overallocations`) |
 | **Capacidade** | `add_person!(p, "Ana"; capacity = 8)` e `effort` na tarefa: sobrecarga passa a ser *mais trabalho do que o dia aguenta*, e não *duas tarefas no mesmo dia* |
 | **Estatísticas** | por pessoa e por setor: esforço, feito, dias ocupados, dias em dobro |

@@ -4910,6 +4910,27 @@ function showShareOff() {
   showOverlay("Transmission off", body);
 }
 
+/* A leitura que a curva já continha e não dizia.
+ *
+ * `planned_today` e `earned_today` chegam prontos do servidor, para as DUAS
+ * réguas (ver _scurve): a legenda já os imprimia lado a lado e deixava a
+ * divisão para quem estivesse lendo. A divisão é a resposta que todo relatório
+ * pede — o que está feito é mais ou menos do que o previsto ATÉ HOJE.
+ *
+ * Devolve null quando não há leitura, e isso é regra, não borda: sem nada
+ * previsto até hoje — projeto que ainda não começou — 0/0 não é "em dia", é
+ * pergunta sem resposta, e imprimir "0%" ali seria inventar uma afirmação.
+ *
+ * O meio por cento de tolerância existe porque a curva é diária e o rateio
+ * distribui trabalho parcial: 100,4 sobre 100 é ruído de arredondamento, não
+ * notícia. */
+function scLeitura(planned, earned) {
+  if (!(planned > 0)) return null;
+  const pct = (earned / planned - 1) * 100;
+  if (Math.abs(pct) < 0.5) return { pct: 0, lado: "on" };
+  return { pct: Math.abs(pct), lado: pct > 0 ? "above" : "below" };
+}
+
 /* A curva-S, agora em duas réguas.
  *
  * Era uma curva só, com peso "custo se houver, senão pessoa-dias" — e ela
@@ -4965,6 +4986,47 @@ async function showSCurve() {
         `<span>${T("planned to date")}: <b>${s.planned_today.toFixed(1)}</b></span>` +
         `<span>${T("earned to date")}: <b>${s.earned_today.toFixed(1)}</b></span>` +
         `<span>${T("total")}: <b>${s.total.toFixed(1)}</b> ${nome}</span>` +
+        `</div>` +
+        /* As duas leituras aparecem JUNTAS, independentes de qual curva está
+         * desenhada: são dois fatos sobre o plano, e o valor está justamente
+         * em compará-los. Trabalho 5% abaixo com dinheiro 20% abaixo diz que
+         * o que atrasou é o que era caro — coisa que nenhuma das duas linhas
+         * diz sozinha, e que um número só, misturando as unidades, apagaria.
+         *
+         * Nunca a palavra "atrasado": isto é razão entre trabalho feito e
+         * trabalho previsto, não distância em dias. */
+        /* Uma régua só quando são a mesma régua: sem `effort` declarado o
+         * peso de trabalho CAI no cost (ver _work_weight), e as duas séries
+         * ficam idênticas. Repetir o número seria pior do que redundante —
+         * pareceria que duas medidas independentes concordaram. Compara-se os
+         * operandos, que é o teste de "mesma régua"; comparar as frases diria
+         * apenas que dois números diferentes arredondaram igual. */
+        `<div class="sc-read">` +
+        ["work", "cost"].filter((k) => k === "work" ||
+          (d.has_cost && (d.cost.planned_today !== d.work.planned_today ||
+                          d.cost.earned_today !== d.work.earned_today))).map((k, _i, reguas) => {
+          const r = scLeitura(d[k].planned_today, d[k].earned_today);
+          if (!r) return "";
+          const soUma = reguas.length === 1;
+          const frase = r.lado === "on"
+            ? T("on plan to date")
+            : `<b>${r.pct.toFixed(0)}%</b> ` +
+              T(r.lado === "above" ? "above plan to date" : "below plan to date");
+          /* A régua de dinheiro é valor ENTREGUE ponderado por custo, não
+           * dinheiro gasto: o Perth não tem onde receber gasto real, então
+           * "abaixo do plano" aqui nunca quer dizer "sobrou orçamento". A
+           * chave em inglês vai no data-i18n-title para o apply() poder
+           * retraduzir se alguém trocar de idioma com a caixa aberta. */
+          const cav = "Value delivered, weighted by cost — not money spent: " +
+                      "Perth has nowhere to record actual spending.";
+          const dica = k === "cost"
+            ? ` title="${T(cav)}" data-i18n-title="${cav}"` : "";
+          /* Sem a outra régua para contrastar, o rótulo da unidade não separa
+           * nada: a legenda logo acima já diz de que régua são os números. */
+          return `<div class="sc-line ${r.lado}"${dica}>` +
+                 (soUma ? "" : `<span class="sc-unit">${T(k)}</span> `) +
+                 `${frase}</div>`;
+        }).join("") +
         `</div>`;
       for (const b of body.querySelectorAll("[data-unit]")) {
         b.addEventListener("click", () => { regua = b.dataset.unit; desenha(); });

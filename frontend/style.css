@@ -1405,6 +1405,32 @@ body.readonly .c-seq { cursor: default; }
   border-color: transparent;
 }
 
+/* As duas leituras da curva-S (ver scLeitura). Acima e abaixo do plano têm
+   cor, "em dia" não tem: quando não há notícia, o silêncio é a informação.
+   Verde/vermelho aqui NÃO é bom/ruim — é acima/abaixo do previsto, e
+   entregar antes do previsto também pede explicação. */
+.sc-read {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--ink);
+}
+.sc-line { display: flex; align-items: baseline; gap: 7px; }
+.sc-line .sc-unit {
+  min-width: 44px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+.sc-line.below b { color: var(--red); }
+.sc-line.above b { color: var(--green); }
+.sc-line[title] { cursor: help; }
+
 .bulk-box { min-width: 340px; }
 .bulk-row {
   display: flex;

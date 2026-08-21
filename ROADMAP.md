@@ -49,27 +49,6 @@ PNG export exists, but a plan ends up as an attachment in a report and as paper
 on a meeting table. A print stylesheet — landscape, page breaks between row
 groups, legend, no menubar — is cheap and changes where Perth can go.
 
-### What the S-curve already knows, said as numbers
-
-`_scurve` in `src/insights.jl` computes planned and earned work per day, with
-`cost` when it is set and person-days otherwise. Two divisions on numbers that
-are already there — earned over planned, earned over the cost so far — are the
-two readings every report asks for: are we ahead or behind, and is it costing
-what we said. The tile already prints both operands — *planned to date* and
-*earned to date* sit in the legend under the curve — so what is missing is not
-the numbers, it is the division and the sentence it makes: a plan that is 12%
-behind schedule and 4% under cost deserves to be told that, not to have it
-reconstructed by whoever is reading.
-
-*Lean on:* `_scurve` already returns both series — work and cost, each in one
-unit, with `has_cost` saying whether the second means anything — so the tile is
-two divisions on a payload the client already fetches. No new route, no new
-arithmetic in Julia. The unit trap that used to block this item is gone: it was
-"under cost means nothing when `cost` is zero and the weight is person-days",
-and there is no longer a series that mixes the two. What is left is the
-sentence itself, and the honesty of saying *ahead of schedule in work* and
-*under budget in money* as two statements rather than one number.
-
 ### The plan as it was last Monday
 
 `activity.jsonl` records who did what, and a baseline records one snapshot,

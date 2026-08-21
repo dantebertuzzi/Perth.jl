@@ -677,6 +677,14 @@ window.PerthI18n = (function () {
         "Desmarcado = bloqueado naquela máquina. A máquina do host sempre tem permissão aqui, independente desta matriz.",
       // etiqueta de versão (barra de status dos dois apps)
       "Perth version": "Versão do Perth",
+      "on plan to date":
+        "em dia com o previsto",
+      "above plan to date":
+        "acima do previsto até hoje",
+      "below plan to date":
+        "abaixo do previsto até hoje",
+      "Value delivered, weighted by cost — not money spent: Perth has nowhere to record actual spending.":
+        "Valor entregue, ponderado pelo custo — não é dinheiro gasto: o Perth não tem onde registrar gasto real.",
       "A newer Perth is out — whoever started the server can update with ] up Perth":
         "Saiu uma versão nova do Perth — quem subiu o servidor atualiza com ] up Perth",
     },
@@ -1313,6 +1321,14 @@ window.PerthI18n = (function () {
         "Sin marcar = bloqueado en esa máquina. La máquina del host siempre tiene permiso aquí, sin importar esta matriz.",
       // etiqueta de versão (barra de status dos dois apps)
       "Perth version": "Versión de Perth",
+      "on plan to date":
+        "al día con lo previsto",
+      "above plan to date":
+        "por encima de lo previsto hasta hoy",
+      "below plan to date":
+        "por debajo de lo previsto hasta hoy",
+      "Value delivered, weighted by cost — not money spent: Perth has nowhere to record actual spending.":
+        "Valor entregado, ponderado por el costo — no es dinero gastado: Perth no tiene dónde registrar el gasto real.",
       "A newer Perth is out — whoever started the server can update with ] up Perth":
         "Salió una versión nueva de Perth — quien levantó el servidor actualiza con ] up Perth",
     },
@@ -1951,6 +1967,14 @@ window.PerthI18n = (function () {
         "Décoché = bloqué sur cette machine. La machine hôte est toujours autorisée ici, quelle que soit cette matrice.",
       // etiqueta de versão (barra de status dos dois apps)
       "Perth version": "Version de Perth",
+      "on plan to date":
+        "conforme au prévu",
+      "above plan to date":
+        "au-dessus du prévu à ce jour",
+      "below plan to date":
+        "en dessous du prévu à ce jour",
+      "Value delivered, weighted by cost — not money spent: Perth has nowhere to record actual spending.":
+        "Valeur livrée, pondérée par le coût — pas de l'argent dépensé : Perth n'a nulle part où enregistrer la dépense réelle.",
       "A newer Perth is out — whoever started the server can update with ] up Perth":
         "Une nouvelle version de Perth est sortie — celui qui a lancé le serveur met à jour avec ] up Perth",
     },
@@ -2584,6 +2608,14 @@ window.PerthI18n = (function () {
         "未勾选 = 在该设备上被阻止。无论此矩阵如何设置，主机设备始终被允许。",
       // etiqueta de versão (barra de status dos dois apps)
       "Perth version": "Perth 版本",
+      "on plan to date":
+        "与计划持平",
+      "above plan to date":
+        "高于至今的计划",
+      "below plan to date":
+        "低于至今的计划",
+      "Value delivered, weighted by cost — not money spent: Perth has nowhere to record actual spending.":
+        "按成本加权的已交付价值 —— 不是已花的钱：Perth 没有地方记录实际支出。",
       "A newer Perth is out — whoever started the server can update with ] up Perth":
         "Perth 有新版本了 —— 启动服务器的人可以用 ] up Perth 更新",
     },
