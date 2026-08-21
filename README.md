@@ -170,7 +170,7 @@ A spreadsheet cannot do that, and a desktop Gantt makes you export first.
 
 | | |
 |---|---|
-| **S-curve** | planned vs. earned — the gap is the delay measured in work, not days |
+| **S-curve** | planned vs. earned, said as a number: *13% below plan to date*, for work and for money |
 | **Workload** | how much each person has on each day (`workload`, `overallocations`) |
 | **Capacity** | `add_person!(p, "Ana"; capacity = 8)` and `effort` on the task: overload becomes *more work than the day holds*, not *two tasks on the same day* |
 | **Statistics** | per person and per team: effort, done, days busy, days over capacity |

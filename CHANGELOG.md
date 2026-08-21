@@ -5,6 +5,35 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **The S-curve says the division it was already carrying.** `planned to date`
+  and `earned to date` sat side by side in the legend, leaving the arithmetic
+  to whoever was reading. The tile now states it: *13% below plan to date*,
+  under the curve, for work and for money. No new route and no new arithmetic
+  in Julia — `_scurve` already sends both operands for both rulers.
+- **Two readings, never one number.** Work 13% below and money 81% below is
+  the sentence that matters: what slipped is what was expensive. A single
+  blended figure would erase exactly that, which is how the old one-curve
+  version came to add R$ 10,000 to 5 person-days. The wording avoids the word
+  *behind*: this is a ratio between work done and work planned to date, not a
+  distance in days, and "12% behind" invites reading it as time.
+- **One ruler when they are one ruler.** With no `effort` declared, the work
+  weight falls back to `cost` (`_work_weight`), so both series are the same
+  series — and printing the same number twice would look like two independent
+  measures agreeing. The reading collapses to a single unlabelled line, since
+  there is no second ruler to tell it apart from.
+- **Nothing is claimed before there is anything to claim.** With nothing
+  planned to date — a project that has not started — `0/0` is not "on plan",
+  it is a question with no answer, and no line is printed at all. Half a
+  percent counts as on plan: the curve is daily and the spread splits partial
+  work, so 100.4 over 100 is rounding, not news.
+- The money reading carries a caveat in its tooltip, in all five UI languages:
+  it is **value delivered weighted by cost, not money spent** — Perth has
+  nowhere to record actual spending, so "below plan" there never means "under
+  budget".
+
 ## [0.13.0] - 2026-08-20
 
 ### Added

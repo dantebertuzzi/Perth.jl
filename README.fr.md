@@ -179,7 +179,7 @@ d'abord.
 
 | | |
 |---|---|
-| **Courbe en S** | prévu × réalisé — l'écart est le retard mesuré en travail, pas en jours |
+| **Courbe en S** | prévu × réalisé, dit en chiffre : *13% en dessous du prévu à ce jour*, en travail et en argent |
 | **Charge** | ce que chaque personne a chaque jour (`workload`, `overallocations`) |
 | **Capacité** | `add_person!(p, "Ana"; capacity = 8)` et `effort` sur la tâche : la surcharge devient *plus de travail que le jour n'en contient*, et non *deux tâches le même jour* |
 | **Statistiques** | par personne et par équipe : effort, fait, jours occupés, jours en double |

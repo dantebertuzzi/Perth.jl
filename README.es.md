@@ -172,7 +172,7 @@ primero.
 
 | | |
 |---|---|
-| **Curva S** | previsto × realizado — la distancia es el atraso medido en trabajo, no en días |
+| **Curva S** | previsto × realizado, dicho en número: *13% por debajo de lo previsto hasta hoy*, en trabajo y en dinero |
 | **Carga** | cuánto tiene cada persona cada día (`workload`, `overallocations`) |
 | **Capacidad** | `add_person!(p, "Ana"; capacity = 8)` y `effort` en la tarea: la sobrecarga pasa a ser *más trabajo del que cabe en el día*, no *dos tareas el mismo día* |
 | **Estadísticas** | por persona y por equipo: esfuerzo, hecho, días ocupados, días duplicados |

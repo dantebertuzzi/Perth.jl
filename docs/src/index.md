@@ -32,7 +32,8 @@ Perth.kanban(share = true)  # Kanban shared on your LAN, with a QR code
   [`schedule!`](@ref).
 - **Gantt ↔ Kanban bridge**: [`kanban_from_project!`](@ref) turns a project
   into cards; dragging a linked card to *done* completes the task, live.
-- **Analytics**: S-curve (planned vs. earned), daily load per person
+- **Analytics**: S-curve (planned vs. earned, and the division said out loud —
+  *13% below plan to date*, for work and for money), daily load per person
   ([`workload`](@ref) and the resource panel), kanban flow metrics,
   activity log, CSV, iCalendar ([`icalendar`](@ref)) and PNG/PDF export.
 - **A spreadsheet walks in**: [`add_tasks!`](@ref) reads CSV from a path or a
