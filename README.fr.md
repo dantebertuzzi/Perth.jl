@@ -336,8 +336,10 @@ glisser une carte s'anime sur l'écran de tout le monde, et chaque machine appar
 comme un curseur étiqueté ancré à une *carte*, pas à un pixel — il survit donc aux
 tailles de fenêtre et aux niveaux de zoom différents. Les cartes portent des
 `#étiquettes`, du `**markdown**`, des check-lists, des échéances, des responsables,
-des **limites d'en-cours** par colonne et une archive ; une carte liée déposée dans
-*done* termine la tâche dans le Gantt, et réciproquement. Une carte **s'ouvre aussi
+des **limites d'en-cours** par colonne et une archive ; une colonne se trie à la
+demande par échéance, ou par date de création avec la plus récente en haut —
+l'urgence, ou ce qui vient d'arriver. Une carte liée déposée dans *done* termine
+la tâche dans le Gantt, et réciproquement. Une carte **s'ouvre aussi
 comme un document** (`Shift+Entrée`, ou depuis l'éditeur de la carte — une
 tablette n'a pas de touche Shift) : une description avec listes et blocs
 de code, et des captures collées directement au `Ctrl+V` — réduites dans le

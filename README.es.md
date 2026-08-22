@@ -322,8 +322,9 @@ arrastrar una tarjeta se anima en la pantalla de todos, y cada máquina aparece 
 un cursor etiquetado anclado a una *tarjeta*, no a un píxel — así sobrevive a
 tamaños de ventana y niveles de zoom distintos. Las tarjetas llevan `#etiquetas`,
 `**markdown**`, checklist, fecha límite, responsable, **límite de WIP** por columna y
-archivo; una tarjeta enlazada arrastrada a *done* completa la tarea en el Gantt, y al
-revés. Una tarjeta también **se abre como documento** (`Shift+Enter`, o desde el editor
+archivo; una columna se ordena bajo demanda por fecha límite, o por creación con la
+tarjeta más nueva arriba — urgencia, o lo que acaba de llegar. Una tarjeta enlazada
+arrastrada a *done* completa la tarea en el Gantt, y al revés. Una tarjeta también **se abre como documento** (`Shift+Enter`, o desde el editor
 de la propia tarjeta — una tableta no tiene Shift): una
 descripción con listas y bloques de código, y capturas pegadas directamente con
 `Ctrl+V` — reducidas en el navegador, guardadas junto al tablero y direccionadas por

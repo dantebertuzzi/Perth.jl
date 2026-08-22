@@ -387,6 +387,73 @@ console.log("kanban · commit/undo/redo");
   close();
 }
 
+console.log("kanban · ordenar coluna");
+{
+  const { runIn, close } = loadKanbanApp();
+  // mesmo board para os dois critérios: as duas ordens são diferentes de
+  // propósito, senão o teste passaria com qualquer um dos dois sorts
+  const seedBoard = `state.board = { columns: [{ id: "c1", name: "backlog", cards: [
+      { id: "k1", text: "C", at: "2026-08-19 14:30", due: "2026-08-20" },
+      { id: "k2", text: "A", at: "2026-08-19 09:05", due: "2026-09-01" },
+      { id: "k3", text: "B", at: "2026-08-19 09:47", due: "2026-08-25" },
+      { id: "k4", text: "old" },
+    ] }], archive: [], aliases: {} };`;
+
+  let r = runIn(`${seedBoard}
+    commit({type: "sortCol", id: "c1", by: "created"});
+    return { texts: state.board.columns[0].cards.map(c => c.text) };`);
+  check(JSON.stringify(r.texts) === '["C","B","A","old"]',
+        "sortCol by:created põe o mais novo no topo (e o sem carimbo no fim)");
+
+  // o minuto é que separa A de B — os dois são do mesmo dia
+  r = runIn(`${seedBoard}
+    commit({type: "sortCol", id: "c1", by: "created"});
+    const c = state.board.columns[0].cards;
+    return { mesmoDia: c[1].at.slice(0, 10) === c[2].at.slice(0, 10),
+             ordem: c[1].at > c[2].at };`);
+  check(r.mesmoDia === true && r.ordem === true,
+        "sortCol by:created: o desempate do dia é a hora, também de trás para frente");
+
+  r = runIn(`${seedBoard}
+    commit({type: "sortCol", id: "c1", by: "due"});
+    return { texts: state.board.columns[0].cards.map(c => c.text) };`);
+  check(JSON.stringify(r.texts) === '["C","B","A","old"]',
+        "sortCol by:due segue ordenando por prazo (sem prazo ao fim)");
+
+  // board antigo / op sem "by": o prazo continua sendo o default
+  r = runIn(`${seedBoard}
+    commit({type: "sortCol", id: "c1"});
+    return { texts: state.board.columns[0].cards.map(c => c.text) };`);
+  check(JSON.stringify(r.texts) === '["C","B","A","old"]',
+        "sortCol sem `by`: default é o prazo, como antes");
+
+  // o menu da coluna oferece os dois, e o clique manda o critério certo
+  r = runIn(`${seedBoard}
+    const drop = colMenu(state.board.columns[0], 0).querySelector(".menu-drop");
+    const itens = [...drop.querySelectorAll("button")].map(b => b.textContent);
+    const enviadas = [];
+    const antes = sendOp;
+    sendOp = (op) => enviadas.push(op);
+    drop.querySelectorAll("button")[itens.indexOf("Sort by newest first")].click();
+    sendOp = antes;
+    return { itens, enviadas };`);
+  check(r.itens.includes("Sort by due date") &&
+        r.itens.includes("Sort by newest first"),
+        "o menu da coluna lista os dois critérios");
+  check(JSON.stringify(r.enviadas) ===
+        '[{"type":"sortCol","id":"c1","by":"created"}]',
+        "clicar em 'Sort by newest first' manda by:created ao servidor");
+
+  // os dois itens do menu passam pela MESMA permissão
+  r = runIn(`state.board = { columns: [], archive: [], aliases: {},
+                             permissions: { "10.0.0.5": { sortCol: false } } };
+             state.me = { ip: "10.0.0.5", host: false };
+             return canDo("sortCol");`);
+  check(r === false, "sortCol negado cobre os dois critérios (uma permissão só)");
+
+  close();
+}
+
 console.log("kanban · permissões (client-side, canDo)");
 {
   const { runIn, close } = loadKanbanApp();

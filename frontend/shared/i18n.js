@@ -635,7 +635,7 @@ window.PerthI18n = (function () {
       "delete column": "excluir coluna",
       "reorder columns": "reordenar colunas",
       "set WIP limit": "definir limite de WIP",
-      "sort column by due date": "ordenar coluna por prazo",
+      "sort column": "ordenar coluna",
       // o card como documento (caixa expandida, código, imagens)
       "Card": "Card",
       "card title — one line": "título do card — uma linha",
@@ -1279,7 +1279,7 @@ window.PerthI18n = (function () {
       "delete column": "eliminar columna",
       "reorder columns": "reordenar columnas",
       "set WIP limit": "definir límite de WIP",
-      "sort column by due date": "ordenar columna por fecha límite",
+      "sort column": "ordenar columna",
       // o card como documento (caixa expandida, código, imagens)
       "Card": "Tarjeta",
       "card title — one line": "título de la tarjeta — una línea",
@@ -1925,7 +1925,7 @@ window.PerthI18n = (function () {
       "delete column": "supprimer la colonne",
       "reorder columns": "réordonner les colonnes",
       "set WIP limit": "définir la limite de WIP",
-      "sort column by due date": "trier la colonne par échéance",
+      "sort column": "trier la colonne",
       // o card como documento (caixa expandida, código, imagens)
       "Card": "Carte",
       "card title — one line": "titre de la carte — une ligne",
@@ -2566,7 +2566,7 @@ window.PerthI18n = (function () {
       "delete column": "删除列",
       "reorder columns": "重新排列列",
       "set WIP limit": "设置在制品上限",
-      "sort column by due date": "按截止日期排序列",
+      "sort column": "排序列",
       // o card como documento (caixa expandida, código, imagens)
       "Card": "卡片",
       "card title — one line": "卡片标题 — 一行",

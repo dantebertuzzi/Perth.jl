@@ -462,8 +462,21 @@ function _kanban_apply!(st::KanbanState, op)::Bool
         isempty(d) ? delete!(card, "due") : (card["due"] = String(d))
     elseif t == "sortCol"
         ci = _kfindcol(st, String(op["id"])); ci === nothing && return false
-        # sem prazo vai para o fim; sort é estável (empates mantêm a ordem)
-        sort!(_kcols(st)[ci]["cards"], by = c -> String(get(c, "due", "9999-99-99")))
+        cards = _kcols(st)[ci]["cards"]
+        # sort é estável nos dois critérios (empates mantêm a ordem da tela)
+        if String(get(op, "by", "due")) == "created"
+            # "at" é "yyyy-mm-dd HH:MM": ordem alfabética JÁ é ordem
+            # cronológica até o minuto, sem parsear data nenhuma. Invertida
+            # (rev), porque o que se quer ver é o que ACABOU de entrar: o
+            # mais novo no topo, como o olho já procura. Card sem "at" veio
+            # de board anterior ao campo, logo é mais velho que qualquer
+            # carimbo — e "" cai no fim de graça, que é onde o mais velho
+            # fica nesta ordem.
+            sort!(cards, by = c -> String(get(c, "at", "")), rev = true)
+        else
+            # sem prazo vai para o fim
+            sort!(cards, by = c -> String(get(c, "due", "9999-99-99")))
+        end
     elseif t == "setAlias"
         ip = strip(String(op["ip"]))
         isempty(ip) && return false
@@ -570,7 +583,9 @@ function _kanban_describe(st::KanbanState, op)
         return (isempty(d) ? "cleared the due date of \"$(cardtext(op["id"]))\"" :
                              "set \"$(cardtext(op["id"]))\" due $(d)"), false
     elseif t == "sortCol"
-        return "sorted $(colname(op["id"])) by due date", false
+        return (String(get(op, "by", "due")) == "created" ?
+                "sorted $(colname(op["id"])) newest first" :
+                "sorted $(colname(op["id"])) by due date"), false
     elseif t == "setAlias"
         name = strip(String(get(op, "name", "")))
         return (isempty(name) ? "cleared the name of $(op["ip"])" :

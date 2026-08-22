@@ -3664,6 +3664,38 @@ end
         f = Perth._kfindcard(st, "dueA")
         @test !haskey(f[1]["cards"][f[2]], "due")
 
+        # ordenar por criação (data, hora e minuto do lançamento do card),
+        # do mais novo para o mais velho: coluna própria, para os carimbos
+        # serem os do teste e não os do relógio de quem criou os cards acima
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "addCol", "id" => "cSort", "name" => "queue"))
+        for (id, text, at) in (("atC", "C", "2026-08-19 14:30"),
+                               ("atA", "A", "2026-08-19 09:05"),
+                               ("atB", "B", "2026-08-19 09:47"))
+            @test Perth._kanban_apply!(st, Dict{String,Any}(
+                "type" => "addCard", "col" => "cSort", "id" => id,
+                "text" => text, "at" => at))
+        end
+        # card sem carimbo: veio de board anterior ao campo, é o mais velho
+        # de todos — e nesta ordem o mais velho é o último
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "addCard", "col" => "cSort", "id" => "atNone",
+            "text" => "old"))
+        cSort() = Perth._kcols(st)[Perth._kfindcol(st, "cSort")]["cards"]
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "sortCol", "id" => "cSort", "by" => "created"))
+        @test [String(c["text"]) for c in cSort()] == ["C", "B", "A", "old"]
+        # o minuto separa A de B: não basta a data
+        @test String(cSort()[2]["at"]) > String(cSort()[3]["at"])
+        # o log diz por qual critério, e "by" ausente segue sendo o prazo
+        @test Perth._kanban_describe(st, Dict{String,Any}(
+            "type" => "sortCol", "id" => "cSort", "by" => "created"))[1] ==
+              "sorted queue newest first"
+        @test Perth._kanban_describe(st, Dict{String,Any}(
+            "type" => "sortCol", "id" => "cSort"))[1] == "sorted queue by due date"
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "delCol", "id" => "cSort"))
+
         # log de atividades: commit descreve, marca notify e persiste
         nlog = length(st.log)
         id3 = kanban_add_card!("backlog", "Notify me")

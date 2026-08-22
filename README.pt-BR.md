@@ -321,8 +321,9 @@ arrastar um cartão anima na tela de todo mundo, e cada máquina aparece como um
 cursor etiquetado ancorado a um *cartão*, não a um pixel — então ele sobrevive a
 tamanhos de janela e níveis de zoom diferentes. Os cartões levam `#etiquetas`,
 `**markdown**`, checklist, prazo, responsável, **limite de WIP** por coluna e
-arquivo; um cartão ligado arrastado para *done* conclui a tarefa no gantt, e
-vice-versa. Um cartão também **abre como documento** (`Shift+Enter`, ou pelo editor do
+arquivo; uma coluna se ordena sob demanda por prazo, ou por lançamento com o mais
+novo no topo — urgência, ou o que acabou de chegar. Um cartão ligado arrastado
+para *done* conclui a tarefa no gantt, e vice-versa. Um cartão também **abre como documento** (`Shift+Enter`, ou pelo editor do
 próprio cartão — um tablet não tem Shift): uma
 descrição com listas e blocos de código, e capturas de tela coladas direto com
 `Ctrl+V` — reduzidas no navegador, guardadas ao lado do quadro e endereçadas pelo

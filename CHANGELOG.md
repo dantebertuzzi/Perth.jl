@@ -5,6 +5,32 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **A column also sorts by when each card was created, newest at the top.**
+  The column menu had one ordering, by due date, which answers "what is most
+  urgent". **Sort by newest first** answers the other question the board is
+  asked all day — "what just came in" — and it is the useful one for work that
+  arrives as a queue, where nothing carries a deadline and the card that
+  matters is the one added minutes ago, not the one from three weeks back.
+  It sits next to **Sort by due date** in the same menu; both are the same
+  restrictable action (`sortCol`), because someone allowed to reorder a column
+  is allowed to reorder it.
+- **Down to the minute, and no date parsing anywhere.** A card is stamped
+  `at` on creation as `yyyy-mm-dd HH:MM`, so alphabetical order already *is*
+  chronological order, to the minute — which matters, since a queue's cards
+  are usually all from the same day and the day alone would not separate them.
+  The comparison is one string compare reversed, in Julia and in the browser,
+  with the same key on both sides. The two orderings run in opposite directions
+  on purpose: a deadline is read forwards, from the nearest, and an arrival
+  backwards, from the latest.
+- **A card with no stamp is the oldest card there is.** A card missing `at` is
+  not a card whose time is unknown — it comes from a board older than the field
+  itself, so with the newest on top it belongs last — and an empty stamp lands
+  there on its own. A missing *due date* also goes to the end, but for the
+  unrelated reason that it means *unscheduled*.
+
 ## [0.14.0] - 2026-08-20
 
 ### Added

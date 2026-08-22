@@ -44,7 +44,7 @@ const GATED_ACTIONS = [
   { type: "delCol", label: "delete column" },
   { type: "moveCol", label: "reorder columns" },
   { type: "setWip", label: "set WIP limit" },
-  { type: "sortCol", label: "sort column by due date" },
+  { type: "sortCol", label: "sort column" },
 ];
 
 function actionLabel(type) {
@@ -754,8 +754,18 @@ function applyLocal(op) {
     }
     case "sortCol": {
       const c = colById(op.id);
-      if (c) c.cards.sort((x, y) =>
-        (x.due || "9999").localeCompare(y.due || "9999"));
+      if (!c) break;
+      // mesmas chaves do Julia (_kanban_apply!): "yyyy-mm-dd HH:MM" e
+      // "yyyy-mm-dd" ordenam alfabeticamente na ordem do relógio. O prazo
+      // sobe (o mais urgente primeiro) e a criação DESCE (o mais novo no
+      // topo) — daí o x e o y trocados. Sem prazo vai para o fim; sem
+      // carimbo de criação também, porque card sem `at` é de board anterior
+      // ao campo, logo o mais velho de todos.
+      if (op.by === "created")
+        c.cards.sort((x, y) => (y.at || "").localeCompare(x.at || ""));
+      else
+        c.cards.sort((x, y) =>
+          (x.due || "9999").localeCompare(y.due || "9999"));
       break;
     }
     case "setAlias": {
@@ -1155,7 +1165,10 @@ function colMenu(col, ci) {
       const w = parseInt(v, 10);
       if (!Number.isNaN(w) && w >= 0) commit({ type: "setWip", id: col.id, wip: w });
     }, null, "setWip"),
-    item("Sort by due date", () => commit({ type: "sortCol", id: col.id }), null, "sortCol"),
+    item("Sort by due date",
+         () => commit({ type: "sortCol", id: col.id, by: "due" }), null, "sortCol"),
+    item("Sort by newest first",
+         () => commit({ type: "sortCol", id: col.id, by: "created" }), null, "sortCol"),
   );
   if (ci > 0)
     drop.append(item("Move left", () =>

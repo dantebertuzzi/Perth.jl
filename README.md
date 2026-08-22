@@ -320,8 +320,9 @@ WebSocket-authoritative end to end: every change is broadcast live, dragging a c
 animates on everyone's screen, and each machine shows up as a labelled cursor
 anchored to a *card*, not to a pixel — so it survives different window sizes and
 zoom levels. Cards carry `#tags`, `**markdown**`, checklists, due dates, assignees,
-per-column **WIP limits** and an archive; a linked card dragged to *done* completes
-the task in the Gantt, and back. A card also **opens as a document**
+per-column **WIP limits** and an archive; a column sorts on demand by due date, or by
+creation time with the newest card at the top — urgency, or what just came in. A
+linked card dragged to *done* completes the task in the Gantt, and back. A card also **opens as a document**
 (`Shift+Enter`, or from the card's own editor — a tablet has no Shift key): a
 description with lists and fenced code blocks, and screenshots
 pasted straight in with `Ctrl+V` — shrunk in the browser, stored beside the board
