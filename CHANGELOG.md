@@ -30,6 +30,27 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   itself, so with the newest on top it belongs last — and an empty stamp lands
   there on its own. A missing *due date* also goes to the end, but for the
   unrelated reason that it means *unscheduled*.
+- **A board can be deleted.** Boards were create-and-switch only: every
+  experiment, every board named for a meeting that happened once, stayed in the
+  list forever, and the only way out was to find the files by hand in the data
+  directory. *Board → Boards…* now offers **delete** next to **switch**, and
+  `kanban_delete_board!("name")` does the same from the REPL. It takes the
+  board, its activity log and its chat — the three files that are the board —
+  and says so before doing it.
+- **Not the board you are looking at.** The active board has no delete button,
+  and the REPL call throws rather than removing it: switch away first. Everyone
+  connected shares one board, so deleting the one on screen would empty every
+  screen on the network at once, and "switch, then delete" is one extra click
+  that makes that impossible. The server enforces this a second time, on its
+  own — the missing button is a courtesy, not the rule.
+- **Only from the host machine**, like switching and creating. It is not a row
+  in the per-IP permission matrix: that matrix is about cards and columns, and
+  this is about which boards exist at all. A non-host that sends the message
+  anyway is answered with a resync, not an error.
+- **Pasted images stay put.** They live in a store shared by every board and
+  addressed by content, so the picture in the deleted board may be the picture
+  in a card somewhere else. What nothing cites any more is collected on the
+  next server start, by the sweep that was already doing exactly this.
 
 ## [0.14.0] - 2026-08-20
 

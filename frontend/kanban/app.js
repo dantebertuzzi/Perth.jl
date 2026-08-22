@@ -188,6 +188,18 @@ function handleMessage(msg) {
       refreshShare();
       break;
     }
+    case "board": {
+      // um board foi apagado (aqui, no REPL ou noutra aba do host). O board
+      // ativo não muda — só a lista — então basta refazer o diálogo, se ele
+      // estiver aberto, e guardar a linha do log como "key"/"share" fazem.
+      if (msg.log) {
+        state.log.push(msg.log);
+        state.log.length > 500 && state.log.shift();
+        if (state.openModal === "activity") showActivity();
+      }
+      if (state.openModal === "boards") showBoards();
+      break;
+    }
     case "key": {
       // a chave foi trocada (aqui, no REPL ou em outra aba do host): quem
       // é de fora já foi desconectado, então isto só alcança o host — os
@@ -3411,7 +3423,20 @@ function showBoards() {
           sw.textContent = T("switch");
           sw.title = T("switches the board for everyone");
           sw.addEventListener("click", () => send({ type: "useBoard", name }));
-          row.append(sw);
+          // o board ATIVO não ganha este botão: apagar o que está na tela de
+          // todo mundo não é uma pergunta que valha a pena fazer — troque
+          // primeiro. O servidor recusa de novo, não confia nesta ausência.
+          const del = document.createElement("button");
+          del.className = "danger";
+          del.textContent = T("delete");
+          del.title = T("deletes the board, its history and its chat — forever");
+          del.addEventListener("click", () => {
+            if (!confirm(T("Delete the board") + ' "' + name + '"? ' +
+                         T("Its cards, its history and its chat go with it. This cannot be undone.")))
+              return;
+            send({ type: "delBoard", name });
+          });
+          row.append(sw, del);
         }
         body.append(row);
       }
@@ -3436,9 +3461,11 @@ function showBoards() {
         btn.addEventListener("click", go);
         create.append(input, btn);
         body.append(create);
-        hint.textContent = T("One board is active at a time — switching changes it for every connected machine.");
+        hint.textContent =
+          T("One board is active at a time — switching changes it for every connected machine.") +
+          " " + T("Deleting one is permanent, and the board in use cannot be deleted.");
       } else {
-        hint.textContent = T("Only the host machine can switch or create boards.");
+        hint.textContent = T("Only the host machine can switch, create or delete boards.");
       }
       body.append(hint);
     })

@@ -1110,6 +1110,54 @@ first use. Also available in the UI (Board → Boards…) to the host.
 kanban_board!(name::AbstractString) = _kanban_use_board!(name)
 
 """
+    kanban_delete_board!(name) -> Bool
+
+Delete a board from disk — its cards, its activity log and its chat.
+Returns `false` if no board by that name exists, and throws if `name`
+is the **active** board: switch away first with
+[`kanban_board!`](@ref), so nobody is left looking at a board that no
+longer exists. There is no undo — the files are removed.
+
+Images pasted into the board's cards are not deleted here. They live in
+a store shared by every board and addressed by content, so the same
+picture may belong to a card elsewhere; the ones nothing cites any more
+are collected on the next server start (see `_asset_gc!`).
+
+Also in the UI (Board → Boards…) on the host machine only.
+"""
+function kanban_delete_board!(name::AbstractString; actor::AbstractString = "repl")
+    st = _kanban_state()
+    slug = _board_slug(st.data_dir, name)
+    slug == st.name && throw(ArgumentError(
+        "kanban: \"$(slug)\" is the active board — switch with " *
+        "kanban_board!(\"other\") before deleting it"))
+    file, logfile, chatfile = _board_paths(st.data_dir, slug)
+    # board sem arquivo é board que nunca existiu (ou já foi): não é erro,
+    # e dizer false é mais útil do que lançar em quem apagou duas vezes
+    isfile(file) || return false
+    for path in (file, logfile, chatfile)
+        try
+            rm(path; force = true)
+        catch err
+            @warn "Perth kanban: could not delete board file" path error = err
+        end
+    end
+    # o registro fica no log do board ATIVO — o do board apagado foi junto
+    entry = Dict{String,Any}(
+        "at" => _kanban_now(), "ip" => String(actor), "type" => "board",
+        "text" => "deleted the board \"$(slug)\"", "notify" => false)
+    lock(st.lock) do
+        push!(st.log, entry)
+        length(st.log) > _KANBAN_LOG_CAP && popfirst!(st.log)
+    end
+    _kanban_log_append(st.logfile, entry)
+    # quem estiver com o diálogo de boards aberto vê a lista encurtar
+    _kanban_broadcast(JSON3.write((; type = "board", log = entry)))
+    @info "Perth kanban: board \"$(slug)\" deleted."
+    return true
+end
+
+"""
     kanban_log(; limit = 50) -> Vector{NamedTuple}
 
 Latest activity on the shared kanban board as `(at, by, text)` rows,
@@ -1250,6 +1298,19 @@ function _kanban_ws(ws::HTTP.WebSockets.WebSocket, ip::String, keyok::Bool = tru
                                                    "peer" => _kanban_peer_payload(me))))
             elseif t == "sync"
                 HTTP.WebSockets.send(ws, _kanban_init_payload(st, me))
+            elseif t == "delBoard"
+                # apagar é do host, como trocar e criar — e é definitivo;
+                # ArgumentError aqui é o board ativo ou o nome inválido, que
+                # a tela já barra: o servidor só não obedece
+                if _kanban_is_host(me.ip)
+                    try
+                        kanban_delete_board!(String(get(msg, "name", "")); actor = me.ip)
+                    catch err
+                        err isa ArgumentError || rethrow()
+                    end
+                else
+                    HTTP.WebSockets.send(ws, _kanban_init_payload(st, me))
+                end
             elseif t == "useBoard" || t == "newBoard"
                 # trocar o board troca para TODOS; só o host comanda
                 if _kanban_is_host(me.ip)
