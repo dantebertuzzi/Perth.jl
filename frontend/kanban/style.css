@@ -1012,6 +1012,10 @@ a.card-link:hover { border-bottom-color: var(--blue); }
   color: var(--muted);
 }
 .boards-row button:hover { color: var(--ink); border-color: var(--purple); background: transparent; }
+/* o botão de apagar é vermelho aqui também: button.danger sozinho perde para
+   .boards-row button, que tem a mesma especificidade e vem depois */
+.boards-row button.danger { color: var(--red); }
+.boards-row button.danger:hover { color: var(--red); border-color: var(--red); }
 
 /* .keygate-input / .keygate-btn: ver frontend/shared/ui.css (o gantt tem o
    mesmo diálogo de chave desde que passou a pedi-la na tela) */

@@ -5,6 +5,53 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.15.0] - 2026-08-22
+
+### Added
+- **A column also sorts by when each card was created, newest at the top.**
+  The column menu had one ordering, by due date, which answers "what is most
+  urgent". **Sort by newest first** answers the other question the board is
+  asked all day — "what just came in" — and it is the useful one for work that
+  arrives as a queue, where nothing carries a deadline and the card that
+  matters is the one added minutes ago, not the one from three weeks back.
+  It sits next to **Sort by due date** in the same menu; both are the same
+  restrictable action (`sortCol`), because someone allowed to reorder a column
+  is allowed to reorder it.
+- **Down to the minute, and no date parsing anywhere.** A card is stamped
+  `at` on creation as `yyyy-mm-dd HH:MM`, so alphabetical order already *is*
+  chronological order, to the minute — which matters, since a queue's cards
+  are usually all from the same day and the day alone would not separate them.
+  The comparison is one string compare reversed, in Julia and in the browser,
+  with the same key on both sides. The two orderings run in opposite directions
+  on purpose: a deadline is read forwards, from the nearest, and an arrival
+  backwards, from the latest.
+- **A card with no stamp is the oldest card there is.** A card missing `at` is
+  not a card whose time is unknown — it comes from a board older than the field
+  itself, so with the newest on top it belongs last — and an empty stamp lands
+  there on its own. A missing *due date* also goes to the end, but for the
+  unrelated reason that it means *unscheduled*.
+- **A board can be deleted.** Boards were create-and-switch only: every
+  experiment, every board named for a meeting that happened once, stayed in the
+  list forever, and the only way out was to find the files by hand in the data
+  directory. *Board → Boards…* now offers **delete** next to **switch**, and
+  `kanban_delete_board!("name")` does the same from the REPL. It takes the
+  board, its activity log and its chat — the three files that are the board —
+  and says so before doing it.
+- **Not the board you are looking at.** The active board has no delete button,
+  and the REPL call throws rather than removing it: switch away first. Everyone
+  connected shares one board, so deleting the one on screen would empty every
+  screen on the network at once, and "switch, then delete" is one extra click
+  that makes that impossible. The server enforces this a second time, on its
+  own — the missing button is a courtesy, not the rule.
+- **Only from the host machine**, like switching and creating. It is not a row
+  in the per-IP permission matrix: that matrix is about cards and columns, and
+  this is about which boards exist at all. A non-host that sends the message
+  anyway is answered with a resync, not an error.
+- **Pasted images stay put.** They live in a store shared by every board and
+  addressed by content, so the picture in the deleted board may be the picture
+  in a card somewhere else. What nothing cites any more is collected on the
+  next server start, by the sweep that was already doing exactly this.
+
 ## [0.14.0] - 2026-08-20
 
 ### Added

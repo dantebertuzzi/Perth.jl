@@ -13,6 +13,7 @@ kanban_columns
 kanban_from_project!
 kanban_board!
 kanban_boards
+kanban_delete_board!
 kanban_alias!
 kanban_log
 kanban_reset!

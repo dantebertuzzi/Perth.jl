@@ -44,7 +44,7 @@ const GATED_ACTIONS = [
   { type: "delCol", label: "delete column" },
   { type: "moveCol", label: "reorder columns" },
   { type: "setWip", label: "set WIP limit" },
-  { type: "sortCol", label: "sort column by due date" },
+  { type: "sortCol", label: "sort column" },
 ];
 
 function actionLabel(type) {
@@ -186,6 +186,18 @@ function handleMessage(msg) {
       // botão, e o botão já muda de cor e de rótulo. O gantt nunca avisou,
       // e a diferença entre os dois era só herança.
       refreshShare();
+      break;
+    }
+    case "board": {
+      // um board foi apagado (aqui, no REPL ou noutra aba do host). O board
+      // ativo não muda — só a lista — então basta refazer o diálogo, se ele
+      // estiver aberto, e guardar a linha do log como "key"/"share" fazem.
+      if (msg.log) {
+        state.log.push(msg.log);
+        state.log.length > 500 && state.log.shift();
+        if (state.openModal === "activity") showActivity();
+      }
+      if (state.openModal === "boards") showBoards();
       break;
     }
     case "key": {
@@ -754,8 +766,18 @@ function applyLocal(op) {
     }
     case "sortCol": {
       const c = colById(op.id);
-      if (c) c.cards.sort((x, y) =>
-        (x.due || "9999").localeCompare(y.due || "9999"));
+      if (!c) break;
+      // mesmas chaves do Julia (_kanban_apply!): "yyyy-mm-dd HH:MM" e
+      // "yyyy-mm-dd" ordenam alfabeticamente na ordem do relógio. O prazo
+      // sobe (o mais urgente primeiro) e a criação DESCE (o mais novo no
+      // topo) — daí o x e o y trocados. Sem prazo vai para o fim; sem
+      // carimbo de criação também, porque card sem `at` é de board anterior
+      // ao campo, logo o mais velho de todos.
+      if (op.by === "created")
+        c.cards.sort((x, y) => (y.at || "").localeCompare(x.at || ""));
+      else
+        c.cards.sort((x, y) =>
+          (x.due || "9999").localeCompare(y.due || "9999"));
       break;
     }
     case "setAlias": {
@@ -1155,7 +1177,10 @@ function colMenu(col, ci) {
       const w = parseInt(v, 10);
       if (!Number.isNaN(w) && w >= 0) commit({ type: "setWip", id: col.id, wip: w });
     }, null, "setWip"),
-    item("Sort by due date", () => commit({ type: "sortCol", id: col.id }), null, "sortCol"),
+    item("Sort by due date",
+         () => commit({ type: "sortCol", id: col.id, by: "due" }), null, "sortCol"),
+    item("Sort by newest first",
+         () => commit({ type: "sortCol", id: col.id, by: "created" }), null, "sortCol"),
   );
   if (ci > 0)
     drop.append(item("Move left", () =>
@@ -3398,7 +3423,20 @@ function showBoards() {
           sw.textContent = T("switch");
           sw.title = T("switches the board for everyone");
           sw.addEventListener("click", () => send({ type: "useBoard", name }));
-          row.append(sw);
+          // o board ATIVO não ganha este botão: apagar o que está na tela de
+          // todo mundo não é uma pergunta que valha a pena fazer — troque
+          // primeiro. O servidor recusa de novo, não confia nesta ausência.
+          const del = document.createElement("button");
+          del.className = "danger";
+          del.textContent = T("delete");
+          del.title = T("deletes the board, its history and its chat — forever");
+          del.addEventListener("click", () => {
+            if (!confirm(T("Delete the board") + ' "' + name + '"? ' +
+                         T("Its cards, its history and its chat go with it. This cannot be undone.")))
+              return;
+            send({ type: "delBoard", name });
+          });
+          row.append(sw, del);
         }
         body.append(row);
       }
@@ -3423,9 +3461,11 @@ function showBoards() {
         btn.addEventListener("click", go);
         create.append(input, btn);
         body.append(create);
-        hint.textContent = T("One board is active at a time — switching changes it for every connected machine.");
+        hint.textContent =
+          T("One board is active at a time — switching changes it for every connected machine.") +
+          " " + T("Deleting one is permanent, and the board in use cannot be deleted.");
       } else {
-        hint.textContent = T("Only the host machine can switch or create boards.");
+        hint.textContent = T("Only the host machine can switch, create or delete boards.");
       }
       body.append(hint);
     })

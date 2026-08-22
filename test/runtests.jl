@@ -3664,6 +3664,38 @@ end
         f = Perth._kfindcard(st, "dueA")
         @test !haskey(f[1]["cards"][f[2]], "due")
 
+        # ordenar por criação (data, hora e minuto do lançamento do card),
+        # do mais novo para o mais velho: coluna própria, para os carimbos
+        # serem os do teste e não os do relógio de quem criou os cards acima
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "addCol", "id" => "cSort", "name" => "queue"))
+        for (id, text, at) in (("atC", "C", "2026-08-19 14:30"),
+                               ("atA", "A", "2026-08-19 09:05"),
+                               ("atB", "B", "2026-08-19 09:47"))
+            @test Perth._kanban_apply!(st, Dict{String,Any}(
+                "type" => "addCard", "col" => "cSort", "id" => id,
+                "text" => text, "at" => at))
+        end
+        # card sem carimbo: veio de board anterior ao campo, é o mais velho
+        # de todos — e nesta ordem o mais velho é o último
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "addCard", "col" => "cSort", "id" => "atNone",
+            "text" => "old"))
+        cSort() = Perth._kcols(st)[Perth._kfindcol(st, "cSort")]["cards"]
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "sortCol", "id" => "cSort", "by" => "created"))
+        @test [String(c["text"]) for c in cSort()] == ["C", "B", "A", "old"]
+        # o minuto separa A de B: não basta a data
+        @test String(cSort()[2]["at"]) > String(cSort()[3]["at"])
+        # o log diz por qual critério, e "by" ausente segue sendo o prazo
+        @test Perth._kanban_describe(st, Dict{String,Any}(
+            "type" => "sortCol", "id" => "cSort", "by" => "created"))[1] ==
+              "sorted queue newest first"
+        @test Perth._kanban_describe(st, Dict{String,Any}(
+            "type" => "sortCol", "id" => "cSort"))[1] == "sorted queue by due date"
+        @test Perth._kanban_apply!(st, Dict{String,Any}(
+            "type" => "delCol", "id" => "cSort"))
+
         # log de atividades: commit descreve, marca notify e persiste
         nlog = length(st.log)
         id3 = kanban_add_card!("backlog", "Notify me")
@@ -3979,6 +4011,45 @@ end
                 @test applied["type"] == "op"
             end
             @test isempty(kanban_cards())
+
+            # apagar board é só-host, como trocar e criar: o board de fora
+            # existe em disco, e quem não é host não o remove
+            alvo = first(Perth._board_paths(ktmp, "descartavel"))
+            write(alvo, JSON3.write(Perth._default_kanban_board()))
+            ipref[] = other
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)
+                HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                    "type" => "delBoard", "name" => "descartavel")))
+                resync = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test resync["type"] == "init"
+            end
+            @test isfile(alvo)
+
+            # do host, some — e chega a todo mundo como mensagem "board"
+            ipref[] = "127.0.0.1"
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)
+                HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                    "type" => "delBoard", "name" => "descartavel")))
+                aviso = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test aviso["type"] == "board"
+                @test occursin("descartavel", String(aviso["log"]["text"]))
+            end
+            @test !isfile(alvo)
+
+            # o board ATIVO nem do host: o ArgumentError é engolido, e
+            # ninguém fica olhando um board que não existe mais
+            ativo = first(Perth._board_paths(ktmp, Perth._kanban_state().name))
+            Perth._kanban_persist(Perth._kanban_state())
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                HTTP.WebSockets.receive(ws)
+                HTTP.WebSockets.send(ws, JSON3.write(Dict(
+                    "type" => "delBoard", "name" => Perth._kanban_state().name)))
+                HTTP.WebSockets.send(ws, JSON3.write(Dict("type" => "sync")))
+                @test JSON3.read(HTTP.WebSockets.receive(ws))["type"] == "init"
+            end
+            @test isfile(ativo)
         finally
             Perth._quiet(() -> close(server))
         end
@@ -4227,6 +4298,48 @@ end
         finally
             Perth.KANBAN[] = antigo
         end
+
+        Perth._init_kanban!(mktempdir())
+    end
+
+    @testset "kanban: excluir um board" begin
+        bdir = mktempdir()
+        Perth._init_state!(bdir)
+        Perth._init_kanban!(bdir; name = "alfa")
+        kanban_add_card!("backlog", "de alfa")
+        kanban_chat!("oi, alfa")
+        kanban_board!("beta")
+
+        arquivos(slug) = Perth._board_paths(bdir, slug)
+        @test all(isfile, arquivos("alfa"))       # board, log e chat em disco
+        @test "alfa" in kanban_boards()
+
+        # o board ATIVO não se apaga: ninguém pode ficar olhando um board
+        # que não existe mais
+        @test_throws ArgumentError kanban_delete_board!("beta")
+        @test "beta" in kanban_boards()
+
+        # apagar leva os três arquivos e some da lista
+        st = Perth._kanban_state()
+        nlog = length(st.log)
+        @test kanban_delete_board!("alfa")
+        @test !any(isfile, arquivos("alfa"))
+        @test !("alfa" in kanban_boards())
+        # o registro fica no log do board ativo (o do apagado foi junto)
+        @test length(st.log) == nlog + 1
+        @test occursin("deleted the board \"alfa\"", st.log[end]["text"])
+        @test st.log[end]["notify"] === false
+
+        # apagar de novo não é erro: só não havia nada para apagar
+        @test kanban_delete_board!("alfa") === false
+        # nome que nunca existiu, idem; nome inválido continua lançando
+        @test kanban_delete_board!("nunca-existiu") === false
+        @test_throws ArgumentError kanban_delete_board!("   ")
+
+        # voltar a usar o nome apagado cria um board limpo, sem os cards
+        kanban_board!("alfa")
+        @test isempty(kanban_cards())
+        @test isempty(kanban_chat_log())
 
         Perth._init_kanban!(mktempdir())
     end

@@ -387,6 +387,73 @@ console.log("kanban · commit/undo/redo");
   close();
 }
 
+console.log("kanban · ordenar coluna");
+{
+  const { runIn, close } = loadKanbanApp();
+  // mesmo board para os dois critérios: as duas ordens são diferentes de
+  // propósito, senão o teste passaria com qualquer um dos dois sorts
+  const seedBoard = `state.board = { columns: [{ id: "c1", name: "backlog", cards: [
+      { id: "k1", text: "C", at: "2026-08-19 14:30", due: "2026-08-20" },
+      { id: "k2", text: "A", at: "2026-08-19 09:05", due: "2026-09-01" },
+      { id: "k3", text: "B", at: "2026-08-19 09:47", due: "2026-08-25" },
+      { id: "k4", text: "old" },
+    ] }], archive: [], aliases: {} };`;
+
+  let r = runIn(`${seedBoard}
+    commit({type: "sortCol", id: "c1", by: "created"});
+    return { texts: state.board.columns[0].cards.map(c => c.text) };`);
+  check(JSON.stringify(r.texts) === '["C","B","A","old"]',
+        "sortCol by:created põe o mais novo no topo (e o sem carimbo no fim)");
+
+  // o minuto é que separa A de B — os dois são do mesmo dia
+  r = runIn(`${seedBoard}
+    commit({type: "sortCol", id: "c1", by: "created"});
+    const c = state.board.columns[0].cards;
+    return { mesmoDia: c[1].at.slice(0, 10) === c[2].at.slice(0, 10),
+             ordem: c[1].at > c[2].at };`);
+  check(r.mesmoDia === true && r.ordem === true,
+        "sortCol by:created: o desempate do dia é a hora, também de trás para frente");
+
+  r = runIn(`${seedBoard}
+    commit({type: "sortCol", id: "c1", by: "due"});
+    return { texts: state.board.columns[0].cards.map(c => c.text) };`);
+  check(JSON.stringify(r.texts) === '["C","B","A","old"]',
+        "sortCol by:due segue ordenando por prazo (sem prazo ao fim)");
+
+  // board antigo / op sem "by": o prazo continua sendo o default
+  r = runIn(`${seedBoard}
+    commit({type: "sortCol", id: "c1"});
+    return { texts: state.board.columns[0].cards.map(c => c.text) };`);
+  check(JSON.stringify(r.texts) === '["C","B","A","old"]',
+        "sortCol sem `by`: default é o prazo, como antes");
+
+  // o menu da coluna oferece os dois, e o clique manda o critério certo
+  r = runIn(`${seedBoard}
+    const drop = colMenu(state.board.columns[0], 0).querySelector(".menu-drop");
+    const itens = [...drop.querySelectorAll("button")].map(b => b.textContent);
+    const enviadas = [];
+    const antes = sendOp;
+    sendOp = (op) => enviadas.push(op);
+    drop.querySelectorAll("button")[itens.indexOf("Sort by newest first")].click();
+    sendOp = antes;
+    return { itens, enviadas };`);
+  check(r.itens.includes("Sort by due date") &&
+        r.itens.includes("Sort by newest first"),
+        "o menu da coluna lista os dois critérios");
+  check(JSON.stringify(r.enviadas) ===
+        '[{"type":"sortCol","id":"c1","by":"created"}]',
+        "clicar em 'Sort by newest first' manda by:created ao servidor");
+
+  // os dois itens do menu passam pela MESMA permissão
+  r = runIn(`state.board = { columns: [], archive: [], aliases: {},
+                             permissions: { "10.0.0.5": { sortCol: false } } };
+             state.me = { ip: "10.0.0.5", host: false };
+             return canDo("sortCol");`);
+  check(r === false, "sortCol negado cobre os dois critérios (uma permissão só)");
+
+  close();
+}
+
 console.log("kanban · permissões (client-side, canDo)");
 {
   const { runIn, close } = loadKanbanApp();
@@ -778,6 +845,85 @@ const fakeShareServer = (host, canShare) => `
     }
     return Promise.resolve({ ok: true, json: () => Promise.resolve(window.__share) });
   };`;
+
+/* ------------------------------------------------------------------ *
+ * Boards: a lista vem de /api/boards, e apagar é do host — o board ATIVO
+ * nunca ganha o botão (o servidor recusa de novo; ver kanban_delete_board!).
+ * ------------------------------------------------------------------ */
+
+const fakeBoardsServer = (boards, current) => `
+  window.fetch = () => Promise.resolve({ ok: true,
+    json: () => Promise.resolve(${JSON.stringify({ boards, current })}) });`;
+
+// rótulos dos botões de uma linha da lista, pelo nome do board
+const rowBtns = `(name) => [...document.querySelectorAll(".boards-row")]
+    .filter((r) => r.querySelector(".boards-name")?.textContent === name)
+    .flatMap((r) => [...r.querySelectorAll("button")].map((b) => b.textContent))`;
+
+console.log("kanban · excluir board");
+{
+  const { runIn, close } = loadKanbanApp();
+  const abrir = (host) => `${fakeBoardsServer(["alfa", "beta"], "beta")}
+    state.me = { ip: "127.0.0.1", host: ${host} };
+    showBoards(); return null;`;
+
+  runIn(abrir(true));
+  await tick();
+  let r = runIn(`const btns = ${rowBtns};
+    return { alfa: btns("alfa"), beta: btns("beta") };`);
+  check(JSON.stringify(r.alfa) === '["switch","delete"]',
+        "host: board de fora ganha trocar e excluir");
+  check(r.beta.length === 0,
+        "host: o board ATIVO não ganha botão de excluir");
+
+  // confirmação obrigatória, e ela nomeia o board
+  r = runIn(`window.__ask = null;
+    window.confirm = (m) => { window.__ask = m; return false; };
+    const enviadas = []; const antes = send; send = (o) => enviadas.push(o);
+    [...document.querySelectorAll(".boards-row button")]
+      .find((b) => b.textContent === "delete").click();
+    send = antes;
+    return { ask: window.__ask, enviadas };`);
+  check(typeof r.ask === "string" && r.ask.includes("alfa"),
+        "excluir pergunta antes, citando o board");
+  check(r.enviadas.length === 0, "recusar a pergunta não manda nada");
+
+  r = runIn(`window.confirm = () => true;
+    const enviadas = []; const antes = send; send = (o) => enviadas.push(o);
+    [...document.querySelectorAll(".boards-row button")]
+      .find((b) => b.textContent === "delete").click();
+    send = antes;
+    return { enviadas };`);
+  check(JSON.stringify(r.enviadas) === '[{"type":"delBoard","name":"alfa"}]',
+        "confirmar manda delBoard com o nome do board");
+
+  // quem não é host não vê nem trocar nem excluir
+  runIn(abrir(false));
+  await tick();
+  r = runIn(`const btns = ${rowBtns};
+    return { alfa: btns("alfa"),
+             dica: document.querySelector(".alias-hint")?.textContent || "" };`);
+  check(r.alfa.length === 0, "não-host: nenhum botão na lista");
+  check(r.dica.includes("delete"), "não-host: a dica diz que apagar é do host");
+
+  // o board apagado noutra máquina encurta a lista aberta aqui
+  runIn(abrir(true));
+  await tick();
+  runIn(`${fakeBoardsServer(["beta"], "beta")}
+    handleMessage({ type: "board",
+                    log: { at: "2026-08-22 10:00", ip: "127.0.0.1",
+                           text: 'deleted the board "alfa"' } });
+    return null;`);
+  await tick();
+  r = runIn(`return { nomes: [...document.querySelectorAll(".boards-name")]
+                        .map((e) => e.textContent),
+                      log: state.log.length };`);
+  check(JSON.stringify(r.nomes) === '["beta"]',
+        "mensagem 'board' redesenha o diálogo sem o board apagado");
+  check(r.log === 1, "e a linha entra no log de atividades");
+
+  close();
+}
 
 console.log("kanban · transmitir (share)");
 {
