@@ -159,6 +159,7 @@ function _init_kanban!(data_dir::AbstractString; name::AbstractString = "board")
     KANBAN[] = KanbanState(board, 0, file, Dict{Int,KanbanClient}(), 0,
                            ReentrantLock(), log, logfile, chat, chatfile,
                            slug, String(data_dir))
+    _kanban_links_sync!(String(data_dir))
     # Blob que nenhum card cita mais some ao subir — é o único momento em que
     # dá para varrer todos os boards de uma vez sem correr atrás de lock. Tem
     # carência de dias, porque a pilha de desfazer vive no navegador e pode
@@ -228,6 +229,7 @@ function _kanban_persist(st::KanbanState)
     try
         open(io -> JSON3.write(io, st.board), tmp, "w")
         mv(tmp, st.file; force = true)
+        _kanban_mirror_after_persist!(st.name, st.board, st.data_dir)
     catch err
         @warn "Perth kanban: could not persist board" error = err
     end
@@ -970,6 +972,8 @@ function _sync_boards_on_disk(p::Project, dir::AbstractString,
         try
             open(io -> JSON3.write(io, board), tmp, "w")
             mv(tmp, file; force = true)
+            slug = _kanban_slug_from_json_file(file)
+            slug === nothing || _kanban_mirror_after_persist!(slug, board, dir)
             touched += 1
         catch err
             @warn "Perth kanban: could not sync board file" file error = err
@@ -1005,8 +1009,12 @@ function _kanban_sync_from_project(p::Project)
     # os cards existem lá independentemente de alguém ter olhado. Quem nunca
     # usou o kanban não tem arquivo kanban*.json, e a varredura custa um
     # readdir do diretório em que o projeto acabou de ser gravado.
-    dir = KANBAN[] === nothing ? _state().data_dir : KANBAN[].data_dir
-    _sync_boards_on_disk(p, dir, KANBAN[] === nothing ? "" : KANBAN[].file)
+    if KANBAN[] === nothing
+        _sync_boards_on_disk(p, _state().data_dir, "")
+    else
+        # Serialize inactive-board updates with imports, watchers and switching.
+        _with_kanban(st -> _sync_boards_on_disk(p, st.data_dir, st.file))
+    end
     return nothing
 end
 
@@ -1091,9 +1099,8 @@ function kanban_boards()
     names = Set{String}([st.name])
     try
         for f in readdir(st.data_dir)
-            f == "kanban.json" && push!(names, "board")
-            m = match(r"^kanban-(.+)\.json$", f)
-            m === nothing || push!(names, String(m.captures[1]))
+            slug = _kanban_slug_from_json_file(f)
+            slug === nothing || push!(names, slug)
         end
     catch
     end
@@ -1135,6 +1142,7 @@ function kanban_delete_board!(name::AbstractString; actor::AbstractString = "rep
     # board sem arquivo é board que nunca existiu (ou já foi): não é erro,
     # e dizer false é mais útil do que lançar em quem apagou duas vezes
     isfile(file) || return false
+    set_kanban_file_path!(nothing; board=slug)
     for path in (file, logfile, chatfile)
         try
             rm(path; force = true)
