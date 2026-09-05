@@ -29,3 +29,21 @@ jobs:
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+        with:
+          # De uma execução só: medir a mesma coisa em cada linha da matriz não
+          # acrescenta informação e atrasa o retorno.
+          coverage: ${{ matrix.os == 'ubuntu-latest' && matrix.version == '1' }}
+
+      - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.os == 'ubuntu-latest' && matrix.version == '1'
+        with:
+          directories: src,ext
+      - uses: codecov/codecov-action@v5
+        if: matrix.os == 'ubuntu-latest' && matrix.version == '1'
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          # Falha de upload não derruba a suíte: a cobertura é informação sobre o
+          # projeto, e não uma das garantias dele. Um serviço de fora fora do ar não
+          # pode transformar um commit bom em CI vermelha.
+          fail_ci_if_error: false

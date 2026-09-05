@@ -1,0 +1,30 @@
+# Cobertura, com a expectativa no lugar certo.
+#
+# O alvo é `auto` com uma folga de 1%, e as duas checagens são informativas: a cobertura
+# acusa queda, e não é meta. Uma equipe que persegue o número escreve testes que cobrem
+# linhas sem afirmar nada — e o que ela mede bem é uma coisa só, que vale: código que
+# teste nenhum alcança.
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: true
+
+ignore:
+  - "docs/**"
+  - "examples/**"
+  - "frontend/**"
+  - "test/**"
