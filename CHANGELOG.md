@@ -38,6 +38,22 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   every character still passes, because a task name is prose and not syntax: a
   project called `Don't stop: fase #2 (final)?` round-trips as it always did.
 
+  **This hardening is partial, and the entry would mislead without saying so.**
+  What is closed is every way found of walking *past* the guard: the count can
+  no longer be desynchronised, and the characters that allowed bracket-free
+  recursion are gone. What is not closed is the reason a guard is needed at
+  all. Julia's parser still dies rather than raises, and a long enough chain
+  built only from characters the format legitimately needs — `(`, `)`, `=`,
+  `.` — still reaches it. Fuzzing found those after the fix; they crash the
+  released 0.15.0 in exactly the same way, so they are a limit of this
+  hardening rather than something it introduced. No cap separates them from
+  real files, and the numbers say why: a 1000-task project carries five times
+  more of those characters than the smallest crashing input, because what
+  distinguishes the two is the shape of the expression and not its size.
+  Closing it means parsing where a crash is survivable instead of trying to
+  predict the parser, and that is a change of its own. Until then, treat
+  sharing as something to turn on for a network you trust.
+
   **Nothing was ever executed by this.** The restricted AST evaluator was not
   involved and was not bypassed; a `.perth.jl` still cannot call anything
   outside the constructor whitelist. This was a crash, not an escape, and no
