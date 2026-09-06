@@ -41,6 +41,39 @@ const _PRESENCE_NCOLORS = 8
 # Só a máquina do servidor (loopback) é "host"
 _presence_is_host(ip::AbstractString) = ip in ("127.0.0.1", "::1")
 
+# Origem cruzada. O navegador manda `Origin` em toda requisição que muda
+# estado e em todo upgrade de WebSocket, inclusive nas que atravessam origens
+# sem preflight — form POST, ou fetch com Content-Type text/plain, que os
+# handlers leem como JSON sem conferir o tipo. WebSocket não passa por CORS
+# nenhum, então lá o cabeçalho é a única defesa.
+#
+# Sem esta conferência, qualquer página aberta no navegador da máquina que
+# hospeda alcança 127.0.0.1 e fala com o Perth COMO SE FOSSE O HOST: o IP é
+# loopback, então o porteiro lhe dá o papel :host, isento de tudo — inclusive
+# do PUT que aponta o espelho .perth.jl para qualquer caminho .jl.
+#
+# Origin ausente passa DE PROPÓSITO: curl, o REPL e qualquer cliente que não
+# seja navegador não mandam esse cabeçalho, e navegador nenhum o omite numa
+# escrita ou num upgrade. `null` (iframe sandbox, file://) não passa.
+function _origin_ok(origin::AbstractString, host::AbstractString)
+    isempty(origin) && return true
+    (origin == "null" || isempty(host)) && return false
+    u = try
+        HTTP.URI(origin)
+    catch
+        return false
+    end
+    (u.scheme == "http" || u.scheme == "https") || return false
+    isempty(u.host) && return false
+    padrao = u.scheme == "https" ? "443" : "80"
+    porta = isempty(u.port) ? padrao : u.port
+    # o Host da requisição omite a porta quando ela é a padrão do esquema
+    return host == u.host * ":" * porta || (host == u.host && porta == padrao)
+end
+
+_req_origin(msg) = something(HTTP.header(msg, "Origin", nothing), "")
+_req_host(msg)   = something(HTTP.header(msg, "Host", nothing), "")
+
 # Rotas que a chave de acesso protege, no gantt e no kanban: os dados
 # (/api/*), /background e /asset/ — a imagem de fundo e as imagens coladas
 # nos cards são o conteúdo servido de FORA do frontend, então não podem andar

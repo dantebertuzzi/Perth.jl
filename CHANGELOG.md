@@ -5,6 +5,39 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- **Any page open in the browser could act as the machine running Perth.** A
+  browser will send a cross-origin request to `127.0.0.1` for you, and Perth
+  decided who you were by the address the request came from. A page on any
+  site could therefore POST to the local port and be seen as the host — the
+  one role that is exempt from every check there is, including the routes
+  deliberately restricted to the host because their effect leaves the app and
+  reaches the machine: `PUT /api/projects/{id}/path` points the `.perth.jl`
+  mirror at any path ending in `.jl`, so `~/.julia/config/startup.jl` was
+  reachable, and `/api/fs/` lists directories while `/api/launch/kanban`
+  starts a process. Nothing here needed a network: the attacking page runs on
+  the same machine, which is exactly what made the address useless as
+  identification.
+
+  Neither of the two barriers that sound like they would stop this did. A
+  request whose body is sent as `text/plain` crosses origins without a
+  preflight, and the handlers read the body as JSON without checking the
+  type; and a WebSocket is not subject to CORS at all, which mattered because
+  every kanban edit travels over that socket — a page could open it and move
+  cards on a board it was never shown.
+
+  Perth now refuses a state-changing request, and a WebSocket upgrade, whose
+  `Origin` is not the address it was served from — on both the gantt and the
+  kanban. Requests with no `Origin` still pass, and that is the point rather
+  than an oversight: `curl`, the REPL and anything else that is not a browser
+  never send the header, while a browser never omits it on a write or an
+  upgrade. `null` — a sandboxed iframe, a page opened from `file://` — does
+  not pass, and an unparsable `Origin` is refused rather than waved through.
+  Reads are untouched: they change nothing, and CORS already stops the
+  attacking page from seeing the answer.
+
 ## [0.15.0] - 2026-08-22
 
 ### Added
