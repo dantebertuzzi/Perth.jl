@@ -489,6 +489,53 @@ end
         @test_throws ArgumentError Perth._parse_project_source(
             "Project(id=\"x\", name=\"" * "a"^(5 * 1024 * 1024) * "\")")
 
+        # ── e os desvios do contador, que é o jeito de a guarda existir e
+        # não valer nada ──
+        #
+        # O scanner pulava string e comentário e contava o SALDO de colchetes.
+        # Cinco construções o dessincronizavam, e duas nem gastam colchete:
+        #
+        #   ')'        literal de char cujo ')' decrementava sem fechar nada
+        #   \"\"\"a\"b\"\"\"  sete aspas: o scanner terminava "dentro de string" e
+        #              daí em diante ignorava todo colchete que viesse
+        #   #= ) =#    comentário de bloco cujo ')' decrementava de verdade
+        #   ? :        ternário recursa no parser sem abrir colchete algum
+        #   ------1    cadeia de sinal unário, idem (quebra perto de 25 mil)
+        #
+        # Todas derrubavam o processo com core dump por POST /api/import.
+        # Como no teste acima, regressão aqui não falha: MATA a suíte.
+        fundo_char  = repeat("[')',", 3_000) * "]"^3_000
+        fundo_aspas = "Project(id=\"\"\"a\"b\"\"\", name=" * "["^3_000 * "]"^3_000 * ")"
+        fundo_bloco = repeat("[\n#=\n)\n=#\n", 3_000) * "]"^3_000
+        fundo_tern  = repeat("1 ? 1 : ", 60_000) * "1"
+        fundo_sinal = "-"^200_000 * "1"
+        for fonte in (fundo_char, fundo_aspas, fundo_bloco, fundo_tern, fundo_sinal)
+            @test_throws ArgumentError Perth._guard_source(fonte)
+        end
+        # string e comentário sem fim são fonte truncado: recusa, não trava
+        @test_throws ArgumentError Perth._guard_source("Project(name=\"sem fim")
+        @test_throws ArgumentError Perth._guard_source("#= sem fim\nProject()")
+
+        # ── o outro lado: o que a lista de caracteres NÃO pode custar ──
+        #
+        # Fora de string e de comentário só passa o que o formato escreve.
+        # Dentro deles passa tudo — senão apóstrofo em nome de tarefa, que é
+        # texto de gente, viraria erro de importação.
+        pontuado = create_project("Don't stop: fase #2 (final)?")
+        add_task!(pontuado, "Medir 100% — a 'frio' & a \"quente\"";
+                  start = Date(2026, 1, 1), duration = 3)
+        volta = Perth._parse_project_source(Perth._to_julia_source(pontuado))
+        @test volta.name == "Don't stop: fase #2 (final)?"
+        @test volta.tasks[1].name == "Medir 100% — a 'frio' & a \"quente\""
+        delete_project(pontuado.id)
+
+        # comentário — de linha e de bloco aninhado — continua sendo comentário
+        @test Perth._guard_source("""
+            # não pode? pode: 'sim' — 100%
+            #= bloco #= aninhado =# ainda no bloco: ')' =#
+            Project(id="c", name="ok")
+            """) === nothing
+
         # e nada disso pode custar projeto legítimo: parêntese e colchete em
         # nome de tarefa são texto, não aninhamento
         legit = create_project("Obra ((especial))")

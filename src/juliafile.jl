@@ -235,33 +235,133 @@ end
 const _MAX_SOURCE_BYTES = 4 * 1024 * 1024
 const _MAX_SOURCE_DEPTH = 32
 
-# Conta profundidade ignorando o que está dentro de string e de comentário:
-# um nome de tarefa com "(((" não é aninhamento, e recusá-lo seria um falso
-# positivo em projeto legítimo.
+# Cadeia de sinal unário é o outro jeito de fazer o parser recursar, e não
+# gasta colchete nenhum: "-"^25_000 já derruba. Um número do formato leva no
+# máximo um sinal, então 4 seguidos é folga e ainda assim fica 3 ordens de
+# grandeza abaixo do ponto de quebra.
+const _MAX_SIGN_RUN = 4
+
+# Os únicos caracteres que um .perth.jl usa FORA de string e de comentário.
+# O formato é gerado por máquina e o _eval_safe só aceita chamada de
+# construtor, literal e vetor — então tudo que esta lista barra JÁ seria
+# recusado adiante, e nenhum arquivo que antes era aceito passa a falhar.
+#
+# A lista não é estética: é ela que torna o contador de profundidade
+# confiável. Sem `'` não existe literal de char cujo `)` finja de fechamento;
+# sem `?` e `:` não existe ternário, que recursa sem abrir colchete algum.
+const _SOURCE_CHARS = Set{Char}("()[],;=.+-_ \t\r\n" *
+                                "0123456789" *
+                                "abcdefghijklmnopqrstuvwxyz" *
+                                "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+_peek(src, i) = (j = nextind(src, i); j <= lastindex(src) ? src[j] : '\0')
+
+# Consome até o fim da linha; devolve o índice do '\n' (ou passa do fim).
+function _skip_line_comment(src, i)
+    while i <= lastindex(src) && src[i] != '\n'
+        i = nextind(src, i)
+    end
+    return i
+end
+
+# Comentário de bloco aninha em Julia: #= #= =# =# é UM comentário só. Contar
+# o nível é o que impede que o `=#` de dentro devolva o scanner ao código cedo
+# demais — e com ele todos os ")" seguintes viravam decremento de verdade.
+function _skip_block_comment(src, i)
+    nivel = 0
+    while i <= lastindex(src)
+        c, prox = src[i], _peek(src, i)
+        if c == '#' && prox == '='
+            nivel += 1
+            i = nextind(src, nextind(src, i))
+        elseif c == '=' && prox == '#'
+            nivel -= 1
+            i = nextind(src, nextind(src, i))
+            nivel == 0 && return i
+        else
+            i = nextind(src, i)
+        end
+    end
+    throw(ArgumentError("Perth: project file has an unterminated block comment"))
+end
+
+# Três aspas a partir de i? Serve tanto para abrir quanto para fechar.
+function _is_triple(src, i)
+    j = nextind(src, i)
+    j <= lastindex(src) && src[j] == '"' || return false
+    k = nextind(src, j)
+    return k <= lastindex(src) && src[k] == '"'
+end
+
+# Fecha a string e devolve o índice logo depois dela. Tratar """ é o que
+# fecha o desvio mais silencioso: `"""a"b"""` tem sete aspas, e o scanner de
+# aspas simples terminava ACHANDO que ainda estava dentro de uma string —
+# daí em diante ignorava todo colchete e a profundidade nunca mais subia.
+function _skip_string(src, i)
+    tripla = _is_triple(src, i)
+    i = tripla ? nextind(src, nextind(src, nextind(src, i))) : nextind(src, i)
+    while i <= lastindex(src)
+        c = src[i]
+        if c == '\\'
+            i = nextind(src, i)
+            i > lastindex(src) && break
+            i = nextind(src, i)
+        elseif c == '"'
+            if tripla && !_is_triple(src, i)
+                i = nextind(src, i)          # aspa solta DENTRO de \"\"\"…\"\"\"
+            elseif tripla
+                return nextind(src, nextind(src, nextind(src, i)))
+            else
+                return nextind(src, i)
+            end
+        else
+            i = nextind(src, i)
+        end
+    end
+    throw(ArgumentError("Perth: project file has an unterminated string"))
+end
+
+# Recusa fonte que o parser do Julia não sobreviveria a ler. String e
+# comentário são pulados inteiros — um nome de tarefa com "(((" não é
+# aninhamento, e recusá-lo seria falso positivo em projeto legítimo; fora
+# deles, só passa o que o formato realmente usa (ver _SOURCE_CHARS).
 function _guard_source(src::AbstractString)
     sizeof(src) <= _MAX_SOURCE_BYTES || throw(ArgumentError(
         "Perth: project file is too large " *
         "(over $(_MAX_SOURCE_BYTES ÷ 1024^2) MB)"))
     depth = 0
-    nastring = escapado = nocomentario = false
-    for c in src
-        if nocomentario
-            c == '\n' && (nocomentario = false)
-        elseif nastring
-            if escapado;        escapado = false
-            elseif c == '\\';   escapado = true
-            elseif c == '"';    nastring = false
-            end
-        elseif c == '"';       nastring = true
-        elseif c == '#';        nocomentario = true
-        elseif c == '(' || c == '[' || c == '{'
+    sinais = 0
+    i = firstindex(src)
+    while i <= lastindex(src)
+        c = src[i]
+        if c == '#'
+            i = _peek(src, i) == '=' ? _skip_block_comment(src, i) :
+                                       _skip_line_comment(src, i)
+            continue
+        elseif c == '"'
+            i = _skip_string(src, i)
+            continue
+        end
+        c in _SOURCE_CHARS || throw(ArgumentError(
+            "Perth: project file uses a character the format never writes: " *
+            "$(repr(c)) — only constructor calls, literals and vectors belong here"))
+        if c == '+' || c == '-'
+            sinais += 1
+            sinais <= _MAX_SIGN_RUN || throw(ArgumentError(
+                "Perth: project file chains too many signs " *
+                "(over $(_MAX_SIGN_RUN) in a row)"))
+        elseif !isspace(c)
+            sinais = 0
+        end
+        if c == '(' || c == '['
             depth += 1
             depth <= _MAX_SOURCE_DEPTH || throw(ArgumentError(
                 "Perth: project file nests too deeply " *
                 "(over $(_MAX_SOURCE_DEPTH) levels)"))
-        elseif c == ')' || c == ']' || c == '}'
+        elseif c == ')' || c == ']'
             depth = max(depth - 1, 0)
         end
+        i = nextind(src, i)
     end
     return nothing
 end
