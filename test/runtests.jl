@@ -551,6 +551,15 @@ end
         @test Perth._parse_restricted("[1, -2, 3.5, -0.25, 1e3, true, false, nothing]") ==
               Any[1, -2, 3.5, -0.25, 1000.0, true, false, nothing]
         @test Perth._parse_restricted("Date(2026, 1, 5)") == Date(2026, 1, 5)
+
+        # o escritor nunca emite ponto inicial nem separador `_`, mas o formato e'
+        # editavel a mao e o Julia aceita os dois: recusar era regressao, achada
+        # pelo fuzz diferencial (16 casos ESTRITO)
+        @test Perth._parse_restricted("[.5, .0, -.5, 1_000, 8_0, 1_000.5]") ==
+              Any[0.5, 0.0, -0.5, 1000, 80, 1000.5]
+        for ruim in ("[1_]", "[_1]", "[1__0]", "[1_000_]", "[.]", "[-.]", "[8_0_]")
+            @test_throws ArgumentError Perth._parse_restricted(ruim)
+        end
         for ruim in ("Project(", "Project(]", "]", "= 1", "Project(id=)",
                      "Unknown(id=\"x\")", "id = \"x\"", "Project(id=\"a\") Project(id=\"b\")",
                      "", "Project(\"a\", \"b\") extra")

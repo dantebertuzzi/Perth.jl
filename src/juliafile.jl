@@ -220,6 +220,26 @@ end
 _ident_inicio(c) = isletter(c) || c == '_'
 _ident_corpo(c) = isletter(c) || isdigit(c) || c == '_' || c == '!'
 
+# Um número começa por dígito, por ponto seguido de dígito (`.5`) ou por sinal
+# antes de um dos dois (`-.5`). Ponto inicial e separador `_` são Julia válido e
+# gente escreve os dois à mão, então o leitor aceita — o escritor nunca emite.
+function _num_inicio(src, i)
+    c = src[i]
+    isdigit(c) && return true
+    j = i
+    if c == '-'
+        j = nextind(src, j)
+        j > lastindex(src) && return false
+        c = src[j]
+        isdigit(c) && return true
+    end
+    if c == '.'
+        k = nextind(src, j)
+        return k <= lastindex(src) && isdigit(src[k])
+    end
+    return false
+end
+
 function _tokenize(src::AbstractString)
     toks = _Tok[]
     i = firstindex(src)
@@ -247,12 +267,15 @@ function _tokenize(src::AbstractString)
                 "Perth: project file has a string that is not a plain literal"))
             push!(toks, _Tok(:str, String(texto)))
             i = j
-        elseif isdigit(c) || (c == '-' && (k = nextind(src, i); k <= lastindex(src) && isdigit(src[k])))
+        elseif _num_inicio(src, i)
             j, viu_ponto = i, false
             c == '-' && (j = nextind(src, j))
             while j <= lastindex(src)
                 d = src[j]
                 if isdigit(d)
+                    j = nextind(src, j)
+                elseif d == '_' && (m = nextind(src, j); m <= lastindex(src) &&
+                        isdigit(src[m]) && isdigit(src[prevind(src, j)]))
                     j = nextind(src, j)
                 elseif d == '.' && !viu_ponto
                     viu_ponto = true; j = nextind(src, j)
@@ -263,7 +286,7 @@ function _tokenize(src::AbstractString)
                     break
                 end
             end
-            texto = String(SubString(src, i, prevind(src, j)))
+            texto = replace(String(SubString(src, i, prevind(src, j))), '_' => "")
             n = viu_ponto ? tryparse(Float64, texto) : tryparse(Int, texto)
             n === nothing && throw(ArgumentError("Perth: project file has a bad number $(repr(texto))"))
             push!(toks, _Tok(:num, n))
