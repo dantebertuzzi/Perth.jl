@@ -207,10 +207,27 @@ end
 # faça recursar. É o que encerra a categoria, em vez de fechar mais um caso.
 #
 #   valor  := chamada | literal | vetor
-#   chamada:= IDENT '(' (arg (',' | ';') ...)* ')'
+#   sep    := ',' | ';'
+#   chamada:= IDENT '(' (arg (sep arg)* sep?)? ')'
 #   arg    := IDENT '=' valor | valor
-#   vetor  := '[' (valor ',' ...)* ']'
+#   vetor  := '[' (valor (sep valor)* sep?)? ']'
 #   literal:= string | número | true | false | nothing
+#
+# O separador é OBRIGATÓRIO entre valores, como no Julia: sem isso o leitor
+# aceitaria `Project(id="a" name="b")`, que o Julia recusa, e o arquivo
+# deixaria de ser o Julia executável que o cabeçalho promete.
+#
+# `;` conta como separador, e isso foi medido, não suposto: o formato nunca o
+# escreve, mas em posição de vírgula ele é Julia válido (`f(a; b=1)` vira
+# Expr(:parameters), e `[1; 2]` vale `[1, 2]`). Recusá-lo custou 449 casos que
+# a main aceitava — regressão maior que o problema que resolvia. Pelo mesmo
+# motivo o `;` dentro de uma chamada não exige valor antes: ele abre a seção de
+# keywords, e `f(; b=1)` e `f(a, ; b=1)` são Julia válido.
+#
+# Diferença conhecida e deixada de fora: `(nome) = valor`, com o nome do kwarg
+# entre parênteses, é Julia válido e o leitor recusa. O formato nunca escreve
+# assim e ninguém digita assim; aceitar custaria `(` numa posição que o formato
+# não usa.
 
 struct _Tok
     tipo::Symbol          # :ident :str :num :lit :abre :fecha :abrev :fechav :virg :igual
@@ -308,7 +325,7 @@ function _tokenize(src::AbstractString)
                    c == ',' || c == ';' ? :virg : c == '=' ? :igual : :nao
             tipo === :nao && throw(ArgumentError(
                 "Perth: project file uses a character the format never writes: $(repr(c))"))
-            push!(toks, _Tok(tipo, nothing))
+            push!(toks, _Tok(tipo, tipo === :virg ? c : nothing))
             i = nextind(src, i)
         end
     end
@@ -323,22 +340,34 @@ mutable struct _Quadro
     args::Vector{Any}
     kws::Vector{Pair{Symbol,Any}}
     chave::Union{Nothing,Symbol}        # kwarg cujo valor ainda não chegou
+    viu_item::Bool                      # veio um valor desde o último separador?
 end
 
-function _emitir!(pilha, pronto, valor)
+# Estado de separador do nível corrente — o topo tem o seu, num Ref, porque
+# lá não há quadro. Um valor só vem depois de separador, e um separador só
+# depois de valor (com a ressalva do `;`, no ramo :virg).
+_viu_item(pilha, topo) = isempty(pilha) ? topo[] : pilha[end].viu_item
+_marcar_item!(pilha, topo, v) = isempty(pilha) ? (topo[] = v) : (pilha[end].viu_item = v)
+
+function _emitir!(pilha, pronto, topo, valor)
     if isempty(pilha)
         pronto[] === nothing || throw(ArgumentError(
             "Perth: project file must contain exactly one expression"))
         pronto[] = valor
+        topo[] = true
         return nothing
     end
     q = pilha[end]
+    # dois valores seguidos sem vírgula: o Julia recusa, e aqui também
+    q.viu_item && throw(ArgumentError(
+        "Perth: project file is missing a comma between values"))
     if q.chave !== nothing
         push!(q.kws, q.chave => valor)
         q.chave = nothing
     else
         push!(q.args, valor)
     end
+    q.viu_item = true
     return nothing
 end
 
@@ -346,6 +375,7 @@ function _parse_restricted(src::AbstractString)
     toks = _tokenize(src)
     pilha = _Quadro[]
     pronto = Ref{Any}(nothing)
+    topo = Ref(false)
     i = 1
     while i <= length(toks)
         t = toks[i]
@@ -354,7 +384,7 @@ function _parse_restricted(src::AbstractString)
             if prox === :abre
                 haskey(_SAFE_CONSTRUCTORS, t.valor) || throw(ArgumentError(
                     "Perth: call not allowed in project file: $(t.valor)"))
-                push!(pilha, _Quadro(:chamada, t.valor, Any[], Pair{Symbol,Any}[], nothing))
+                push!(pilha, _Quadro(:chamada, t.valor, Any[], Pair{Symbol,Any}[], nothing, false))
                 length(pilha) <= _MAX_SOURCE_DEPTH || throw(ArgumentError(
                     "Perth: project file nests too deeply (over $(_MAX_SOURCE_DEPTH) levels)"))
                 i += 2
@@ -368,10 +398,10 @@ function _parse_restricted(src::AbstractString)
                 throw(ArgumentError("Perth: name not allowed in project file: $(t.valor)"))
             end
         elseif t.tipo === :str || t.tipo === :num || t.tipo === :lit
-            _emitir!(pilha, pronto, t.valor)
+            _emitir!(pilha, pronto, topo, t.valor)
             i += 1
         elseif t.tipo === :abrev
-            push!(pilha, _Quadro(:vetor, :vetor, Any[], Pair{Symbol,Any}[], nothing))
+            push!(pilha, _Quadro(:vetor, :vetor, Any[], Pair{Symbol,Any}[], nothing, false))
             length(pilha) <= _MAX_SOURCE_DEPTH || throw(ArgumentError(
                 "Perth: project file nests too deeply (over $(_MAX_SOURCE_DEPTH) levels)"))
             i += 1
@@ -391,9 +421,18 @@ function _parse_restricted(src::AbstractString)
                     throw(ArgumentError("Perth: $(q.nome) rejected this file: $(sprint(showerror, err))"))
                 end
             end
-            _emitir!(pilha, pronto, valor)
+            _emitir!(pilha, pronto, topo, valor)
             i += 1
         elseif t.tipo === :virg
+            # `,` exige valor antes (`f(,a)` e `f(a,,b)` o Julia recusa). `;`
+            # não, dentro de uma chamada: ele abre a seção de keywords, e
+            # `f(; b=1)` e `f(a, ; b=1)` são Julia válido. Medido: exigir valor
+            # antes do `;` custou 422 casos que a main aceitava.
+            if t.valor === ',' || isempty(pilha)
+                _viu_item(pilha, topo) || throw(ArgumentError(
+                    "Perth: project file has a separator with no value before it"))
+            end
+            _marcar_item!(pilha, topo, false)
             i += 1
         else
             throw(ArgumentError("Perth: project file has a stray '='"))

@@ -560,6 +560,33 @@ end
         for ruim in ("[1_]", "[_1]", "[1__0]", "[1_000_]", "[.]", "[-.]", "[8_0_]")
             @test_throws ArgumentError Perth._parse_restricted(ruim)
         end
+
+        # separador e' obrigatorio entre valores, como no Julia: sem isso o
+        # leitor aceitaria fonte que o Julia recusa e o arquivo deixaria de ser
+        # o Julia executavel que o cabecalho promete. Achado pelo diferencial,
+        # que classificou 837 casos FROUXO — todos desta causa.
+        for ruim in ("Project(id=\"a\" name=\"b\")",   # sem virgula
+                     "Project(id=\"a\",, name=\"b\")",  # virgula dupla
+                     "Project(,id=\"a\")",              # virgula inicial
+                     "[1 2]", "[1,, 2]", "[, 1]")
+            @test_throws ArgumentError Perth._parse_restricted(ruim)
+        end
+        # `;` conta como separador. O formato nunca o escreve, mas em posicao de
+        # virgula ele e' Julia valido (`f(a; b=1)`, e `[1; 2]` vale `[1, 2]`);
+        # recusa-lo custou 449 casos no diferencial que a main aceitava.
+        @test Perth._parse_restricted("[1; 2]") == Any[1, 2]
+        @test Perth._parse_restricted("[1, 2];") == Any[1, 2]
+        # mas separador sem valor antes continua recusado, no topo ou dentro
+        @test_throws ArgumentError Perth._parse_restricted(";\n[1, 2]")
+        # `,` exige valor antes; `;` dentro de chamada nao, porque abre a secao
+        # de keywords e `f(; b=1)` / `f(a, ; b=1)` sao Julia valido
+        @test_throws ArgumentError Perth._parse_restricted("Project(,id=\"a\")")
+        @test Perth._parse_restricted("Date(; 2026, 1, 5)") == Date(2026, 1, 5)
+        @test Perth._parse_restricted("Date(2026, 1, ; 5)") == Date(2026, 1, 5)
+        @test Perth._parse_restricted("[1, ; 2]") == Any[1, 2]
+        # virgula final continua valendo, como no Julia
+        @test Perth._parse_restricted("[1, 2,]") == Any[1, 2]
+        @test Perth._parse_restricted("[]") == Any[]
         for ruim in ("Project(", "Project(]", "]", "= 1", "Project(id=)",
                      "Unknown(id=\"x\")", "id = \"x\"", "Project(id=\"a\") Project(id=\"b\")",
                      "", "Project(\"a\", \"b\") extra")
