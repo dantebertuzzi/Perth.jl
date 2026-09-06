@@ -529,6 +529,44 @@ end
         @test volta.tasks[1].name == "Medir 100% — a 'frio' & a \"quente\""
         delete_project(pontuado.id)
 
+        # ── o parser iterativo: as três construções que o fuzzing achou ──
+        #
+        # Nenhuma gasta caractere proibido: sao feitas de "(", ")", "=" e "."
+        # — que o formato PRECISA. Derrubavam o processo por serem encadeadas,
+        # e nenhum teto de tamanho as separava de arquivo legitimo: um projeto
+        # de 1000 tarefas carrega cinco vezes mais caractere estrutural que o
+        # menor fonte que matava o processo. O que as recusa agora nao e' um
+        # caso especial: a gramatica simplesmente nao as admite.
+        for fonte in ("()"^20_000,                       # chamadas encadeadas
+                      "a" * repeat(" = a", 150_000),      # kwarg fora de chamada
+                      "a" * repeat(".a", 150_000))        # '.' nao e' token
+            @test_throws ArgumentError Perth._parse_project_source(fonte)
+        end
+
+        # literal de string malformado vem do Meta.parse como ParseError, que
+        # nao e' ArgumentError: escapar viraria 500 no /api/import
+        @test_throws ArgumentError Perth._parse_restricted("Project(id=\"20\$26-01\")")
+
+        # ── a gramatica, nos dois sentidos ──
+        @test Perth._parse_restricted("[1, -2, 3.5, -0.25, 1e3, true, false, nothing]") ==
+              Any[1, -2, 3.5, -0.25, 1000.0, true, false, nothing]
+        @test Perth._parse_restricted("Date(2026, 1, 5)") == Date(2026, 1, 5)
+        for ruim in ("Project(", "Project(]", "]", "= 1", "Project(id=)",
+                     "Unknown(id=\"x\")", "id = \"x\"", "Project(id=\"a\") Project(id=\"b\")",
+                     "", "Project(\"a\", \"b\") extra")
+            @test_throws ArgumentError Perth._parse_restricted(ruim)
+        end
+
+        # escapes: o que o repr escreve, o parser tem de ler de volta igual
+        escapado = create_project("aspas \" barra \\ cifrao \$x")
+        add_task!(escapado, "linha\nnova\ttab — ✓ Bjørn";
+                  start = Date(2026, 1, 1), duration = 1, notes = "\$(1+1) nao interpola")
+        devolta = Perth._parse_project_source(Perth._to_julia_source(escapado))
+        @test devolta.name == escapado.name
+        @test devolta.tasks[1].name == escapado.tasks[1].name
+        @test devolta.tasks[1].notes == escapado.tasks[1].notes
+        delete_project(escapado.id)
+
         # comentário — de linha e de bloco aninhado — continua sendo comentário
         @test Perth._guard_source("""
             # não pode? pode: 'sim' — 100%
