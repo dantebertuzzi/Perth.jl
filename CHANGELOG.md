@@ -5,6 +5,44 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- **A crafted project file could take the process down, and the guard written
+  to stop exactly that could be walked past.** Julia's own parser recurses, and
+  when it runs out of stack it does not raise — it kills the process, so no
+  `try` anywhere in Perth can catch it. The depth guard existed for that
+  reason: skip strings and comments, count the balance of brackets, refuse
+  anything that nests too far. Every one of those assumptions had a hole. A
+  character literal holding a closing bracket decremented the count without
+  closing anything. A triple-quoted string left the scanner believing it was
+  inside a string for the rest of the file, after which no bracket counted at
+  all. A block comment — which the scanner did not know existed, having only
+  ever handled `#` to end of line — decremented from inside a comment. And two
+  ways of exhausting the parser spend no brackets whatsoever: chained ternaries
+  and chained unary signs, which no bracket counter would ever have seen. Each
+  fits in a few KB, far under the 4 MB size cap, and all of them arrived
+  through `POST /api/import` — always from the machine running Perth, and from
+  any peer holding an editing link while sharing is on.
+
+  The counter is no longer carrying the whole defence. Outside strings and
+  comments, only the characters the format actually writes are accepted, and
+  that is what makes the count trustworthy rather than merely tidy: with no
+  character literals, nothing can fake a closing bracket; with no `?` or `:`,
+  nothing can recurse without one. It costs no legitimate file, because the
+  restricted evaluator already refused everything the list bars — nothing that
+  parsed before fails now. Triple-quoted strings and nested block comments are
+  read the way Julia reads them, so real nesting becomes visible to the cap
+  instead of hiding behind them, and an unterminated string or comment is a
+  stated error rather than an undefined state. Inside a string or a comment
+  every character still passes, because a task name is prose and not syntax: a
+  project called `Don't stop: fase #2 (final)?` round-trips as it always did.
+
+  **Nothing was ever executed by this.** The restricted AST evaluator was not
+  involved and was not bypassed; a `.perth.jl` still cannot call anything
+  outside the constructor whitelist. This was a crash, not an escape, and no
+  project data was at risk.
+
 ## [0.15.0] - 2026-08-22
 
 ### Added
