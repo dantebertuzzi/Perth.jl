@@ -5,6 +5,70 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Fixed
+- **A crafted project file could take the process down, and the guard written
+  to stop exactly that could be walked past.** Julia's own parser recurses, and
+  when it runs out of stack it does not raise — it kills the process, so no
+  `try` anywhere in Perth can catch it. The depth guard existed for that
+  reason: skip strings and comments, count the balance of brackets, refuse
+  anything that nests too far. Every one of those assumptions had a hole. A
+  character literal holding a closing bracket decremented the count without
+  closing anything. A triple-quoted string left the scanner believing it was
+  inside a string for the rest of the file, after which no bracket counted at
+  all. A block comment — which the scanner did not know existed, having only
+  ever handled `#` to end of line — decremented from inside a comment. And two
+  ways of exhausting the parser spend no brackets whatsoever: chained ternaries
+  and chained unary signs, which no bracket counter would ever have seen. Each
+  fits in a few KB, far under the 4 MB size cap, and all of them arrived
+  through `POST /api/import` — always from the machine running Perth, and from
+  any peer holding an editing link while sharing is on.
+
+  The counter is no longer carrying the whole defence. Outside strings and
+  comments, only the characters the format actually writes are accepted, and
+  that is what makes the count trustworthy rather than merely tidy: with no
+  character literals, nothing can fake a closing bracket; with no `?` or `:`,
+  nothing can recurse without one. It costs no legitimate file, because the
+  restricted evaluator already refused everything the list bars — nothing that
+  parsed before fails now. Triple-quoted strings and nested block comments are
+  read the way Julia reads them, so real nesting becomes visible to the cap
+  instead of hiding behind them, and an unterminated string or comment is a
+  stated error rather than an undefined state. Inside a string or a comment
+  every character still passes, because a task name is prose and not syntax: a
+  project called `Don't stop: fase #2 (final)?` round-trips as it always did.
+
+  **The guard is no longer the last line, because Julia's parser is no longer
+  in the path.** Hardening the counter closed every way found of walking *past*
+  the guard, but not the reason a guard was needed at all. Julia's parser dies
+  rather than raises, and a long enough chain built only from characters the
+  format legitimately needs — `(`, `)`, `=`, `.` — still reached it. Fuzzing
+  found those after the hardening; they crash the released 0.15.0 in exactly
+  the same way. No cap separates them from real files, and the numbers say why:
+  a 1000-task project carries five times more of those characters than the
+  smallest crashing input, because what distinguishes the two is the shape of
+  the expression and not its size.
+
+  So reading a project file no longer goes through Julia's parser. Perth
+  tokenises the source itself and walks it with an explicit stack, where depth
+  is a number it holds rather than a property of the machine it happens to be
+  running on. Too deep is now an `ArgumentError` like any other malformed
+  file — catchable, and answered as a 400 rather than by the process
+  disappearing. Fuzzing the iterative reader over 302,027 inputs produced no
+  crashes, no hangs, and no exception other than `ArgumentError`.
+
+  Replacing a parser risks refusing files the old one accepted, so the two were
+  fuzzed against each other on the same inputs. That turned up two numeric
+  forms the new reader rejected and Julia accepts: leading-dot floats (`.5`)
+  and underscore-separated numbers (`1_000`). Perth never writes either, so no
+  exported file was affected — but the format is meant to be edited by hand,
+  and both now read exactly as Julia reads them.
+
+  **Nothing was ever executed by this.** The restricted AST evaluator was not
+  involved and was not bypassed; a `.perth.jl` still cannot call anything
+  outside the constructor whitelist. This was a crash, not an escape, and no
+  project data was at risk.
+
 ## [0.15.0] - 2026-08-22
 
 ### Added

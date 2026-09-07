@@ -489,6 +489,127 @@ end
         @test_throws ArgumentError Perth._parse_project_source(
             "Project(id=\"x\", name=\"" * "a"^(5 * 1024 * 1024) * "\")")
 
+        # ── e os desvios do contador, que é o jeito de a guarda existir e
+        # não valer nada ──
+        #
+        # O scanner pulava string e comentário e contava o SALDO de colchetes.
+        # Cinco construções o dessincronizavam, e duas nem gastam colchete:
+        #
+        #   ')'        literal de char cujo ')' decrementava sem fechar nada
+        #   \"\"\"a\"b\"\"\"  sete aspas: o scanner terminava "dentro de string" e
+        #              daí em diante ignorava todo colchete que viesse
+        #   #= ) =#    comentário de bloco cujo ')' decrementava de verdade
+        #   ? :        ternário recursa no parser sem abrir colchete algum
+        #   ------1    cadeia de sinal unário, idem (quebra perto de 25 mil)
+        #
+        # Todas derrubavam o processo com core dump por POST /api/import.
+        # Como no teste acima, regressão aqui não falha: MATA a suíte.
+        fundo_char  = repeat("[')',", 3_000) * "]"^3_000
+        fundo_aspas = "Project(id=\"\"\"a\"b\"\"\", name=" * "["^3_000 * "]"^3_000 * ")"
+        fundo_bloco = repeat("[\n#=\n)\n=#\n", 3_000) * "]"^3_000
+        fundo_tern  = repeat("1 ? 1 : ", 60_000) * "1"
+        fundo_sinal = "-"^200_000 * "1"
+        for fonte in (fundo_char, fundo_aspas, fundo_bloco, fundo_tern, fundo_sinal)
+            @test_throws ArgumentError Perth._guard_source(fonte)
+        end
+        # string e comentário sem fim são fonte truncado: recusa, não trava
+        @test_throws ArgumentError Perth._guard_source("Project(name=\"sem fim")
+        @test_throws ArgumentError Perth._guard_source("#= sem fim\nProject()")
+
+        # ── o outro lado: o que a lista de caracteres NÃO pode custar ──
+        #
+        # Fora de string e de comentário só passa o que o formato escreve.
+        # Dentro deles passa tudo — senão apóstrofo em nome de tarefa, que é
+        # texto de gente, viraria erro de importação.
+        pontuado = create_project("Don't stop: fase #2 (final)?")
+        add_task!(pontuado, "Medir 100% — a 'frio' & a \"quente\"";
+                  start = Date(2026, 1, 1), duration = 3)
+        volta = Perth._parse_project_source(Perth._to_julia_source(pontuado))
+        @test volta.name == "Don't stop: fase #2 (final)?"
+        @test volta.tasks[1].name == "Medir 100% — a 'frio' & a \"quente\""
+        delete_project(pontuado.id)
+
+        # ── o parser iterativo: as três construções que o fuzzing achou ──
+        #
+        # Nenhuma gasta caractere proibido: sao feitas de "(", ")", "=" e "."
+        # — que o formato PRECISA. Derrubavam o processo por serem encadeadas,
+        # e nenhum teto de tamanho as separava de arquivo legitimo: um projeto
+        # de 1000 tarefas carrega cinco vezes mais caractere estrutural que o
+        # menor fonte que matava o processo. O que as recusa agora nao e' um
+        # caso especial: a gramatica simplesmente nao as admite.
+        for fonte in ("()"^20_000,                       # chamadas encadeadas
+                      "a" * repeat(" = a", 150_000),      # kwarg fora de chamada
+                      "a" * repeat(".a", 150_000))        # '.' nao e' token
+            @test_throws ArgumentError Perth._parse_project_source(fonte)
+        end
+
+        # literal de string malformado vem do Meta.parse como ParseError, que
+        # nao e' ArgumentError: escapar viraria 500 no /api/import
+        @test_throws ArgumentError Perth._parse_restricted("Project(id=\"20\$26-01\")")
+
+        # ── a gramatica, nos dois sentidos ──
+        @test Perth._parse_restricted("[1, -2, 3.5, -0.25, 1e3, true, false, nothing]") ==
+              Any[1, -2, 3.5, -0.25, 1000.0, true, false, nothing]
+        @test Perth._parse_restricted("Date(2026, 1, 5)") == Date(2026, 1, 5)
+
+        # o escritor nunca emite ponto inicial nem separador `_`, mas o formato e'
+        # editavel a mao e o Julia aceita os dois: recusar era regressao, achada
+        # pelo fuzz diferencial (16 casos ESTRITO)
+        @test Perth._parse_restricted("[.5, .0, -.5, 1_000, 8_0, 1_000.5]") ==
+              Any[0.5, 0.0, -0.5, 1000, 80, 1000.5]
+        for ruim in ("[1_]", "[_1]", "[1__0]", "[1_000_]", "[.]", "[-.]", "[8_0_]")
+            @test_throws ArgumentError Perth._parse_restricted(ruim)
+        end
+
+        # separador e' obrigatorio entre valores, como no Julia: sem isso o
+        # leitor aceitaria fonte que o Julia recusa e o arquivo deixaria de ser
+        # o Julia executavel que o cabecalho promete. Achado pelo diferencial,
+        # que classificou 837 casos FROUXO — todos desta causa.
+        for ruim in ("Project(id=\"a\" name=\"b\")",   # sem virgula
+                     "Project(id=\"a\",, name=\"b\")",  # virgula dupla
+                     "Project(,id=\"a\")",              # virgula inicial
+                     "[1 2]", "[1,, 2]", "[, 1]")
+            @test_throws ArgumentError Perth._parse_restricted(ruim)
+        end
+        # `;` conta como separador. O formato nunca o escreve, mas em posicao de
+        # virgula ele e' Julia valido (`f(a; b=1)`, e `[1; 2]` vale `[1, 2]`);
+        # recusa-lo custou 449 casos no diferencial que a main aceitava.
+        @test Perth._parse_restricted("[1; 2]") == Any[1, 2]
+        @test Perth._parse_restricted("[1, 2];") == Any[1, 2]
+        # mas separador sem valor antes continua recusado, no topo ou dentro
+        @test_throws ArgumentError Perth._parse_restricted(";\n[1, 2]")
+        # `,` exige valor antes; `;` dentro de chamada nao, porque abre a secao
+        # de keywords e `f(; b=1)` / `f(a, ; b=1)` sao Julia valido
+        @test_throws ArgumentError Perth._parse_restricted("Project(,id=\"a\")")
+        @test Perth._parse_restricted("Date(; 2026, 1, 5)") == Date(2026, 1, 5)
+        @test Perth._parse_restricted("Date(2026, 1, ; 5)") == Date(2026, 1, 5)
+        @test Perth._parse_restricted("[1, ; 2]") == Any[1, 2]
+        # virgula final continua valendo, como no Julia
+        @test Perth._parse_restricted("[1, 2,]") == Any[1, 2]
+        @test Perth._parse_restricted("[]") == Any[]
+        for ruim in ("Project(", "Project(]", "]", "= 1", "Project(id=)",
+                     "Unknown(id=\"x\")", "id = \"x\"", "Project(id=\"a\") Project(id=\"b\")",
+                     "", "Project(\"a\", \"b\") extra")
+            @test_throws ArgumentError Perth._parse_restricted(ruim)
+        end
+
+        # escapes: o que o repr escreve, o parser tem de ler de volta igual
+        escapado = create_project("aspas \" barra \\ cifrao \$x")
+        add_task!(escapado, "linha\nnova\ttab — ✓ Bjørn";
+                  start = Date(2026, 1, 1), duration = 1, notes = "\$(1+1) nao interpola")
+        devolta = Perth._parse_project_source(Perth._to_julia_source(escapado))
+        @test devolta.name == escapado.name
+        @test devolta.tasks[1].name == escapado.tasks[1].name
+        @test devolta.tasks[1].notes == escapado.tasks[1].notes
+        delete_project(escapado.id)
+
+        # comentário — de linha e de bloco aninhado — continua sendo comentário
+        @test Perth._guard_source("""
+            # não pode? pode: 'sim' — 100%
+            #= bloco #= aninhado =# ainda no bloco: ')' =#
+            Project(id="c", name="ok")
+            """) === nothing
+
         # e nada disso pode custar projeto legítimo: parêntese e colchete em
         # nome de tarefa são texto, não aninhamento
         legit = create_project("Obra ((especial))")

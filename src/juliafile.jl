@@ -193,37 +193,255 @@ function set_file_path!(p::Project, path::Union{Nothing,AbstractString})
 end
 
 # ---------------------------------------------------------------------------
-# Leitura (avaliador restrito — nunca eval)
+# Leitura: tokenizador + parser ITERATIVOS, sem Meta.parseall
 # ---------------------------------------------------------------------------
+#
+# A gramática do formato cabe em cinco linhas — chamada de construtor, literal
+# e vetor — e era lida pelo parser completo do Julia, que é recursivo e morre
+# com core dump em vez de lançar. Nenhuma guarda de texto dá conta disso: o
+# que faz o parser recursar é a FORMA da expressão, não o tamanho, e um
+# projeto de 1000 tarefas carrega cinco vezes mais caractere estrutural que o
+# menor fonte que derruba o processo. Não há teto que separe os dois.
+#
+# Este parser tem pilha explícita e teto nela, então não existe entrada que o
+# faça recursar. É o que encerra a categoria, em vez de fechar mais um caso.
+#
+#   valor  := chamada | literal | vetor
+#   sep    := ',' | ';'
+#   chamada:= IDENT '(' (arg (sep arg)* sep?)? ')'
+#   arg    := IDENT '=' valor | valor
+#   vetor  := '[' (valor (sep valor)* sep?)? ']'
+#   literal:= string | número | true | false | nothing
+#
+# O separador é OBRIGATÓRIO entre valores, como no Julia: sem isso o leitor
+# aceitaria `Project(id="a" name="b")`, que o Julia recusa, e o arquivo
+# deixaria de ser o Julia executável que o cabeçalho promete.
+#
+# `;` conta como separador, e isso foi medido, não suposto: o formato nunca o
+# escreve, mas em posição de vírgula ele é Julia válido (`f(a; b=1)` vira
+# Expr(:parameters), e `[1; 2]` vale `[1, 2]`). Recusá-lo custou 449 casos que
+# a main aceitava — regressão maior que o problema que resolvia. Pelo mesmo
+# motivo o `;` dentro de uma chamada não exige valor antes: ele abre a seção de
+# keywords, e `f(; b=1)` e `f(a, ; b=1)` são Julia válido.
+#
+# Diferença conhecida e deixada de fora: `(nome) = valor`, com o nome do kwarg
+# entre parênteses, é Julia válido e o leitor recusa. O formato nunca escreve
+# assim e ninguém digita assim; aceitar custaria `(` numa posição que o formato
+# não usa.
 
-_eval_safe(x::Union{AbstractString,Bool,Int,Float64}) = x
-_eval_safe(x) = throw(ArgumentError("Perth: literal not allowed in project file: $(repr(x))"))
+struct _Tok
+    tipo::Symbol          # :ident :str :num :lit :abre :fecha :abrev :fechav :virg :igual
+    valor::Any
+end
 
-function _eval_safe(e::Expr)
-    if e.head === :vect
-        return [_eval_safe(a) for a in e.args]
-    elseif e.head === :call
-        f = e.args[1]
-        (f isa Symbol && haskey(_SAFE_CONSTRUCTORS, f)) ||
-            throw(ArgumentError("Perth: call not allowed in project file: $f"))
-        args = Any[]
-        kws = Pair{Symbol,Any}[]
-        for a in e.args[2:end]
-            if a isa Expr && a.head === :kw
-                push!(kws, a.args[1] => _eval_safe(a.args[2]))
-            elseif a isa Expr && a.head === :parameters
-                for k in a.args
-                    (k isa Expr && k.head === :kw) ||
-                        throw(ArgumentError("Perth: unsupported keyword syntax"))
-                    push!(kws, k.args[1] => _eval_safe(k.args[2]))
-                end
-            else
-                push!(args, _eval_safe(a))
-            end
-        end
-        return _SAFE_CONSTRUCTORS[f](args...; kws...)
+_ident_inicio(c) = isletter(c) || c == '_'
+_ident_corpo(c) = isletter(c) || isdigit(c) || c == '_' || c == '!'
+
+# Um número começa por dígito, por ponto seguido de dígito (`.5`) ou por sinal
+# antes de um dos dois (`-.5`). Ponto inicial e separador `_` são Julia válido e
+# gente escreve os dois à mão, então o leitor aceita — o escritor nunca emite.
+function _num_inicio(src, i)
+    c = src[i]
+    isdigit(c) && return true
+    j = i
+    if c == '-'
+        j = nextind(src, j)
+        j > lastindex(src) && return false
+        c = src[j]
+        isdigit(c) && return true
     end
-    throw(ArgumentError("Perth: construct not allowed in project file: $(e.head)"))
+    if c == '.'
+        k = nextind(src, j)
+        return k <= lastindex(src) && isdigit(src[k])
+    end
+    return false
+end
+
+function _tokenize(src::AbstractString)
+    toks = _Tok[]
+    i = firstindex(src)
+    while i <= lastindex(src)
+        c = src[i]
+        if isspace(c)
+            i = nextind(src, i)
+        elseif c == '#'
+            i = _peek(src, i) == '=' ? _skip_block_comment(src, i) : _skip_line_comment(src, i)
+        elseif c == '"'
+            j = _skip_string(src, i)
+            # Desescapar à mão é onde mora o bug sutil. Um literal de string
+            # sozinho não recursa, então o parser do Julia pode lê-lo — e aí
+            # \n, \x41 e """ valem exatamente o que valem em Julia.
+            # Meta.parse lanca ParseError, nao ArgumentError, quando o
+            # literal e' malformado ("20$26" e afins). Deixar escapar viraria
+            # 500 no /api/import em vez do 400 que o resto deste parser da'.
+            texto = try
+                Meta.parse(String(SubString(src, i, prevind(src, j))))
+            catch err
+                err isa InterruptException && rethrow()
+                throw(ArgumentError("Perth: project file has a malformed string literal"))
+            end
+            texto isa AbstractString || throw(ArgumentError(
+                "Perth: project file has a string that is not a plain literal"))
+            push!(toks, _Tok(:str, String(texto)))
+            i = j
+        elseif _num_inicio(src, i)
+            j, viu_ponto = i, false
+            c == '-' && (j = nextind(src, j))
+            while j <= lastindex(src)
+                d = src[j]
+                if isdigit(d)
+                    j = nextind(src, j)
+                elseif d == '_' && (m = nextind(src, j); m <= lastindex(src) &&
+                        isdigit(src[m]) && isdigit(src[prevind(src, j)]))
+                    j = nextind(src, j)
+                elseif d == '.' && !viu_ponto
+                    viu_ponto = true; j = nextind(src, j)
+                elseif (d == 'e' || d == 'E') && (m = nextind(src, j);
+                        m <= lastindex(src) && (isdigit(src[m]) || src[m] in ('+', '-')))
+                    viu_ponto = true; j = nextind(src, nextind(src, j))
+                else
+                    break
+                end
+            end
+            texto = replace(String(SubString(src, i, prevind(src, j))), '_' => "")
+            n = viu_ponto ? tryparse(Float64, texto) : tryparse(Int, texto)
+            n === nothing && throw(ArgumentError("Perth: project file has a bad number $(repr(texto))"))
+            push!(toks, _Tok(:num, n))
+            i = j
+        elseif _ident_inicio(c)
+            j = i
+            while j <= lastindex(src) && _ident_corpo(src[j])
+                j = nextind(src, j)
+            end
+            nome = String(SubString(src, i, prevind(src, j)))
+            push!(toks, nome == "true"    ? _Tok(:lit, true) :
+                        nome == "false"   ? _Tok(:lit, false) :
+                        nome == "nothing" ? _Tok(:lit, nothing) :
+                                            _Tok(:ident, Symbol(nome)))
+            i = j
+        else
+            tipo = c == '(' ? :abre : c == ')' ? :fecha :
+                   c == '[' ? :abrev : c == ']' ? :fechav :
+                   c == ',' || c == ';' ? :virg : c == '=' ? :igual : :nao
+            tipo === :nao && throw(ArgumentError(
+                "Perth: project file uses a character the format never writes: $(repr(c))"))
+            push!(toks, _Tok(tipo, tipo === :virg ? c : nothing))
+            i = nextind(src, i)
+        end
+    end
+    return toks
+end
+
+# Um quadro por nível aberto. A pilha é a profundidade, e o teto nela é o que
+# torna impossível estourar: não há chamada recursiva a estourar.
+mutable struct _Quadro
+    tipo::Symbol                        # :chamada ou :vetor
+    nome::Symbol
+    args::Vector{Any}
+    kws::Vector{Pair{Symbol,Any}}
+    chave::Union{Nothing,Symbol}        # kwarg cujo valor ainda não chegou
+    viu_item::Bool                      # veio um valor desde o último separador?
+end
+
+# Estado de separador do nível corrente — o topo tem o seu, num Ref, porque
+# lá não há quadro. Um valor só vem depois de separador, e um separador só
+# depois de valor (com a ressalva do `;`, no ramo :virg).
+_viu_item(pilha, topo) = isempty(pilha) ? topo[] : pilha[end].viu_item
+_marcar_item!(pilha, topo, v) = isempty(pilha) ? (topo[] = v) : (pilha[end].viu_item = v)
+
+function _emitir!(pilha, pronto, topo, valor)
+    if isempty(pilha)
+        pronto[] === nothing || throw(ArgumentError(
+            "Perth: project file must contain exactly one expression"))
+        pronto[] = valor
+        topo[] = true
+        return nothing
+    end
+    q = pilha[end]
+    # dois valores seguidos sem vírgula: o Julia recusa, e aqui também
+    q.viu_item && throw(ArgumentError(
+        "Perth: project file is missing a comma between values"))
+    if q.chave !== nothing
+        push!(q.kws, q.chave => valor)
+        q.chave = nothing
+    else
+        push!(q.args, valor)
+    end
+    q.viu_item = true
+    return nothing
+end
+
+function _parse_restricted(src::AbstractString)
+    toks = _tokenize(src)
+    pilha = _Quadro[]
+    pronto = Ref{Any}(nothing)
+    topo = Ref(false)
+    i = 1
+    while i <= length(toks)
+        t = toks[i]
+        if t.tipo === :ident
+            prox = i < length(toks) ? toks[i + 1].tipo : :fim
+            if prox === :abre
+                haskey(_SAFE_CONSTRUCTORS, t.valor) || throw(ArgumentError(
+                    "Perth: call not allowed in project file: $(t.valor)"))
+                push!(pilha, _Quadro(:chamada, t.valor, Any[], Pair{Symbol,Any}[], nothing, false))
+                length(pilha) <= _MAX_SOURCE_DEPTH || throw(ArgumentError(
+                    "Perth: project file nests too deeply (over $(_MAX_SOURCE_DEPTH) levels)"))
+                i += 2
+            elseif prox === :igual
+                isempty(pilha) && throw(ArgumentError(
+                    "Perth: project file has a keyword outside a constructor call"))
+                pilha[end].chave === nothing || throw(ArgumentError("Perth: unsupported keyword syntax"))
+                pilha[end].chave = t.valor
+                i += 2
+            else
+                throw(ArgumentError("Perth: name not allowed in project file: $(t.valor)"))
+            end
+        elseif t.tipo === :str || t.tipo === :num || t.tipo === :lit
+            _emitir!(pilha, pronto, topo, t.valor)
+            i += 1
+        elseif t.tipo === :abrev
+            push!(pilha, _Quadro(:vetor, :vetor, Any[], Pair{Symbol,Any}[], nothing, false))
+            length(pilha) <= _MAX_SOURCE_DEPTH || throw(ArgumentError(
+                "Perth: project file nests too deeply (over $(_MAX_SOURCE_DEPTH) levels)"))
+            i += 1
+        elseif t.tipo === :fecha || t.tipo === :fechav
+            esperado = t.tipo === :fecha ? :chamada : :vetor
+            (!isempty(pilha) && pilha[end].tipo === esperado) || throw(ArgumentError(
+                "Perth: project file has unbalanced brackets"))
+            q = pop!(pilha)
+            q.chave === nothing || throw(ArgumentError("Perth: project file has a keyword with no value"))
+            valor = if q.tipo === :vetor
+                q.args
+            else
+                try
+                    _SAFE_CONSTRUCTORS[q.nome](q.args...; q.kws...)
+                catch err
+                    err isa InterruptException && rethrow()
+                    throw(ArgumentError("Perth: $(q.nome) rejected this file: $(sprint(showerror, err))"))
+                end
+            end
+            _emitir!(pilha, pronto, topo, valor)
+            i += 1
+        elseif t.tipo === :virg
+            # `,` exige valor antes (`f(,a)` e `f(a,,b)` o Julia recusa). `;`
+            # não, dentro de uma chamada: ele abre a seção de keywords, e
+            # `f(; b=1)` e `f(a, ; b=1)` são Julia válido. Medido: exigir valor
+            # antes do `;` custou 422 casos que a main aceitava.
+            if t.valor === ',' || isempty(pilha)
+                _viu_item(pilha, topo) || throw(ArgumentError(
+                    "Perth: project file has a separator with no value before it"))
+            end
+            _marcar_item!(pilha, topo, false)
+            i += 1
+        else
+            throw(ArgumentError("Perth: project file has a stray '='"))
+        end
+    end
+    isempty(pilha) || throw(ArgumentError("Perth: project file has unbalanced brackets"))
+    pronto[] === nothing && throw(ArgumentError(
+        "Perth: project file must contain exactly one expression"))
+    return pronto[]
 end
 
 # Tetos do fonte aceito. Um .perth.jl real aninha 4 níveis (Project → tasks
@@ -235,45 +453,141 @@ end
 const _MAX_SOURCE_BYTES = 4 * 1024 * 1024
 const _MAX_SOURCE_DEPTH = 32
 
-# Conta profundidade ignorando o que está dentro de string e de comentário:
-# um nome de tarefa com "(((" não é aninhamento, e recusá-lo seria um falso
-# positivo em projeto legítimo.
+# Cadeia de sinal unário é o outro jeito de fazer o parser recursar, e não
+# gasta colchete nenhum: "-"^25_000 já derruba. Um número do formato leva no
+# máximo um sinal, então 4 seguidos é folga e ainda assim fica 3 ordens de
+# grandeza abaixo do ponto de quebra.
+const _MAX_SIGN_RUN = 4
+
+# Os únicos caracteres que um .perth.jl usa FORA de string e de comentário.
+# O formato é gerado por máquina e o parser só aceita chamada de
+# construtor, literal e vetor — então tudo que esta lista barra JÁ seria
+# recusado adiante, e nenhum arquivo que antes era aceito passa a falhar.
+#
+# A lista não é estética: é ela que torna o contador de profundidade
+# confiável. Sem `'` não existe literal de char cujo `)` finja de fechamento;
+# sem `?` e `:` não existe ternário, que recursa sem abrir colchete algum.
+const _SOURCE_CHARS = Set{Char}("()[],;=.+-_ \t\r\n" *
+                                "0123456789" *
+                                "abcdefghijklmnopqrstuvwxyz" *
+                                "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+_peek(src, i) = (j = nextind(src, i); j <= lastindex(src) ? src[j] : '\0')
+
+# Consome até o fim da linha; devolve o índice do '\n' (ou passa do fim).
+function _skip_line_comment(src, i)
+    while i <= lastindex(src) && src[i] != '\n'
+        i = nextind(src, i)
+    end
+    return i
+end
+
+# Comentário de bloco aninha em Julia: #= #= =# =# é UM comentário só. Contar
+# o nível é o que impede que o `=#` de dentro devolva o scanner ao código cedo
+# demais — e com ele todos os ")" seguintes viravam decremento de verdade.
+function _skip_block_comment(src, i)
+    nivel = 0
+    while i <= lastindex(src)
+        c, prox = src[i], _peek(src, i)
+        if c == '#' && prox == '='
+            nivel += 1
+            i = nextind(src, nextind(src, i))
+        elseif c == '=' && prox == '#'
+            nivel -= 1
+            i = nextind(src, nextind(src, i))
+            nivel == 0 && return i
+        else
+            i = nextind(src, i)
+        end
+    end
+    throw(ArgumentError("Perth: project file has an unterminated block comment"))
+end
+
+# Três aspas a partir de i? Serve tanto para abrir quanto para fechar.
+function _is_triple(src, i)
+    j = nextind(src, i)
+    j <= lastindex(src) && src[j] == '"' || return false
+    k = nextind(src, j)
+    return k <= lastindex(src) && src[k] == '"'
+end
+
+# Fecha a string e devolve o índice logo depois dela. Tratar """ é o que
+# fecha o desvio mais silencioso: `"""a"b"""` tem sete aspas, e o scanner de
+# aspas simples terminava ACHANDO que ainda estava dentro de uma string —
+# daí em diante ignorava todo colchete e a profundidade nunca mais subia.
+function _skip_string(src, i)
+    tripla = _is_triple(src, i)
+    i = tripla ? nextind(src, nextind(src, nextind(src, i))) : nextind(src, i)
+    while i <= lastindex(src)
+        c = src[i]
+        if c == '\\'
+            i = nextind(src, i)
+            i > lastindex(src) && break
+            i = nextind(src, i)
+        elseif c == '"'
+            if tripla && !_is_triple(src, i)
+                i = nextind(src, i)          # aspa solta DENTRO de \"\"\"…\"\"\"
+            elseif tripla
+                return nextind(src, nextind(src, nextind(src, i)))
+            else
+                return nextind(src, i)
+            end
+        else
+            i = nextind(src, i)
+        end
+    end
+    throw(ArgumentError("Perth: project file has an unterminated string"))
+end
+
+# Recusa fonte que o parser do Julia não sobreviveria a ler. String e
+# comentário são pulados inteiros — um nome de tarefa com "(((" não é
+# aninhamento, e recusá-lo seria falso positivo em projeto legítimo; fora
+# deles, só passa o que o formato realmente usa (ver _SOURCE_CHARS).
 function _guard_source(src::AbstractString)
     sizeof(src) <= _MAX_SOURCE_BYTES || throw(ArgumentError(
         "Perth: project file is too large " *
         "(over $(_MAX_SOURCE_BYTES ÷ 1024^2) MB)"))
     depth = 0
-    nastring = escapado = nocomentario = false
-    for c in src
-        if nocomentario
-            c == '\n' && (nocomentario = false)
-        elseif nastring
-            if escapado;        escapado = false
-            elseif c == '\\';   escapado = true
-            elseif c == '"';    nastring = false
-            end
-        elseif c == '"';       nastring = true
-        elseif c == '#';        nocomentario = true
-        elseif c == '(' || c == '[' || c == '{'
+    sinais = 0
+    i = firstindex(src)
+    while i <= lastindex(src)
+        c = src[i]
+        if c == '#'
+            i = _peek(src, i) == '=' ? _skip_block_comment(src, i) :
+                                       _skip_line_comment(src, i)
+            continue
+        elseif c == '"'
+            i = _skip_string(src, i)
+            continue
+        end
+        c in _SOURCE_CHARS || throw(ArgumentError(
+            "Perth: project file uses a character the format never writes: " *
+            "$(repr(c)) — only constructor calls, literals and vectors belong here"))
+        if c == '+' || c == '-'
+            sinais += 1
+            sinais <= _MAX_SIGN_RUN || throw(ArgumentError(
+                "Perth: project file chains too many signs " *
+                "(over $(_MAX_SIGN_RUN) in a row)"))
+        elseif !isspace(c)
+            sinais = 0
+        end
+        if c == '(' || c == '['
             depth += 1
             depth <= _MAX_SOURCE_DEPTH || throw(ArgumentError(
                 "Perth: project file nests too deeply " *
                 "(over $(_MAX_SOURCE_DEPTH) levels)"))
-        elseif c == ')' || c == ']' || c == '}'
+        elseif c == ')' || c == ']'
             depth = max(depth - 1, 0)
         end
+        i = nextind(src, i)
     end
     return nothing
 end
 
 # Faz o parse do fonte completo e exige exatamente uma expressão Project(...)
 function _parse_project_source(src::AbstractString)
-    _guard_source(src)          # antes do Meta.parseall: ver _guard_source
-    ex = Meta.parseall(String(src))
-    exprs = [a for a in ex.args if !(a isa LineNumberNode)]
-    length(exprs) == 1 ||
-        throw(ArgumentError("Perth: project file must contain exactly one expression"))
-    val = _eval_safe(exprs[1])
+    _guard_source(src)          # peneira barata; o teto de verdade é a pilha
+    val = _parse_restricted(src)
     val isa Project ||
         throw(ArgumentError("Perth: file does not evaluate to a Project"))
     # file_path é caminho de espelhamento DESTA máquina e, por isso, nunca é
