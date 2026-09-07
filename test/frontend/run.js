@@ -17,6 +17,20 @@ function check(cond, msg) {
   else { failures++; console.error("  ✗ " + msg); }
 }
 
+// Espera uma CONDIÇÃO, não um prazo. Prazo fixo em teste de animação é
+// aposta na velocidade da máquina: some a folga sob carga e o teste falha
+// no CI passando aqui. Devolve assim que a condição vira verdadeira, e só
+// desiste no teto — que pode ser generoso porque, no caso bom, não se espera.
+async function until(cond, oQue, teto = 5000) {
+  const fim = Date.now() + teto;
+  while (Date.now() < fim) {
+    if (await cond()) return true;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  check(false, `esperei ${teto}ms por ${oQue} e não veio`);
+  return false;
+}
+
 // IIFE assíncrona: o novo bloco "gantt · chat" precisa aguardar o init()
 // do app (rejeita o fetch stub de propósito — ver loadGanttApp — pra
 // PerthPresence.connect() rodar) antes de simular mensagens no WS.
@@ -1208,7 +1222,13 @@ console.log("fundo da UI · rotação de imagens (shared/background.js)");
   check(r.imgNoVale === w.__antes.img,
         "e a imagem só troca no vale, não antes — nada de corte seco");
 
-  await new Promise((res) => setTimeout(res, 600));   // passa o fade
+  // O fade são 450ms (FADE em background.js) e aqui se esperava 600 fixos:
+  // 150ms de folga, que a máquina do CI come sob carga — estas duas checagens
+  // falhavam lá e passavam aqui. Agora espera-se a troca acontecer.
+  // O relógio está adiantado nesta altura, então o teto usa o relógio real.
+  await until(() => runIn(`return document.documentElement.style
+    .getPropertyValue("--perth-bg") !== window.__antes.img;`),
+    "o fade da troca de imagem terminar");
 
   r = runIn(`const st = document.documentElement.style;
     return { img: st.getPropertyValue("--perth-bg"),
