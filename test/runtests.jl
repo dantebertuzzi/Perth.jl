@@ -4519,6 +4519,8 @@ end
         Perth._init_kanban!(mktempdir())
     end
 
+    include("kanbanfile.jl")
+
     include("splash.jl")
     include("update.jl")
 

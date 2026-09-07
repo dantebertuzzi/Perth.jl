@@ -31,7 +31,7 @@ import JSON3
 import StructTypes
 import Tables
 
-export GanttTask, Project,
+export GanttTask, Project, KanbanBoard, KanbanColumn, KanbanCard, KanbanChecklistItem,
     create_project, delete_project, project, projects,
     add_task!, update_task!, remove_task!, duplicate_task!, tasks,
     set_file_path!,
@@ -55,7 +55,7 @@ export GanttTask, Project,
     kanban_alias!, kanban_aliases, kanban_log,
     kanban_chat!, kanban_chat_log, kanban_share!, kanban_key!,
     kanban_from_project!, kanban_boards, kanban_board!, kanban_delete_board!,
-    kanban_reset!
+    kanban_reset!, kanban_save, kanban_load, parse_kanban, set_kanban_file_path!
 
 # Re-exporta o vocabulário de datas que a API do Perth usa o tempo todo,
 # para `using Perth` bastar no REPL
@@ -98,6 +98,8 @@ include("server.jl")
 include("kanban.jl")
 include("background.jl")
 include("assets.jl")
+include("kanbanfile.jl")
+include("kanbanlinks.jl")
 
 # Dica de entrada. Guardas, em ordem: precompilação (jl_generating_output),
 # sessão não-interativa (script, teste, pacote que depende deste) e, dentro
