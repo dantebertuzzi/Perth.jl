@@ -233,3 +233,63 @@ end
         previous === nothing || Perth._kanban_links_sync!(previous.data_dir)
     end
 end
+
+
+# Consertos aplicados ao PR #19 depois do merge. Ver o CHANGELOG de Unreleased.
+@testset "kanban em arquivo: consertos pós-merge" begin
+    @testset "ler não passa mais pelo parser do Julia" begin
+        # Meta.parseall é recursivo e derruba o processo em vez de lançar: o
+        # leitor de kanban repetia o furo que o de projeto já tinha fechado.
+        fundo = "KanbanBoard(name=\"x\", columns=" * repeat("[", 5_000) *
+                repeat("]", 5_000) * ")"
+        @test_throws ArgumentError Perth.parse_kanban(fundo)
+        # E o caso honesto continua fechando o ciclo.
+        b = Perth.KanbanBoard(name="ida e volta", columns=[Perth.KanbanColumn(
+            id="c1", name="A começar", cards=[
+                Perth.KanbanCard(id="k1", text="acentuação — e (parênteses)"),
+                Perth.KanbanCard(id="k2", text="#= não é comentário =#")])])
+        @test Perth.parse_kanban(Perth._to_julia_source(b)) == b
+    end
+
+    @testset "exportar aceita o que o runtime produz" begin
+        # O handler do WebSocket trunca texto e nunca o recusa vazio, e delCol
+        # apaga a última coluna: exigir mais que isso congelava o espelho de um
+        # board legítimo, em silêncio, com o watcher tentando de novo.
+        col(cards...) = Dict{String,Any}("id" => "c1", "name" => "A",
+                                         "cards" => Any[cards...])
+        card(id, texto) = Dict{String,Any}("id" => id, "text" => texto,
+                                           "done" => false)
+        vazios = Dict(
+            "card sem texto"      => Dict{String,Any}(
+                "columns" => Any[col(card("k1", ""))], "archive" => Any[]),
+            "board sem coluna"    => Dict{String,Any}(
+                "columns" => Any[], "archive" => Any[]),
+            "coluna sem nome"     => Dict{String,Any}(
+                "columns" => Any[Dict{String,Any}("id" => "c1", "name" => "",
+                                                  "cards" => Any[])],
+                "archive" => Any[]),
+        )
+        for (nome, bruto) in vazios
+            board = Perth._kanban_snapshot(bruto, "b")
+            fonte = @test_nowarn Perth._to_julia_source(board)
+            @test Perth.parse_kanban(fonte) == board   # $nome sobrevive à volta
+        end
+    end
+
+    @testset "o que continua recusado" begin
+        # Relaxar o vazio não é relaxar o que quebra a identificação do card.
+        semid = Dict{String,Any}("columns" => Any[Dict{String,Any}(
+            "id" => "c1", "name" => "A", "cards" => Any[Dict{String,Any}(
+                "id" => "", "text" => "x", "done" => false)])],
+            "archive" => Any[])
+        @test_throws ArgumentError Perth._to_julia_source(
+            Perth._kanban_snapshot(semid, "b"))
+        repetido = Dict{String,Any}("columns" => Any[Dict{String,Any}(
+            "id" => "c1", "name" => "A", "cards" => Any[
+                Dict{String,Any}("id" => "k", "text" => "x", "done" => false),
+                Dict{String,Any}("id" => "k", "text" => "y", "done" => false)])],
+            "archive" => Any[])
+        @test_throws ArgumentError Perth._to_julia_source(
+            Perth._kanban_snapshot(repetido, "b"))
+    end
+end

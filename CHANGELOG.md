@@ -7,6 +7,39 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
 
 ## [Unreleased]
 
+### Added
+- **A board can live in the repository, as Julia source you can read in a
+  diff.** `kanban*.json` stays what it always was — machine-local runtime
+  storage, not something to commit — and that left the board as the one part
+  of a plan with no reviewable form: no way to see in a pull request that a
+  column was renamed or a card moved, and no way to check a board out beside
+  the code it tracks. `kanban_save("plan/thesis")` writes
+  `plan/thesis.kanban.perth.jl`, and `kanban_load` reads one back.
+  `set_kanban_file_path!` keeps the two in step in both directions, rewriting
+  the file after a board change and reloading an edit made in an editor;
+  `parse_kanban` checks a snapshot without registering anything. Referenced
+  images are copied to a sibling `.kanban.assets/` directory, meant to be
+  committed with the file.
+
+  What the file deliberately leaves out is the part that is not the plan:
+  activity logs, chat, aliases, permissions, sharing keys, connected clients,
+  revisions and mirror paths never reach it. A board file is therefore safe to
+  commit and safe to receive — importing one cannot grant a permission, hand
+  out a key, or point a mirror anywhere, because none of those are expressible
+  in the format. Link paths stay in a local `.kanban-links.json` that is not
+  part of the snapshot.
+
+  A board file is read by the same restricted reader a project file is, so
+  nothing in it is ever executed and the reader will not go through Julia's
+  own parser — a file crafted to nest thousands of levels deep is a stated
+  error, not a dead process. The reader also accepts exactly what the running
+  board can produce, which is the part worth stating: a board with no columns
+  left, a card whose text is empty, a column with a blank name. The live board
+  allows all three, so refusing them on the way out would have frozen the
+  mirror of a perfectly ordinary board without saying so, leaving the watcher
+  retrying against a file that would never be written. Card identity is still
+  enforced — an empty or duplicated id is refused.
+
 ### Fixed
 - **A crafted project file could take the process down, and the guard written
   to stop exactly that could be walked past.** Julia's own parser recurses, and

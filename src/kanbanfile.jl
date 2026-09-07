@@ -99,11 +99,17 @@ function _validate_kanban(board::KanbanBoard)
     _kanban_text(board.name, "board name"; required=true)
     0 <= board.auto_archive_days <= 36500 || throw(ArgumentError(
         "Perth: auto-archive days must be between 0 and 36500"))
-    isempty(board.columns) && throw(ArgumentError("Perth: a Kanban board needs at least one column"))
+    # Nada abaixo exige o que o runtime não garante. O handler do WebSocket
+    # trunca texto por _cap_text e nunca o recusa vazio, e delCol apaga a
+    # última coluna sem reclamar: board legítimo chega aqui sem coluna, com
+    # card sem texto, coluna sem nome ou item de checklist vazio. Recusá-los
+    # não protegia nada — congelava o espelho em silêncio, e o watcher ficava
+    # tentando de novo. Validar mais que o runtime é inventar um segundo
+    # formato, mais estreito que o real.
     column_ids, card_ids = Set{String}(), Set{String}()
     for column in board.columns
         _kanban_unique_id!(column_ids, column.id, "column")
-        _kanban_text(column.name, "column name"; required=true)
+        _kanban_text(column.name, "column name")
         0 <= column.wip <= 1_000_000 || throw(ArgumentError("Perth: invalid WIP limit"))
         for card in column.cards
             _validate_kanban_card!(card, card_ids; archived=false)
@@ -117,7 +123,7 @@ end
 
 function _validate_kanban_card!(card, ids; archived)
     _kanban_unique_id!(ids, card.id, "card")
-    _kanban_text(card.text, "card text"; required=true)
+    _kanban_text(card.text, "card text")
     for field in _KANBAN_CARD_STRINGS
         cap = field == :body ? _BODY_CAP : _TEXT_CAP
         _kanban_text(getfield(card, field), "card $field"; cap)
@@ -135,7 +141,7 @@ function _validate_kanban_card!(card, ids; archived)
     checklist_ids = Set{String}()
     for item in card.checklist
         _kanban_unique_id!(checklist_ids, item.id, "checklist")
-        _kanban_text(item.text, "checklist text"; required=true)
+        _kanban_text(item.text, "checklist text")
     end
 end
 
@@ -216,14 +222,16 @@ function _to_julia_source(b::KanbanBoard)
 end
 
 function _parse_kanban_source(src::AbstractString)
-    _guard_source(src)
-    expressions = filter(x -> !(x isa LineNumberNode), Meta.parseall(String(src)).args)
-    length(expressions) == 1 || throw(ArgumentError(
-        "Perth: Kanban file must contain exactly one expression"))
+    # Não usar Meta.parseall aqui: o parser do Julia é recursivo e, sem pilha,
+    # derruba o processo em vez de lançar — era assim que um .perth.jl matava
+    # o servidor. _parse_restricted tokeniza e caminha com pilha explícita, e
+    # já exige uma única expressão.
+    _guard_source(src)          # peneira barata; o teto de verdade é a pilha
     board = try
-        _eval_safe(only(expressions))
+        _parse_restricted(src)
     catch err
         err isa InterruptException && rethrow()
+        err isa ArgumentError && rethrow()   # mensagem do parser já é clara
         throw(ArgumentError("Perth: invalid Kanban source: $(sprint(showerror, err))"))
     end
     board isa KanbanBoard || throw(ArgumentError("Perth: expected a KanbanBoard"))
