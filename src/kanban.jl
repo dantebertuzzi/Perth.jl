@@ -1587,6 +1587,14 @@ function _kanban_static(req::HTTP.Request, ip::AbstractString = "127.0.0.1")
     # botão poder religá-la) mas só atende a máquina do servidor
     _kanban_share_ok(ip) ||
         return _error("this board is not being shared to the network"; status = 403)
+    # Escrita vinda de outra origem não passa, mesmo do loopback: a página
+    # hostil roda no navegador da máquina que hospeda, então o "host é isento"
+    # logo abaixo é justamente o que ela explora. Ver _origin_ok.
+    if !(req.method in ("GET", "HEAD", "OPTIONS")) &&
+       !_origin_ok(_req_origin(req), _req_host(req))
+        return _error("cross-origin request refused — open the board from its own page";
+                      status = 403)
+    end
     # rotas de dados respeitam a chave; o host (loopback) é isento
     if _key_protected(path)
         _keyok(ip, HTTP.URIs.queryparams(uri), KANBAN_KEY[]) ||
@@ -1654,6 +1662,11 @@ function _kanban_handler(http::HTTP.Stream)
         keyok = _keyok(ip, qp, KANBAN_KEY[])
         _kanban_share_ok(ip) ||
             return HTTP.WebSockets.upgrade(ws -> _presence_deny(ws, "share_off"), http)
+        # É por este canal que TODA edição do board passa (_kanban_apply!), e
+        # WebSocket não passa por CORS: sem conferir Origin no upgrade,
+        # qualquer página aberta no navegador do host edita o board.
+        _origin_ok(_req_origin(http.message), _req_host(http.message)) ||
+            return HTTP.WebSockets.upgrade(ws -> _presence_deny(ws, "cross_origin"), http)
         HTTP.WebSockets.upgrade(ws -> _kanban_ws(ws, ip, keyok), http)
     else
         HTTP.streamhandler(req -> _kanban_static(req, ip))(http)

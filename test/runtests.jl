@@ -2966,6 +2966,60 @@ end
         end
     end
 
+    @testset "origem cruzada (Origin)" begin
+        # A pagina hostil roda no navegador da MAQUINA QUE HOSPEDA, entao
+        # chega pelo loopback e o porteiro lhe daria o papel :host, isento de
+        # tudo — inclusive do PUT que aponta o espelho .perth.jl para qualquer
+        # caminho .jl. O IP nao distingue essa pagina do frontend legitimo;
+        # Origin sim. WebSocket nao passa por CORS nenhum, entao la o
+        # cabecalho e' a unica defesa.
+        H = "127.0.0.1:8123"
+        meu, mau = "http://127.0.0.1:8123", "http://evil.com"
+
+        # ── o predicado ──
+        @test Perth._origin_ok("", H)              # curl/REPL: nao mandam Origin
+        @test Perth._origin_ok(meu, H)
+        @test !Perth._origin_ok(mau, H)
+        @test !Perth._origin_ok("https://evil.com", H)
+        @test !Perth._origin_ok("null", H)         # iframe sandbox, file://
+        @test !Perth._origin_ok("http://127.0.0.1:9999", H)  # outra porta
+        @test !Perth._origin_ok("lixo", H)         # ilegivel nao vira permissao
+        @test !Perth._origin_ok(meu, "")           # sem Host nao da para comparar
+        # porta padrao do esquema: o Host a omite
+        @test Perth._origin_ok("http://example.com", "example.com")
+        @test Perth._origin_ok("https://example.com", "example.com:443")
+        @test !Perth._origin_ok("http://example.com", "example.com:443")
+        @test Perth._origin_ok("http://192.168.0.5:8123", "192.168.0.5:8123")
+
+        # ── o porteiro do gantt ──
+        noqp = Dict{String,String}()
+        gk, gw = Perth.GANTT_KEY[], Perth.GANTT_SHARED[]
+        try
+            Perth.GANTT_SHARED[] = true
+            Perth.GANTT_KEY[] = ""
+            for (rota, metodo) in (("/api/import", "POST"),
+                                   ("/api/projects/x1", "PUT"),
+                                   ("/api/projects/x1", "DELETE"),
+                                   ("/api/projects/x1/path", "PUT"),
+                                   ("/api/launch/kanban", "POST"))
+                @test Perth._gantt_gate(rota, "127.0.0.1", noqp; method = metodo,
+                                        origin = mau, host = H) === :cross_origin
+                @test Perth._gantt_gate(rota, "127.0.0.1", noqp; method = metodo,
+                                        origin = meu, host = H) === :ok
+                # sem Origin continua passando: e' o REPL e o curl
+                @test Perth._gantt_gate(rota, "127.0.0.1", noqp; method = metodo,
+                                        origin = "", host = H) === :ok
+            end
+            # leitura nao muda estado: nao e' barrada por origem
+            for rota in ("/api/projects", "/api/rev", "/api/projects/x1/export")
+                @test Perth._gantt_gate(rota, "127.0.0.1", noqp; method = "GET",
+                                        origin = mau, host = H) === :ok
+            end
+        finally
+            Perth.GANTT_KEY[], Perth.GANTT_SHARED[] = gk, gw
+        end
+    end
+
     @testset "link somente-leitura (view_key)" begin
         # A chave de leitura é uma SEGUNDA chave: um link abre e edita, o
         # outro abre e não edita. Como o loopback é isento de chave, o papel

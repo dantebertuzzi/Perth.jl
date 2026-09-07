@@ -422,8 +422,12 @@ end
 _gantt_writes(method::AbstractString) = !(method in ("GET", "HEAD", "OPTIONS"))
 
 function _gantt_gate(path::AbstractString, ip::AbstractString, qp;
-                     method::AbstractString = "GET")
+                     method::AbstractString = "GET",
+                     origin::AbstractString = "", host::AbstractString = "")
     _gantt_share_ok(ip) || return :not_shared
+    # antes do papel, porque é o papel que está sendo forjado: a página hostil
+    # roda no navegador da máquina que hospeda, então chega como :host
+    (_gantt_writes(method) && !_origin_ok(origin, host)) && return :cross_origin
     role = _gantt_role(ip, qp)
     (role === :nokey && _key_protected(path)) && return :need_key
     # antes do :host_only porque explica melhor: quem entrou para olhar não
@@ -450,6 +454,11 @@ function _gantt_handler(router)
             # porta existe (para o botão poder religá-la) mas só atende o host
             _gantt_share_ok(ip) || return HTTP.WebSockets.upgrade(
                 ws -> _presence_deny(ws, "share_off"), http)
+            # WebSocket não passa por CORS: sem conferir Origin no upgrade,
+            # uma página qualquer abre este canal e escuta a presença
+            _origin_ok(_req_origin(http.message), _req_host(http.message)) ||
+                return HTTP.WebSockets.upgrade(
+                    ws -> _presence_deny(ws, "cross_origin"), http)
             role = _gantt_role(ip, qp)
             HTTP.WebSockets.upgrade(ws -> _presence_ws(GANTT_HUB, ws, ip, role !== :nokey;
                                                        readonly = role === :viewer,
@@ -459,8 +468,14 @@ function _gantt_handler(router)
             # o router não vê o stream: propaga o IP p/ o log de atividades
             HTTP.setheader(http.message, "X-Perth-Peer" => ip)
             path = HTTP.URI(http.message.target).path
-            verdict = _gantt_gate(path, ip, qp; method = http.message.method)
-            if verdict === :not_shared
+            verdict = _gantt_gate(path, ip, qp; method = http.message.method,
+                                  origin = _req_origin(http.message),
+                                  host = _req_host(http.message))
+            if verdict === :cross_origin
+                HTTP.streamhandler(_ -> _error(
+                    "cross-origin request refused — open Perth from its own page";
+                    status = 403))(http)
+            elseif verdict === :not_shared
                 HTTP.streamhandler(_ -> _error("this Perth server is not sharing to the network";
                                                status = 403))(http)
             elseif verdict === :need_key
