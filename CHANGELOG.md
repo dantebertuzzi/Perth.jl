@@ -40,6 +40,10 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   retrying against a file that would never be written. Card identity is still
   enforced — an empty or duplicated id is refused.
 
+  Contributed by [@mschytt](https://github.com/mschytt) in
+  [#19](https://github.com/dantebertuzzi/Perth.jl/pull/19) — the first change
+  to Perth from outside. Thank you.
+
 ### Fixed
 - **A crafted project file could take the process down, and the guard written
   to stop exactly that could be walked past.** Julia's own parser recurses, and
