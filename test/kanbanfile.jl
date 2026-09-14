@@ -298,4 +298,72 @@ end
             "KanbanBoard(name=\"b\", columns=[KanbanColumn(id=\"c1\", name=\"A\", " *
             "cards=[KanbanCard(id=\"k1\", text=\"a\\xffb\")])])")
     end
+
+    @testset "edição recusada no arquivo espelhado avisa, e uma vez só" begin
+        # A recusa era muda: quem editava o arquivo à mão e errava via o board
+        # não mudar, sem saber por quê. E o watcher reavalia a cada volta, então
+        # o aviso sai uma vez por conteúdo, não de cinco em cinco segundos.
+        previous = Perth.KANBAN[]
+        dir, fora = mktempdir(), mktempdir()
+        Perth._init_kanban!(dir)
+        try
+            kanban_add_card!("c1", "original")
+            espelho = set_kanban_file_path!(joinpath(fora, "plano"))
+            # sem watcher: as chamadas abaixo são as únicas a reler o arquivo
+            lock(Perth._KANBAN_LINK_LOCK) do
+                empty!(Perth._KANBAN_LINK_WATCHERS)
+            end
+            valido = read(espelho, String)
+            quebrado = replace(valido, "\"original\"" => "\"a\\xffb\"")
+
+            write(espelho, quebrado)
+            @test (@test_logs (:warn, r"not loaded") Perth._kanban_reload_link!(
+                "board", espelho, dir)) == :invalid
+            @test only(kanban_cards()).text == "original"
+            # o mesmo arquivo, relido pelo watcher: recusa de novo, sem aviso
+            @test (@test_logs min_level=Logging.Warn Perth._kanban_reload_link!(
+                "board", espelho, dir)) == :invalid
+            # consertado e quebrado de novo: é outra edição, e avisa outra vez
+            write(espelho, valido)
+            @test Perth._kanban_reload_link!("board", espelho, dir) == :same
+            write(espelho, quebrado)
+            @test (@test_logs (:warn, r"not loaded") Perth._kanban_reload_link!(
+                "board", espelho, dir)) == :invalid
+
+            # na tela, só para o host: o arquivo é da máquina dele
+            ipref = Ref("127.0.0.1")
+            server, port = _kanban_test_server(ipref)
+            vistos = Dict{String,Vector{Any}}()
+            prontos = Channel{Bool}(2)
+            cliente(nome) = @async HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                msgs = vistos[nome] = Any[]
+                HTTP.WebSockets.receive(ws)          # init
+                put!(prontos, true)
+                while true
+                    m = JSON3.read(HTTP.WebSockets.receive(ws))
+                    push!(msgs, m)
+                    m["type"] == "hb" && break
+                end
+            end
+            try
+                host = cliente("host"); take!(prontos)
+                ipref[] = "192.168.0.70"
+                visita = cliente("visita"); take!(prontos)
+                write(espelho, replace(valido, "\"original\"" => "\"outro\" \"sem vírgula\""))
+                @test_logs (:warn, r"not loaded") Perth._kanban_reload_link!("board", espelho, dir)
+                Perth._kanban_broadcast("{\"type\":\"hb\"}")
+                wait(host); wait(visita)
+                recusa = filter(m -> m["type"] == "linkRefused", vistos["host"])
+                @test length(recusa) == 1
+                @test recusa[1]["file"] == basename(espelho)
+                @test !isempty(recusa[1]["error"])
+                @test !any(m -> m["type"] == "linkRefused", vistos["visita"])
+            finally
+                Perth._quiet(() -> close(server))
+            end
+        finally
+            set_kanban_file_path!(nothing)
+            Perth.KANBAN[] = previous
+        end
+    end
 end

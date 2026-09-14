@@ -176,23 +176,52 @@ function _kanban_reload_link!(slug, path, data_dir)
         source = try
             _kanban_read_source(path)
         catch
-            return :invalid
+            return :invalid   # leitura no meio de um salvamento: a próxima volta pega
         end
         current = _kanban_snapshot(_kanban_read_board(st, slug), slug)
-        source == _to_julia_source(current) && return :same
+        if source == _to_julia_source(current)
+            delete!(_KANBAN_LINK_REFUSED, (data_dir, slug))
+            return :same
+        end
         snapshot = try
             parse_kanban(source)
-        catch
+        catch err
+            err isa InterruptException && rethrow()
+            _kanban_link_refused!(data_dir, slug, path, source, err)
             return :invalid
         end
         try
             _kanban_import!(st, snapshot, path, slug)
         catch err
-            @warn "Perth kanban: could not reload linked file" path error=err
+            err isa InterruptException && rethrow()
+            _kanban_link_refused!(data_dir, slug, path, source, err)
             return :invalid
         end
+        delete!(_KANBAN_LINK_REFUSED, (data_dir, slug))
         return :reloaded
     end
+end
+
+# Fonte recusada por link, guardada pelo hash para avisar UMA vez por
+# conteúdo. Quem edita o arquivo à mão e erra precisa saber que a edição não
+# entrou — antes a recusa era muda, e o board simplesmente não mudava. Mas o
+# watcher reavalia o arquivo a cada volta (_WATCH_TIMEOUT), então avisar a
+# cada recusa repetiria o mesmo aviso de cinco em cinco segundos até alguém
+# consertar. Mexido só dentro do lock do KanbanState, como o resto do reload.
+const _KANBAN_LINK_REFUSED = Dict{Tuple{String,String},UInt}()
+
+function _kanban_link_refused!(data_dir, slug, path, source, err)
+    key = (String(data_dir), String(slug))
+    get(_KANBAN_LINK_REFUSED, key, nothing) == hash(source) && return nothing
+    _KANBAN_LINK_REFUSED[key] = hash(source)
+    msg = err isa ArgumentError ? err.msg : sprint(showerror, err)
+    @warn "Perth kanban: linked file was not loaded; the board keeps its last good state" path board=slug error=msg
+    # Só para as abas do host: o arquivo é da máquina dele, e só ele pode
+    # consertá-lo. Para quem está de fora não há o que fazer com o aviso.
+    _kanban_broadcast(JSON3.write(Dict("type" => "linkRefused", "board" => slug,
+                                       "file" => basename(path), "error" => msg));
+                      hosts_only = true)
+    return nothing
 end
 
 function _kanban_link_owned(key, path, task)

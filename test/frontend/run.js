@@ -2077,6 +2077,25 @@ console.log("avisos · o kanban usa o mesmo componente, sem o dele");
   check(r.antigo === false && r.novo === true,
         "kanban: o container antigo saiu do HTML — sobra um só");
 
+  // O arquivo espelhado foi editado e não passou na leitura: antes nada
+  // aparecia, e o board simplesmente não mudava.
+  r = runIn(`PerthToast.clear(); PerthI18n.set("pt");
+    state.boardName = "plano";
+    handleMessage({ type: "linkRefused", board: "plano", file: "plano.kanban.perth.jl",
+                    error: "Perth: project file has a string that is not valid UTF-8" });
+    const um = document.querySelector(".toast");
+    const r1 = { classe: um?.className ?? "", texto: um?.querySelector(".toast-text").textContent ?? "" };
+    PerthToast.clear();
+    handleMessage({ type: "linkRefused", board: "outro", file: "outro.kanban.perth.jl", error: "x" });
+    const r2 = document.querySelector(".toast .toast-text")?.textContent ?? "";
+    PerthToast.clear(); PerthI18n.set("en");
+    return { r1, r2 };`);
+  check(/toast-error/.test(r.r1.classe) && /não foi carregado/.test(r.r1.texto) &&
+        r.r1.texto.includes("plano.kanban.perth.jl") && r.r1.texto.includes("UTF-8"),
+        "kanban: edição recusada no arquivo vinculado vira aviso de erro, traduzido, com arquivo e motivo");
+  check(!r.r1.texto.includes("· plano") && r.r2.includes("· outro"),
+        "kanban: e só nomeia o board quando não é o que está aberto");
+
   close();
 }
 
