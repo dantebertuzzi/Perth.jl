@@ -282,6 +282,14 @@ function _tokenize(src::AbstractString)
             end
             texto isa AbstractString || throw(ArgumentError(
                 "Perth: project file has a string that is not a plain literal"))
+            # "\xff" e "\ud800" são Julia válido e dão string que não é
+            # UTF-8. O kanban manda o board inteiro como frame de texto do
+            # WebSocket, e o navegador fecha a conexão ao ver um byte desses —
+            # reconecta, recebe o mesmo board e cai de novo: um card bastava
+            # para ninguém mais abrir o quadro. Os dois formatos leem strings
+            # por aqui, e o escritor só emite isso se o estado já o tiver.
+            isvalid(texto) || throw(ArgumentError(
+                "Perth: project file has a string that is not valid UTF-8"))
             push!(toks, _Tok(:str, String(texto)))
             i = j
         elseif _num_inicio(src, i)

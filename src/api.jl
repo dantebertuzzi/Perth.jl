@@ -19,6 +19,12 @@ _error(msg; status = 400) = _json((; error = msg); status)
 # Envolve um handler com tratamento uniforme de erros
 function _handled(f)
     return function (req::HTTP.Request)
+        # Corpo que não é UTF-8 só vem de fora do navegador: a página lê o
+        # arquivo com file.text(), que já decodifica. Aceitá-lo punha no
+        # estado texto que o WebSocket do kanban não transmite — e o nome de
+        # uma tarefa vinculada vira texto de card (ver _tokenize).
+        req.body isa AbstractVector{UInt8} && !isvalid(String, req.body) &&
+            return _error("request body is not valid UTF-8")
         try
             return f(req)
         catch err

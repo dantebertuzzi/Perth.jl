@@ -547,6 +547,16 @@ end
         # nao e' ArgumentError: escapar viraria 500 no /api/import
         @test_throws ArgumentError Perth._parse_restricted("Project(id=\"20\$26-01\")")
 
+        # "\xff" e "\ud800" sao Julia valido, mas a string resultante nao e'
+        # UTF-8 e o WebSocket do kanban nao consegue transmiti-la: um card
+        # desses derrubava toda conexao com o quadro. Recusada na leitura.
+        for ruim in ("Project(id=\"a\", name=\"x\\xffy\")",
+                     "Project(id=\"a\", name=\"\\ud800\")")
+            @test_throws ArgumentError Perth._parse_restricted(ruim)
+        end
+        # o que e' UTF-8 de verdade, mesmo escrito por escape, continua passando
+        @test Perth._parse_restricted("\"\\u00e9\\U1f5c2\\xc3\\xa7\"") == "é🗂ç"
+
         # ── a gramatica, nos dois sentidos ──
         @test Perth._parse_restricted("[1, -2, 3.5, -0.25, 1e3, true, false, nothing]") ==
               Any[1, -2, 3.5, -0.25, 1000.0, true, false, nothing]
@@ -888,6 +898,16 @@ end
         r2 = opaco(HTTP.Request("GET", "/x"))
         @test r2.status == 500
         @test JSON3.read(String(r2.body))["error"] == "internal error"
+
+        # corpo que não é UTF-8 para antes do handler. O navegador nunca o
+        # manda (a página lê o arquivo com file.text()), e deixá-lo entrar
+        # punha no estado texto que o WebSocket do kanban não transmite
+        chamado = Ref(false)
+        guardado = Perth._handled(_ -> (chamado[] = true; Perth._json((; ok = true))))
+        r3 = guardado(HTTP.Request("POST", "/x", [], UInt8[0x7b, 0x22, 0xff, 0x22, 0x7d]))
+        @test r3.status == 400 && !chamado[]
+        @test occursin("UTF-8", JSON3.read(String(r3.body))["error"])
+        @test guardado(HTTP.Request("POST", "/x", [], "{\"nome\":\"ação\"}")).status == 200
 
         delete_project(p.id)
     end
@@ -4243,6 +4263,38 @@ end
             end
         finally
             Perth._quiet(() -> close(server2))
+        end
+    end
+
+    @testset "kanban: byte que não é UTF-8 não derruba o WebSocket" begin
+        # Frame de texto tem de ser UTF-8, e o navegador fecha a conexão diante
+        # de um byte inválido: com o board inteiro em cada mensagem, um card
+        # bastava para ninguém mais abrir o quadro. Arquivo e HTTP recusam na
+        # entrada; o REPL não passa por nenhum dos dois.
+        @test Perth._ws_text("a\xffb") == "a�b"
+        @test Perth._ws_text("ação") == "ação"
+
+        ktmp = mktempdir()
+        Perth._init_kanban!(ktmp)
+        @test Perth._kanban_commit!(Dict{String,Any}(
+            "type" => "addCard", "col" => "c1", "id" => "ruim01", "text" => "antes\xffdepois"))
+        ipref = Ref("192.168.0.62")
+        server, port = _kanban_test_server(ipref)
+        try
+            HTTP.WebSockets.open("ws://127.0.0.1:$port") do ws
+                # o cliente do HTTP.jl também recusa frame inválido (1007), como
+                # o navegador: receber o init já é a prova
+                init = JSON3.read(HTTP.WebSockets.receive(ws))
+                cards = init["board"]["columns"][1]["cards"]
+                @test any(c -> c["text"] == "antes�depois", cards)
+                # e o broadcast de uma op que chega depois, pelo outro caminho
+                @test Perth._kanban_commit!(Dict{String,Any}(
+                    "type" => "editCard", "id" => "ruim01", "text" => "\xc3"))
+                op = JSON3.read(HTTP.WebSockets.receive(ws))
+                @test op["type"] == "op" && op["op"]["text"] == "�"
+            end
+        finally
+            Perth._quiet(() -> close(server))
         end
     end
 
