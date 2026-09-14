@@ -1766,7 +1766,11 @@ console.log("gantt · redesenho na virada do dia");
     return { ms: window.__ms, meiaNoite };`);
   check(r.ms > r.meiaNoite && r.ms <= r.meiaNoite + 10000,
         "gantt: agenda para logo depois da próxima meia-noite");
-  check(r.ms <= 24 * 3600 * 1000,
+  // O teto é um dia MAIS a folga de 5s que renderAtMidnight soma à meia-noite.
+  // Sem ela o teste reprovava quem rodasse nos cinco primeiros segundos do dia
+  // — no CI, que roda em UTC, às 00:00:0x —, com o app certo: agendar para
+  // 24h05 a partir de 00:00:00 é justamente o comportamento esperado.
+  check(r.ms <= 24 * 3600 * 1000 + 5000,
         "gantt: e nunca além de um dia (setTimeout longo demais estoura o int32)");
 
   // ao disparar, redesenha E se reagenda — senão valeria uma noite só
