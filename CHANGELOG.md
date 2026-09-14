@@ -5,6 +5,23 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [0.16.1] - 2026-09-14
+
+### Fixed
+- **A mistake in a linked board file no longer goes unnoticed.** When a board
+  is linked to a `.kanban.perth.jl` and you edit that file by hand, a typo, a
+  missing comma or an invalid string used to be refused silently. The board
+  kept its last good state, which is right, but nothing said the edit had not
+  gone in, so the only sign was a board that did not change. A refused edit
+  now logs a warning naming the file and the reason, and every browser tab on
+  the machine running Perth shows it as an error notice. Other machines are
+  not told, because they cannot fix a file on the host.
+
+  You are told once per version of the file, not every time it is checked.
+  The watcher re-reads a linked file every few seconds, and the one refusal
+  that did log a warning (a file that parsed but could not be imported)
+  repeated it on each pass until the file was fixed.
+
 ## [0.16.0] - 2026-09-07
 
 ### Added

@@ -1223,12 +1223,13 @@ function _kanban_init_payload(st::KanbanState, me::KanbanClient)
     end
 end
 
-function _kanban_broadcast(msg::String; except::Int = -1)
+function _kanban_broadcast(msg::String; except::Int = -1, hosts_only::Bool = false)
     msg = _ws_text(msg)
     st = _kanban_state()
     lock(st.lock) do
         for (id, c) in collect(st.clients)
             id == except && continue
+            hosts_only && !_kanban_is_host(c.ip) && continue
             try
                 HTTP.WebSockets.send(c.ws, msg)
             catch

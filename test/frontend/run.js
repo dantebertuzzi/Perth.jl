@@ -1766,7 +1766,11 @@ console.log("gantt · redesenho na virada do dia");
     return { ms: window.__ms, meiaNoite };`);
   check(r.ms > r.meiaNoite && r.ms <= r.meiaNoite + 10000,
         "gantt: agenda para logo depois da próxima meia-noite");
-  check(r.ms <= 24 * 3600 * 1000,
+  // O teto é um dia MAIS a folga de 5s que renderAtMidnight soma à meia-noite.
+  // Sem ela o teste reprovava quem rodasse nos cinco primeiros segundos do dia
+  // — no CI, que roda em UTC, às 00:00:0x —, com o app certo: agendar para
+  // 24h05 a partir de 00:00:00 é justamente o comportamento esperado.
+  check(r.ms <= 24 * 3600 * 1000 + 5000,
         "gantt: e nunca além de um dia (setTimeout longo demais estoura o int32)");
 
   // ao disparar, redesenha E se reagenda — senão valeria uma noite só
@@ -2076,6 +2080,25 @@ console.log("avisos · o kanban usa o mesmo componente, sem o dele");
                      novo: !!document.getElementById("perth-toasts") };`);
   check(r.antigo === false && r.novo === true,
         "kanban: o container antigo saiu do HTML — sobra um só");
+
+  // O arquivo espelhado foi editado e não passou na leitura: antes nada
+  // aparecia, e o board simplesmente não mudava.
+  r = runIn(`PerthToast.clear(); PerthI18n.set("pt");
+    state.boardName = "plano";
+    handleMessage({ type: "linkRefused", board: "plano", file: "plano.kanban.perth.jl",
+                    error: "Perth: project file has a string that is not valid UTF-8" });
+    const um = document.querySelector(".toast");
+    const r1 = { classe: um?.className ?? "", texto: um?.querySelector(".toast-text").textContent ?? "" };
+    PerthToast.clear();
+    handleMessage({ type: "linkRefused", board: "outro", file: "outro.kanban.perth.jl", error: "x" });
+    const r2 = document.querySelector(".toast .toast-text")?.textContent ?? "";
+    PerthToast.clear(); PerthI18n.set("en");
+    return { r1, r2 };`);
+  check(/toast-error/.test(r.r1.classe) && /não foi carregado/.test(r.r1.texto) &&
+        r.r1.texto.includes("plano.kanban.perth.jl") && r.r1.texto.includes("UTF-8"),
+        "kanban: edição recusada no arquivo vinculado vira aviso de erro, traduzido, com arquivo e motivo");
+  check(!r.r1.texto.includes("· plano") && r.r2.includes("· outro"),
+        "kanban: e só nomeia o board quando não é o que está aberto");
 
   close();
 }

@@ -333,6 +333,15 @@ function handleMessage(msg) {
       deniedToast(msg.action);
       break;
     }
+    // O arquivo espelhado foi editado e não passou na leitura. Só o host
+    // recebe (o arquivo é da máquina dele), e uma vez por conteúdo: sem
+    // isto a edição com erro não entrava e nada dizia por quê.
+    case "linkRefused": {
+      const board = msg.board && msg.board !== state.boardName ? ` · ${msg.board}` : "";
+      showToast(T("Linked file not loaded — the board kept its last good version") +
+        ` (${msg.file}${board}): ${msg.error}`, "toast-error");
+      break;
+    }
   }
 }
 
