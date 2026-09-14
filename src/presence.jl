@@ -182,7 +182,15 @@ function _hub_drop_remote!(hub::PresenceHub; reason::AbstractString = "share_off
     return length(gone)
 end
 
+# Frame de texto do WebSocket tem de ser UTF-8, e o navegador FECHA a conexão
+# diante de um byte inválido (código 1006, sem mensagem). Arquivo e HTTP já
+# recusam na entrada; isto é a última barreira para o que chega por fora
+# deles — o REPL, um board antigo em disco. Troca o byte por U+FFFD só no que
+# é transmitido: o estado fica como está, e editar o texto o conserta.
+_ws_text(msg::String) = isvalid(msg) ? msg : map(c -> isvalid(c) ? c : '�', msg)
+
 function _hub_broadcast(hub::PresenceHub, msg::String; except::Int = -1)
+    msg = _ws_text(msg)
     lock(hub.lock) do
         for (id, c) in collect(hub.clients)
             id == except && continue
@@ -216,12 +224,12 @@ end
 
 function _hub_init_payload(hub::PresenceHub, me::PresenceClient; extra = (;))
     lock(hub.lock) do
-        JSON3.write(merge(Dict{String,Any}(
+        _ws_text(JSON3.write(merge(Dict{String,Any}(
             "type" => "init", "chat" => hub.chat[max(1, end - 99):end],
             "you" => merge(_peer_payload(me),
                            Dict("host" => _presence_is_host(me.ip))),
             "peers" => [_peer_payload(c) for c in values(hub.clients)]),
-            Dict{String,Any}(String(k) => v for (k, v) in pairs(extra))))
+            Dict{String,Any}(String(k) => v for (k, v) in pairs(extra)))))
     end
 end
 

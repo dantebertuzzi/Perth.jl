@@ -291,5 +291,11 @@ end
             "archive" => Any[])
         @test_throws ArgumentError Perth._to_julia_source(
             Perth._kanban_snapshot(repetido, "b"))
+        # "\xff" é Julia válido e não é UTF-8: um card assim derrubava toda
+        # conexão com o quadro, e um board recebido de outra pessoa não pode
+        # fazer isso. É o leitor que recusa (ver _tokenize).
+        @test_throws ArgumentError Perth.parse_kanban(
+            "KanbanBoard(name=\"b\", columns=[KanbanColumn(id=\"c1\", name=\"A\", " *
+            "cards=[KanbanCard(id=\"k1\", text=\"a\\xffb\")])])")
     end
 end

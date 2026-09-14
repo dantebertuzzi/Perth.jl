@@ -1211,18 +1211,20 @@ _kanban_peer_payload(c::KanbanClient) =
 
 function _kanban_init_payload(st::KanbanState, me::KanbanClient)
     lock(st.lock) do
-        JSON3.write(Dict(
+        # _ws_text: um byte inválido no board derrubava toda conexão (presence.jl)
+        _ws_text(JSON3.write(Dict(
             "type" => "init", "rev" => st.rev, "board" => st.board,
             "you" => merge(_kanban_peer_payload(me),
                            Dict("host" => _kanban_is_host(me.ip))),
             "log" => st.log[max(1, end - 99):end],
             "chat" => st.chat[max(1, end - 99):end],
             "board_name" => st.name,
-            "peers" => [_kanban_peer_payload(c) for c in values(st.clients)]))
+            "peers" => [_kanban_peer_payload(c) for c in values(st.clients)])))
     end
 end
 
 function _kanban_broadcast(msg::String; except::Int = -1)
+    msg = _ws_text(msg)
     st = _kanban_state()
     lock(st.lock) do
         for (id, c) in collect(st.clients)

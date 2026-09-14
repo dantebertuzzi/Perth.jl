@@ -73,6 +73,20 @@ snapshot needs a source, not a new picture.
   asked of the other axis, and the delicate part is what it means when the six
   come from four different parents (`aplicaArrasto` + `reorderSiblings` in
   `frontend/app.js`).
+- **Complete a whole column** — the column menu renames, sorts and caps a
+  column, but finishing one still means selecting it first: click the top card,
+  `Shift`-click the bottom one, press `Space`. On a phone there is no `Shift`,
+  so the only multi-select left is *Select all*, which takes every column. The
+  logic is already written: `done-selected` in `frontend/kanban/app.js` picks
+  the direction (all done → reopen them, otherwise complete the rest) and
+  `commitMany` makes it one undo — the new part is a menu item behind
+  `applyRestriction(…, "setDone")` and its label in the i18n. *Careful:* a batch
+  is still one op per card, and every `setDone` that completes a card persists
+  the board, rewrites a linked `.kanban.perth.jl`, broadcasts the whole board
+  and is logged with `notify` — so each peer gets a toast and the alert sound
+  *per card* (`_kanban_commit!` in `src/kanban.jl`). `Space` on a selection does
+  this today; a column of forty turns it into a storm, and coalescing what
+  arrives as one gesture belongs to this item, not to a later one.
 - **Duplicate a project** — `duplicate_task!` copies a subtree; a whole plan as
   a template has no equivalent.
 - **"My tasks"** — with the collaborator registry, saying who you are and

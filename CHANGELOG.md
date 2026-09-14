@@ -134,6 +134,22 @@ This file starts at 0.2.4 — earlier releases were not retroactively documented
   not pass, and an unparsable `Origin` is refused rather than waved through.
   Reads are untouched: they change nothing, and CORS already stops the
   attacking page from seeing the answer.
+- **One card could make a board impossible to open.** `"\xff"` is a valid
+  Julia string literal whose value is not valid UTF-8, and the reader accepted
+  it. The kanban sends the whole board to every browser as a WebSocket text
+  frame, and a browser that receives invalid UTF-8 in one drops the connection
+  on the spot. It then reconnects, receives the same board and drops again, so
+  every open tab kept failing and no new one got in. Nothing was lost: fixing
+  the text brought the board back. But a board file you received from someone
+  else could do this, and that is exactly what the format promises it cannot.
+
+  Invalid UTF-8 is now refused where it comes in. A `.perth.jl` or
+  `.kanban.perth.jl` containing it is an `ArgumentError`, and a request body
+  that is not UTF-8 gets a 400. The browser never sends one, because the page
+  decodes a file before uploading it. The last case covers text that reaches
+  the board without going through either, from the REPL or from a board saved
+  before this release: anything sent over a WebSocket has invalid bytes
+  replaced with `�`. The stored text stays as it was until someone edits it.
 
 ## [0.15.0] - 2026-08-22
 
