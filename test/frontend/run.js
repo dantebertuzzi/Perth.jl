@@ -2876,6 +2876,12 @@ console.log("gantt · zoom que faz o projeto caber");
   // nada. O teste dá a largura, que é justamente a entrada da conta.
   // dois seeds no mesmo runIn compartilham escopo: a fábrica de tarefa vai
   // dentro de um bloco para o segundo não redeclarar o primeiro
+  //
+  // As tarefas começam HOJE, e não numa data fixa: a janela desenhada sempre
+  // inclui hoje (computeRange), então um projeto preso em 2026-03-02 ficava
+  // mais "longo" a cada dia que passava. O caso curto passou a falhar sozinho
+  // em setembro, quando 9000px / dias caiu abaixo do teto de 36.
+  const hoje = new Date().toISOString().slice(0, 10);
   const seed = (largura, dias) => `
     { Object.defineProperty(el.tlBody, "clientWidth",
       { configurable: true, value: ${largura} });
@@ -2885,8 +2891,8 @@ console.log("gantt · zoom que faz o projeto caber");
       baseline_start: null, baseline_duration: 0, cost: 0, deadline: null,
       pinned: false });
     state.current = { id: "p1", name: "P", people: [], bands: [], markers: [],
-      tasks: [mk("t1", "A", "2026-03-02", 1), mk("t2", "B", "2026-03-02", ${dias})] };
-    state.cpm = { cycle: false, finish: "2026-03-02", calendar: "", pert: null,
+      tasks: [mk("t1", "A", "${hoje}", 1), mk("t2", "B", "${hoje}", ${dias})] };
+    state.cpm = { cycle: false, finish: "${hoje}", calendar: "", pert: null,
                   byId: new Map() };
     setZoom("fit"); }`;
 
