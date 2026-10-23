@@ -70,3 +70,18 @@ team_stats
 ganttplot
 save_chart
 ```
+
+## Primavera P6 through MK Perth
+
+[MK Perth](https://github.com/morrisonkuhlsen/mkperth) is Perth's sibling in
+Rust: it reads and writes Primavera P6 XML and schedules with P6's options.
+Perth reaches it through its command line, with no extra dependency: install
+`mkperth-cli` on `PATH` (or point `ENV["MKPERTH_CLI"]` at it) and these work;
+without it, they say so.
+
+```@docs
+mkperth_cli
+import_p6xml
+export_p6xml
+schedule_p6
+```

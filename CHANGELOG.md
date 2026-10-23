@@ -5,6 +5,19 @@ All notable changes to Perth.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This file starts at 0.2.4 — earlier releases were not retroactively documented.
 
+## [Unreleased]
+
+### Added
+- **Primavera P6 through MK Perth.** `import_p6xml(path)` reads a P6 XML file
+  into a new project, `export_p6xml(p, path)` writes one, and `schedule_p6(p)`
+  schedules a project as P6 would (total float as finish, start or the
+  smaller float; critical by a float threshold or on the longest path),
+  without changing it. They run MK Perth's command line, `mkperth-cli`, found
+  on `PATH` or in `ENV["MKPERTH_CLI"]`: no new dependency, nothing to load
+  when it isn't installed, and `mkperth_cli()` says whether it is. The tests
+  check that MK Perth's dates and float agree with Perth's own `schedule!`
+  and `slack`, and skip when the binary isn't there.
+
 ## [0.16.1] - 2026-09-14
 
 ### Fixed

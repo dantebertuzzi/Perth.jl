@@ -4575,5 +4575,6 @@ end
 
     include("splash.jl")
     include("update.jl")
+    include("mkperth.jl")
 
 end

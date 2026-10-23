@@ -48,6 +48,7 @@ export GanttTask, Project, KanbanBoard, KanbanColumn, KanbanCard, KanbanChecklis
     set_estimate!, clear_estimate!, has_estimate, expected_duration,
     pert, pert!, pert_finish, finish_probability, pert_date, pert_simulate,
     tasktable, add_tasks!, overallocations, workload, icalendar,
+    mkperth_cli, import_p6xml, export_p6xml, schedule_p6,
     people_stats, team_stats,
     ganttplot, save_chart,
     kanban_columns, kanban_cards,
@@ -88,6 +89,7 @@ include("schedule.jl")
 include("wbs.jl")
 include("insights.jl")
 include("csv.jl")
+include("mkperth.jl")
 include("pert.jl")
 include("show.jl")
 include("splash.jl")
