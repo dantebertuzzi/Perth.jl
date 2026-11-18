@@ -15,3 +15,8 @@
 # custaria um commit reescrevendo todo o repositório. Não vale o ruído no
 # histórico por um problema que congelar já resolve.
 * -text
+
+# Os testes do frontend (test/**/*.js) ficam fora da estatística de linguagens
+# do GitHub: o pacote é Julia, e só eles já somam ~340 KB de JavaScript.
+# O frontend em si continua contado como JavaScript.
+test/**/*.js linguist-detectable=false
